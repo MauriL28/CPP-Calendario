@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import psycopg
 from flask import Flask, jsonify, request
@@ -378,6 +378,244 @@ def create_app():
             rol=creado["rol"],
             grupo=creado["grupo"],
         ), 201
+
+    @app.get("/turnos")
+    @jwt_required()
+    def listar_turnos():
+        if get_jwt().get("rol") != "mando":
+            return jsonify(error="No autorizado"), 403
+        try:
+            desde = datetime.strptime(request.args.get("desde", ""), "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify(error="desde no es una fecha válida"), 400
+        if desde.weekday() != 0:
+            return jsonify(error="desde tiene que ser lunes"), 400
+        dias = [desde + timedelta(days=i) for i in range(7)]
+
+        url = database_url()
+        if not url:
+            return jsonify(error="Base de datos no configurada"), 503
+        try:
+            with psycopg.connect(url, connect_timeout=3) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(
+                        """
+                        SELECT departamento_id
+                        FROM usuario
+                        WHERE id = %s AND rol = 'mando'
+                        """,
+                        (get_jwt_identity(),),
+                    )
+                    mando = cur.fetchone()
+                    if mando is None or mando["departamento_id"] is None:
+                        return jsonify(error="No autorizado"), 403
+                    cur.execute(
+                        """
+                        SELECT nombre, login, grupo
+                        FROM usuario
+                        WHERE rol = 'trabajador' AND departamento_id = %s
+                        ORDER BY nombre
+                        """,
+                        (mando["departamento_id"],),
+                    )
+                    trabajadores = cur.fetchall()
+                    cur.execute(
+                        """
+                        SELECT u.login, t.fecha, t.ausencia::text AS ausencia,
+                               t.hora_inicio, t.hora_fin,
+                               t.horas_planificadas, t.horas_nocturnas
+                        FROM turno t
+                        JOIN usuario u ON u.id = t.usuario_id
+                        WHERE u.rol = 'trabajador'
+                          AND u.departamento_id = %s
+                          AND t.fecha >= %s
+                          AND t.fecha <= %s
+                        """,
+                        (mando["departamento_id"], dias[0], dias[6]),
+                    )
+                    filas = cur.fetchall()
+        except psycopg.Error as exc:
+            return jsonify(error=str(exc)), 503
+
+        por_login_fecha = {}
+        for fila in filas:
+            por_login_fecha[(fila["login"], fila["fecha"])] = {
+                "ausencia": fila["ausencia"],
+                "hora_inicio": hora_texto(fila["hora_inicio"]),
+                "hora_fin": hora_texto(fila["hora_fin"]),
+                "horas_planificadas": float(fila["horas_planificadas"]),
+                "horas_nocturnas": float(fila["horas_nocturnas"]),
+            }
+        return jsonify(
+            desde=desde.isoformat(),
+            dias=[dia.isoformat() for dia in dias],
+            trabajadores=[
+                {
+                    "nombre": trabajador["nombre"],
+                    "login": trabajador["login"],
+                    "grupo": trabajador["grupo"],
+                    "dias": [
+                        {
+                            "fecha": dia.isoformat(),
+                            "turno": por_login_fecha.get((trabajador["login"], dia)),
+                        }
+                        for dia in dias
+                    ],
+                }
+                for trabajador in trabajadores
+            ],
+        )
+
+    @app.get("/turnos/mios")
+    @jwt_required()
+    def listar_turnos_mios():
+        if get_jwt().get("rol") != "trabajador":
+            return jsonify(error="No autorizado"), 403
+        try:
+            desde = datetime.strptime(request.args.get("desde", ""), "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify(error="desde no es una fecha válida"), 400
+        if desde.weekday() != 0:
+            return jsonify(error="desde tiene que ser lunes"), 400
+        dias = [desde + timedelta(days=i) for i in range(7)]
+
+        url = database_url()
+        if not url:
+            return jsonify(error="Base de datos no configurada"), 503
+        try:
+            with psycopg.connect(url, connect_timeout=3) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(
+                        """
+                        SELECT nombre, login, grupo
+                        FROM usuario
+                        WHERE id = %s AND rol = 'trabajador'
+                        """,
+                        (get_jwt_identity(),),
+                    )
+                    trabajador = cur.fetchone()
+                    if trabajador is None:
+                        return jsonify(error="No autorizado"), 403
+                    cur.execute(
+                        """
+                        SELECT t.fecha, t.ausencia::text AS ausencia,
+                               t.hora_inicio, t.hora_fin,
+                               t.horas_planificadas, t.horas_nocturnas
+                        FROM turno t
+                        JOIN usuario u ON u.id = t.usuario_id
+                        WHERE u.id = %s
+                          AND t.fecha >= %s
+                          AND t.fecha <= %s
+                        """,
+                        (get_jwt_identity(), dias[0], dias[6]),
+                    )
+                    filas = cur.fetchall()
+        except psycopg.Error as exc:
+            return jsonify(error=str(exc)), 503
+
+        por_fecha = {
+            fila["fecha"]: {
+                "ausencia": fila["ausencia"],
+                "hora_inicio": hora_texto(fila["hora_inicio"]),
+                "hora_fin": hora_texto(fila["hora_fin"]),
+                "horas_planificadas": float(fila["horas_planificadas"]),
+                "horas_nocturnas": float(fila["horas_nocturnas"]),
+            }
+            for fila in filas
+        }
+        return jsonify(
+            desde=desde.isoformat(),
+            dias=[dia.isoformat() for dia in dias],
+            trabajadores=[
+                {
+                    "nombre": trabajador["nombre"],
+                    "login": trabajador["login"],
+                    "grupo": trabajador["grupo"],
+                    "dias": [
+                        {"fecha": dia.isoformat(), "turno": por_fecha.get(dia)}
+                        for dia in dias
+                    ],
+                }
+            ],
+        )
+
+    @app.post("/turnos/copiar-semana")
+    @jwt_required()
+    def copiar_semana():
+        if get_jwt().get("rol") != "mando":
+            return jsonify(error="No autorizado"), 403
+        cuerpo = request.get_json(silent=True) or {}
+        try:
+            desde = datetime.strptime(cuerpo.get("desde", ""), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return jsonify(error="desde no es una fecha válida"), 400
+        if desde.weekday() != 0:
+            return jsonify(error="desde tiene que ser lunes"), 400
+        anterior = desde - timedelta(days=7)
+        hasta = desde + timedelta(days=6)
+
+        url = database_url()
+        if not url:
+            return jsonify(error="Base de datos no configurada"), 503
+        try:
+            with psycopg.connect(url, connect_timeout=3) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(
+                        """
+                        SELECT departamento_id
+                        FROM usuario
+                        WHERE id = %s AND rol = 'mando'
+                        """,
+                        (get_jwt_identity(),),
+                    )
+                    mando = cur.fetchone()
+                    if mando is None or mando["departamento_id"] is None:
+                        return jsonify(error="No autorizado"), 403
+                    cur.execute(
+                        """
+                        DELETE FROM turno t
+                        USING usuario u
+                        WHERE t.usuario_id = u.id
+                          AND u.rol = 'trabajador'
+                          AND u.departamento_id = %s
+                          AND t.fecha >= %s
+                          AND t.fecha <= %s
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM turno previo
+                              WHERE previo.usuario_id = t.usuario_id
+                                AND previo.fecha = t.fecha - 7
+                          )
+                        """,
+                        (mando["departamento_id"], desde, hasta),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO turno (
+                            usuario_id, fecha, ausencia, hora_inicio, hora_fin,
+                            horas_planificadas, horas_nocturnas
+                        )
+                        SELECT t.usuario_id, t.fecha + 7, t.ausencia, t.hora_inicio, t.hora_fin,
+                               t.horas_planificadas, t.horas_nocturnas
+                        FROM turno t
+                        JOIN usuario u ON u.id = t.usuario_id
+                        WHERE u.rol = 'trabajador'
+                          AND u.departamento_id = %s
+                          AND t.fecha >= %s
+                          AND t.fecha < %s
+                        ON CONFLICT (usuario_id, fecha) DO UPDATE SET
+                            ausencia = EXCLUDED.ausencia,
+                            hora_inicio = EXCLUDED.hora_inicio,
+                            hora_fin = EXCLUDED.hora_fin,
+                            horas_planificadas = EXCLUDED.horas_planificadas,
+                            horas_nocturnas = EXCLUDED.horas_nocturnas
+                        """,
+                        (mando["departamento_id"], anterior, desde),
+                    )
+        except psycopg.Error as exc:
+            return jsonify(error=str(exc)), 503
+
+        return jsonify(desde=desde.isoformat())
 
     @app.put("/turnos")
     @jwt_required()

@@ -18,7 +18,7 @@ body {
 }
 
 main {
-  max-width: 40rem;
+  max-width: 64rem;
   margin: 0 auto;
   padding: 2rem 1.25rem 3rem;
 }
@@ -82,4 +82,49 @@ ul {
 .error {
   margin: 0 0 1rem;
   color: #9b1c1c;
+}
+
+.semana-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0 0.75rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+th,
+td {
+  border: 1px solid #d5d8de;
+  padding: 0.25rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+th:first-child,
+td:first-child,
+tbody th {
+  text-align: left;
+  min-width: 7rem;
+}
+
+.celda {
+  width: 100%;
+  min-height: 2.25rem;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+span.celda {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
 }

@@ -20,13 +20,16 @@ const trabajadorLogin = ref("");
 const trabajadorClave = ref("");
 const trabajadorGrupo = ref("STEF");
 const errorTrabajador = ref("");
-const turnoLogin = ref("");
-const turnoFecha = ref("");
+const semanaDesde = ref("");
+const cuadrante = ref(null);
+const errorSemana = ref("");
+const celda = ref(null);
 const turnoModo = ref("horario");
 const turnoInicio = ref("");
 const turnoFin = ref("");
 const turnoAusencia = ref("L");
 const errorTurno = ref("");
+const diasNombre = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 async function entrar() {
   errorLogin.value = "";
@@ -38,6 +41,9 @@ async function entrar() {
   errorMando.value = "";
   errorTrabajador.value = "";
   errorTurno.value = "";
+  errorSemana.value = "";
+  cuadrante.value = null;
+  celda.value = null;
   try {
     const respuesta = await fetch("/login", {
       method: "POST",
@@ -55,8 +61,15 @@ async function entrar() {
     delegaciones.value = carga.delegaciones;
     token.value = cuerpo.access_token;
     nuevaDelegacion.value = carga.delegaciones[0] ?? "";
-    await cargarDepartamentos(cuerpo.access_token);
-    alCambiarDelegacion();
+    if (carga.rol === "trabajador") {
+      await cargarSemana(lunesDe(new Date()));
+    } else {
+      await cargarDepartamentos(cuerpo.access_token);
+      alCambiarDelegacion();
+      if (carga.rol === "mando") {
+        await cargarSemana(lunesDe(new Date()));
+      }
+    }
   } catch (causa) {
     errorLogin.value = causa instanceof Error ? causa.message : "No se pudo entrar";
   }
@@ -73,7 +86,6 @@ async function cargarDepartamentos(token) {
       return;
     }
     departamentos.value = await respuesta.json();
-    elegirTrabajadorSiFalta();
   } catch (causa) {
     error.value = causa instanceof Error ? causa.message : "No se pudieron cargar los departamentos";
   }
@@ -142,35 +154,116 @@ async function crearTrabajador() {
     trabajadorLogin.value = "";
     trabajadorClave.value = "";
     await cargarDepartamentos(token.value);
+    if (rol.value === "mando") {
+      await cargarSemana(semanaDesde.value || lunesDe(new Date()));
+    }
   } catch (causa) {
     errorTrabajador.value = causa instanceof Error ? causa.message : "No se pudo crear el trabajador";
   }
 }
 
-function trabajadoresDelMando() {
-  return departamentos.value.flatMap((departamento) => departamento.trabajadores);
+function isoFecha(fecha) {
+  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+  const dia = String(fecha.getDate()).padStart(2, "0");
+  return `${fecha.getFullYear()}-${mes}-${dia}`;
 }
 
-function elegirTrabajadorSiFalta() {
-  const lista = trabajadoresDelMando();
-  if (!lista.some((trabajador) => trabajador.login === turnoLogin.value)) {
-    turnoLogin.value = lista[0]?.login ?? "";
+function lunesDe(fecha) {
+  const copia = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+  const dia = copia.getDay();
+  const resto = dia === 0 ? -6 : 1 - dia;
+  copia.setDate(copia.getDate() + resto);
+  return isoFecha(copia);
+}
+
+function sumarDias(iso, dias) {
+  const [anio, mes, dia] = iso.split("-").map(Number);
+  const fecha = new Date(anio, mes - 1, dia);
+  fecha.setDate(fecha.getDate() + dias);
+  return isoFecha(fecha);
+}
+
+function textoCelda(turno) {
+  if (!turno) {
+    return "";
   }
-}
-
-function textoTurno(turno) {
-  const horas = `${turno.horas_planificadas} h, ${turno.horas_nocturnas} h noche`;
   if (turno.ausencia) {
-    return `${turno.fecha} ausencia ${turno.ausencia} (${horas})`;
+    return turno.ausencia;
   }
-  return `${turno.fecha} ${turno.hora_inicio}–${turno.hora_fin} (${horas})`;
+  return `${turno.hora_inicio}–${turno.hora_fin}`;
+}
+
+async function cargarSemana(desde) {
+  errorSemana.value = "";
+  celda.value = null;
+  try {
+    const ruta = rol.value === "trabajador" ? "/turnos/mios" : "/turnos";
+    const respuesta = await fetch(`${ruta}?desde=${desde}`, {
+      headers: { Authorization: `Bearer ${token.value}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!respuesta.ok) {
+      errorSemana.value = await mensajeDeError(respuesta);
+      return;
+    }
+    cuadrante.value = await respuesta.json();
+    semanaDesde.value = cuadrante.value.desde;
+  } catch (causa) {
+    errorSemana.value = causa instanceof Error ? causa.message : "No se pudo cargar la semana";
+  }
+}
+
+function abrirCelda(trabajador, dia) {
+  const turno = dia.turno;
+  celda.value = {
+    login: trabajador.login,
+    nombre: trabajador.nombre,
+    fecha: dia.fecha,
+  };
+  errorTurno.value = "";
+  if (turno && turno.ausencia) {
+    turnoModo.value = "ausencia";
+    turnoAusencia.value = turno.ausencia;
+    turnoInicio.value = "";
+    turnoFin.value = "";
+  } else {
+    turnoModo.value = "horario";
+    turnoAusencia.value = "L";
+    turnoInicio.value = turno?.hora_inicio || "";
+    turnoFin.value = turno?.hora_fin || "";
+  }
+}
+
+async function copiarSemana() {
+  errorSemana.value = "";
+  try {
+    const respuesta = await fetch("/turnos/copiar-semana", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token.value}`,
+      },
+      body: JSON.stringify({ desde: semanaDesde.value }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!respuesta.ok) {
+      errorSemana.value = await mensajeDeError(respuesta);
+      return;
+    }
+    await cargarSemana(semanaDesde.value);
+  } catch (causa) {
+    errorSemana.value = causa instanceof Error ? causa.message : "No se pudo copiar la semana";
+  }
 }
 
 async function guardarTurno() {
+  if (!celda.value) {
+    return;
+  }
   errorTurno.value = "";
   const cuerpo = {
-    login: turnoLogin.value,
-    fecha: turnoFecha.value,
+    login: celda.value.login,
+    fecha: celda.value.fecha,
   };
   if (turnoModo.value === "ausencia") {
     cuerpo.ausencia = turnoAusencia.value;
@@ -192,7 +285,7 @@ async function guardarTurno() {
       errorTurno.value = await mensajeDeError(respuesta);
       return;
     }
-    await cargarDepartamentos(token.value);
+    await cargarSemana(semanaDesde.value);
   } catch (causa) {
     errorTurno.value = causa instanceof Error ? causa.message : "No se pudo guardar el turno";
   }
@@ -294,48 +387,73 @@ async function mensajeDeError(respuesta) {
       <button type="submit">Guardar trabajador</button>
     </form>
     <p v-if="errorTrabajador" class="error">{{ errorTrabajador }}</p>
-    <form v-if="rol === 'mando'" class="alta" @submit.prevent="guardarTurno">
-      <label>
-        Trabajador
-        <select v-model="turnoLogin">
-          <option v-for="trabajador in trabajadoresDelMando()" :key="trabajador.login" :value="trabajador.login">
-            {{ trabajador.nombre }}
-          </option>
-        </select>
-      </label>
-      <label>
-        Día
-        <input v-model="turnoFecha" name="fecha" type="date" required />
-      </label>
-      <label>
-        Tipo
-        <select v-model="turnoModo">
-          <option value="horario">Horario</option>
-          <option value="ausencia">Ausencia</option>
-        </select>
-      </label>
-      <template v-if="turnoModo === 'horario'">
+    <section v-if="(rol === 'mando' || rol === 'trabajador') && cuadrante" class="semana">
+      <div class="semana-nav">
+        <button type="button" @click="cargarSemana(sumarDias(semanaDesde, -7))">Semana anterior</button>
+        <span>{{ cuadrante.desde }} – {{ cuadrante.dias[6] }}</span>
+        <button type="button" @click="cargarSemana(sumarDias(semanaDesde, 7))">Semana siguiente</button>
+        <button v-if="rol === 'mando'" type="button" @click="copiarSemana">Copiar semana anterior</button>
+      </div>
+      <p v-if="errorSemana" class="error">{{ errorSemana }}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Trabajador</th>
+            <th v-for="(dia, indice) in cuadrante.dias" :key="dia">
+              {{ diasNombre[indice] }} {{ dia.slice(8) }}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="trabajador in cuadrante.trabajadores" :key="trabajador.login">
+            <th>{{ trabajador.nombre }}</th>
+            <td v-for="dia in trabajador.dias" :key="dia.fecha">
+              <button
+                v-if="rol === 'mando'"
+                type="button"
+                class="celda"
+                @click="abrirCelda(trabajador, dia)"
+              >
+                {{ textoCelda(dia.turno) }}
+              </button>
+              <span v-else class="celda">{{ textoCelda(dia.turno) }}</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <form v-if="celda" class="alta" @submit.prevent="guardarTurno">
+        <p>{{ celda.nombre }} · {{ celda.fecha }}</p>
         <label>
-          Hora inicio
-          <input v-model="turnoInicio" name="hora-inicio" type="time" required />
+          Tipo
+          <select v-model="turnoModo">
+            <option value="horario">Horario</option>
+            <option value="ausencia">Ausencia</option>
+          </select>
         </label>
-        <label>
-          Hora fin
-          <input v-model="turnoFin" name="hora-fin" type="time" required />
+        <template v-if="turnoModo === 'horario'">
+          <label>
+            Hora inicio
+            <input v-model="turnoInicio" type="time" required />
+          </label>
+          <label>
+            Hora fin
+            <input v-model="turnoFin" type="time" required />
+          </label>
+        </template>
+        <label v-else>
+          Ausencia
+          <select v-model="turnoAusencia">
+            <option v-for="codigo in ['L', 'D', 'V', 'B', 'F', 'P']" :key="codigo" :value="codigo">
+              {{ codigo }}
+            </option>
+          </select>
         </label>
-      </template>
-      <label v-else>
-        Ausencia
-        <select v-model="turnoAusencia">
-          <option v-for="codigo in ['L', 'D', 'V', 'B', 'F', 'P']" :key="codigo" :value="codigo">
-            {{ codigo }}
-          </option>
-        </select>
-      </label>
-      <button type="submit">Guardar turno</button>
-    </form>
-    <p v-if="errorTurno" class="error">{{ errorTurno }}</p>
+        <button type="submit">Guardar turno</button>
+      </form>
+      <p v-if="errorTurno" class="error">{{ errorTurno }}</p>
+    </section>
     <p v-if="error" class="error">{{ error }}</p>
+    <template v-if="rol !== 'trabajador'">
     <section v-for="codigo in delegaciones" :key="codigo">
       <h2>Delegación: {{ codigo }}</h2>
       <ul class="departamentos">
@@ -354,13 +472,11 @@ async function mensajeDeError(respuesta) {
           <ul v-if="departamento.trabajadores.length" class="mandos">
             <li v-for="trabajador in departamento.trabajadores" :key="trabajador.login">
               {{ trabajador.nombre }} ({{ trabajador.login }}, {{ trabajador.grupo }})
-              <ul v-if="trabajador.turnos.length">
-                <li v-for="turno in trabajador.turnos" :key="turno.fecha">{{ textoTurno(turno) }}</li>
-              </ul>
             </li>
           </ul>
         </li>
       </ul>
     </section>
+    </template>
   </main>
 </template>
