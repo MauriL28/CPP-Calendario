@@ -30,7 +30,7 @@ h1 {
 }
 
 h2 {
-  margin: 1.5rem 0 0.75rem;
+  margin: 0 0 0.75rem;
   font-size: 1.125rem;
   font-weight: 600;
 }
@@ -47,6 +47,14 @@ ul {
   list-style: none;
 }
 
+.delegacion {
+  background: #fff;
+  border: 1px solid #d5d8de;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-top: 1rem;
+}
+
 .departamentos > li + li {
   margin-top: 1.25rem;
 }
@@ -58,25 +66,43 @@ ul {
   color: #3d4450;
 }
 
-.login,
-.alta {
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
+.formulario {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #d5d8de;
+  border-radius: 0.5rem;
 }
 
-.login label,
-.alta label {
+.formulario label {
   display: grid;
   gap: 0.25rem;
+  min-width: 10rem;
   font-size: 0.875rem;
 }
 
-.login input,
-.alta input,
-.alta select {
+.formulario input,
+.formulario select {
   font: inherit;
   padding: 0.4rem 0.5rem;
+  border: 1px solid #c5cad3;
+  border-radius: 0.25rem;
+  background: #fff;
+}
+
+.formulario button {
+  font: inherit;
+  padding: 0.45rem 0.8rem;
+}
+
+.celda-titulo {
+  flex: 1 0 100%;
+  margin: 0;
+  font-weight: 600;
 }
 
 .error {
@@ -86,31 +112,63 @@ ul {
 
 .semana-nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
-  margin: 1.5rem 0 0.75rem;
+  gap: 0.75rem 1rem;
+  margin: 0.5rem 0 0.75rem;
 }
 
-table {
+.semana-nav button {
+  font: inherit;
+  padding: 0.4rem 0.7rem;
+}
+
+table.cuadrante {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 1rem;
+  background: #fff;
 }
 
-th,
-td {
+table.cuadrante th,
+table.cuadrante td {
   border: 1px solid #d5d8de;
   padding: 0.25rem;
   text-align: center;
   font-size: 0.8125rem;
   font-weight: 500;
+  vertical-align: middle;
 }
 
-th:first-child,
-td:first-child,
-tbody th {
+table.cuadrante thead th {
+  background: #e7ebf0;
+  font-weight: 600;
+}
+
+table.cuadrante th:first-child,
+table.cuadrante tbody th {
   text-align: left;
   min-width: 7rem;
+  padding-left: 0.6rem;
+}
+
+.dia-nombre,
+.dia-numero {
+  display: block;
+}
+
+.dia-numero {
+  font-weight: 500;
+  color: #3d4450;
+}
+
+table.cuadrante td.horario {
+  background: #f7f9fb;
+}
+
+table.cuadrante td.ausencia {
+  background: #f4efe4;
+  font-weight: 700;
 }
 
 .celda {
