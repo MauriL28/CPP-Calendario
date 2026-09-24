@@ -20,6 +20,13 @@ const trabajadorLogin = ref("");
 const trabajadorClave = ref("");
 const trabajadorGrupo = ref("STEF");
 const errorTrabajador = ref("");
+const turnoLogin = ref("");
+const turnoFecha = ref("");
+const turnoModo = ref("horario");
+const turnoInicio = ref("");
+const turnoFin = ref("");
+const turnoAusencia = ref("L");
+const errorTurno = ref("");
 
 async function entrar() {
   errorLogin.value = "";
@@ -30,6 +37,7 @@ async function entrar() {
   token.value = "";
   errorMando.value = "";
   errorTrabajador.value = "";
+  errorTurno.value = "";
   try {
     const respuesta = await fetch("/login", {
       method: "POST",
@@ -65,6 +73,7 @@ async function cargarDepartamentos(token) {
       return;
     }
     departamentos.value = await respuesta.json();
+    elegirTrabajadorSiFalta();
   } catch (causa) {
     error.value = causa instanceof Error ? causa.message : "No se pudieron cargar los departamentos";
   }
@@ -135,6 +144,57 @@ async function crearTrabajador() {
     await cargarDepartamentos(token.value);
   } catch (causa) {
     errorTrabajador.value = causa instanceof Error ? causa.message : "No se pudo crear el trabajador";
+  }
+}
+
+function trabajadoresDelMando() {
+  return departamentos.value.flatMap((departamento) => departamento.trabajadores);
+}
+
+function elegirTrabajadorSiFalta() {
+  const lista = trabajadoresDelMando();
+  if (!lista.some((trabajador) => trabajador.login === turnoLogin.value)) {
+    turnoLogin.value = lista[0]?.login ?? "";
+  }
+}
+
+function textoTurno(turno) {
+  const horas = `${turno.horas_planificadas} h, ${turno.horas_nocturnas} h noche`;
+  if (turno.ausencia) {
+    return `${turno.fecha} ausencia ${turno.ausencia} (${horas})`;
+  }
+  return `${turno.fecha} ${turno.hora_inicio}–${turno.hora_fin} (${horas})`;
+}
+
+async function guardarTurno() {
+  errorTurno.value = "";
+  const cuerpo = {
+    login: turnoLogin.value,
+    fecha: turnoFecha.value,
+  };
+  if (turnoModo.value === "ausencia") {
+    cuerpo.ausencia = turnoAusencia.value;
+  } else {
+    cuerpo.hora_inicio = turnoInicio.value;
+    cuerpo.hora_fin = turnoFin.value;
+  }
+  try {
+    const respuesta = await fetch("/turnos", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token.value}`,
+      },
+      body: JSON.stringify(cuerpo),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!respuesta.ok) {
+      errorTurno.value = await mensajeDeError(respuesta);
+      return;
+    }
+    await cargarDepartamentos(token.value);
+  } catch (causa) {
+    errorTurno.value = causa instanceof Error ? causa.message : "No se pudo guardar el turno";
   }
 }
 
@@ -234,6 +294,47 @@ async function mensajeDeError(respuesta) {
       <button type="submit">Guardar trabajador</button>
     </form>
     <p v-if="errorTrabajador" class="error">{{ errorTrabajador }}</p>
+    <form v-if="rol === 'mando'" class="alta" @submit.prevent="guardarTurno">
+      <label>
+        Trabajador
+        <select v-model="turnoLogin">
+          <option v-for="trabajador in trabajadoresDelMando()" :key="trabajador.login" :value="trabajador.login">
+            {{ trabajador.nombre }}
+          </option>
+        </select>
+      </label>
+      <label>
+        Día
+        <input v-model="turnoFecha" name="fecha" type="date" required />
+      </label>
+      <label>
+        Tipo
+        <select v-model="turnoModo">
+          <option value="horario">Horario</option>
+          <option value="ausencia">Ausencia</option>
+        </select>
+      </label>
+      <template v-if="turnoModo === 'horario'">
+        <label>
+          Hora inicio
+          <input v-model="turnoInicio" name="hora-inicio" type="time" required />
+        </label>
+        <label>
+          Hora fin
+          <input v-model="turnoFin" name="hora-fin" type="time" required />
+        </label>
+      </template>
+      <label v-else>
+        Ausencia
+        <select v-model="turnoAusencia">
+          <option v-for="codigo in ['L', 'D', 'V', 'B', 'F', 'P']" :key="codigo" :value="codigo">
+            {{ codigo }}
+          </option>
+        </select>
+      </label>
+      <button type="submit">Guardar turno</button>
+    </form>
+    <p v-if="errorTurno" class="error">{{ errorTurno }}</p>
     <p v-if="error" class="error">{{ error }}</p>
     <section v-for="codigo in delegaciones" :key="codigo">
       <h2>Delegación: {{ codigo }}</h2>
@@ -253,6 +354,9 @@ async function mensajeDeError(respuesta) {
           <ul v-if="departamento.trabajadores.length" class="mandos">
             <li v-for="trabajador in departamento.trabajadores" :key="trabajador.login">
               {{ trabajador.nombre }} ({{ trabajador.login }}, {{ trabajador.grupo }})
+              <ul v-if="trabajador.turnos.length">
+                <li v-for="turno in trabajador.turnos" :key="turno.fecha">{{ textoTurno(turno) }}</li>
+              </ul>
             </li>
           </ul>
         </li>
