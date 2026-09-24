@@ -1,13 +1,12 @@
 services:
   db:
-    image: postgres:16-alpine
+    build: ./db
     environment:
       POSTGRES_USER: calendario
       POSTGRES_PASSWORD: calendario
       POSTGRES_DB: calendario
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/esquema.sql:/docker-entrypoint-initdb.d/01-esquema.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -20,8 +19,9 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql://calendario:calendario@db:5432/calendario
+      JWT_SECRET_KEY: dev-calendario
     ports:
-      - "5000:5000"
+      - "5001:5000"
     depends_on:
       db:
         condition: service_healthy
@@ -42,6 +42,9 @@ services:
     build: ./frontend
     ports:
       - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
       interval: 5s

@@ -16,7 +16,7 @@ docker compose up --build
 | Servicio | Dónde |
 |---|---|
 | Frontend | http://localhost:8080 |
-| Backend | http://localhost:5000/health |
+| Backend | http://localhost:5001/health |
 | PostgreSQL | `localhost:5432`, base y usuario `calendario`, clave `calendario` |
 
 La primera vez Postgres ejecuta `db/esquema.sql` y crea las tablas. Es un esqueleto: la pantalla solo muestra el nombre y el backend solo responde el health. No hay login, SAP ni cuadrante.

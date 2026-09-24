@@ -20,11 +20,19 @@ CREATE TABLE empresa (
 
 INSERT INTO empresa (id) VALUES (1);
 
-CREATE TABLE departamento (
+CREATE TABLE delegacion (
     id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    codigo  VARCHAR(32)  NOT NULL UNIQUE,
-    nombre  VARCHAR(120) NOT NULL,
-    orden   INTEGER      NOT NULL DEFAULT 0
+    codigo  VARCHAR(16)  NOT NULL UNIQUE,
+    nombre  VARCHAR(120) NOT NULL
+);
+
+CREATE TABLE departamento (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    delegacion_id   UUID         NOT NULL REFERENCES delegacion (id),
+    codigo          VARCHAR(32)  NOT NULL,
+    nombre          VARCHAR(120) NOT NULL,
+    orden           INTEGER      NOT NULL DEFAULT 0,
+    UNIQUE (delegacion_id, codigo)
 );
 
 CREATE TABLE seccion (
@@ -117,23 +125,3 @@ CREATE TABLE festivo (
     fecha   DATE PRIMARY KEY,
     nombre  VARCHAR(120) NOT NULL
 );
-
--- Semilla del prototipo (orden de la rejilla).
-INSERT INTO departamento (codigo, nombre, orden) VALUES
-    ('trafico',        'Tráfico',                 1),
-    ('sac',            'SAC',                     2),
-    ('muelle',         'Muelle',                  3),
-    ('choferes',       'Chóferes',                4),
-    ('mandos',         'Mandos + Funcionales',    5),
-    ('mantenimiento',  'Mantenimiento',           6);
-
-INSERT INTO seccion (departamento_id, nombre)
-SELECT id, s.nombre
-FROM departamento d
-CROSS JOIN (VALUES
-    ('Administración'),
-    ('Nacional'),
-    ('Exportación'),
-    ('Agrupaciones')
-) AS s(nombre)
-WHERE d.codigo = 'trafico';
