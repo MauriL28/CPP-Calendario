@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendario 2027</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#fff; --border:#e1e4e9; --border-strong:#c7ccd4;
+    --text:#20242c; --text-2:#5b6270; --text-3:#8b91a0;
+    --mañana:#2e78c9; --mañana-bg:#e5f0fb;
+    --tarde:#c9542e; --tarde-bg:#fbe9e2;
+    --noche:#5b4fc9; --noche-bg:#eae7fb;
+    --libranza-bg:#f0f2f5; --domingo-bg:#fdf1c9; --domingo-tx:#8a6a08;
+    --vacaciones-bg:#dcf0dc; --vacaciones-tx:#2a6b2a;
+    --baja-bg:#f7dcc4; --baja-tx:#8a5313;
+    --festivo-bg:#f4b6b0; --festivo-tx:#7a1d10;
+    --permiso-bg:#dbe9fa; --permiso-tx:#1d4f8a;
+    --alerta:#c0392b; --alerta-bg:#fdecea;
+    --ok:#2a6b2a; --ok-bg:#e8f4e8;
+    --warn:#8a6a08; --warn-bg:#fdf6dd;
+    --accent:#2e78c9;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  header{background:var(--panel);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .crumbs{display:flex;align-items:center;gap:6px;font-size:14px;}
+  .crumbs span{color:var(--text-3);}
+  .crumbs a{color:var(--accent);cursor:pointer;font-weight:600;}
+  .crumbs a:hover{text-decoration:underline;}
+  .crumbs .current{font-weight:600;color:var(--text);}
+  .topnav{display:flex;gap:6px;}
+  .topnav button{background:none;border:1px solid var(--border);padding:6px 12px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--text-2);}
+  .topnav button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  main{max-width:1240px;margin:0 auto;padding:22px 24px 60px;}
+  .view{display:none;} .view.active{display:block;}
+  h1.page{font-size:22px;font-weight:700;margin:0 0 4px;}
+  p.sub{color:var(--text-2);font-size:14px;margin:0 0 20px;}
+
+  .dept-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  .dept-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:border-color .15s;}
+  .dept-card:hover{border-color:var(--accent);}
+  .dept-icon{width:36px;height:36px;border-radius:9px;background:var(--mañana-bg);color:var(--mañana);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;margin-bottom:12px;}
+  .dept-card h3{font-size:15px;margin:0 0 4px;} .dept-card p{font-size:12.5px;color:var(--text-3);margin:0;}
+
+  .toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;}
+  .toolbar select,.toolbar button,.toolbar input{font-size:13px;padding:7px 10px;border:1px solid var(--border-strong);border-radius:7px;background:#fff;color:var(--text);}
+  .seg{display:flex;border:1px solid var(--border-strong);border-radius:7px;overflow:hidden;}
+  .seg button{border:none;border-radius:0;padding:7px 14px;background:#fff;cursor:pointer;font-size:13px;color:var(--text-2);}
+  .seg button.active{background:var(--accent);color:#fff;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:18px;}
+  .panel h2{font-size:14px;margin:0 0 10px;}
+  .panel-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .panel-title h2{margin:0;}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th{text-align:center;padding:8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--border);}
+  th:first-child{text-align:left;padding-left:6px;}
+  td{padding:4px;text-align:center;}
+  tr.group td{padding-top:14px;padding-bottom:4px;font-size:11px;font-weight:700;color:var(--text-3);letter-spacing:.04em;text-align:left;border:none;}
+  td.name{text-align:left;padding-left:6px;font-weight:500;cursor:pointer;color:var(--accent);border-bottom:1px solid var(--border);}
+  td.name:hover{text-decoration:underline;}
+  td.num{border-bottom:1px solid var(--border);color:var(--text-2);}
+  .cell{display:block;border-radius:5px;padding:5px 2px;font-size:11.5px;font-weight:600;}
+  .c-mañana{background:var(--mañana-bg);color:var(--mañana);}
+  .c-tarde{background:var(--tarde-bg);color:var(--tarde);}
+  .c-noche{background:var(--noche-bg);color:var(--noche);}
+  .c-libranza{background:var(--libranza-bg);color:var(--text-2);}
+  .c-domingo{background:var(--domingo-bg);color:var(--domingo-tx);}
+  .c-vacaciones{background:var(--vacaciones-bg);color:var(--vacaciones-tx);}
+  .c-baja{background:var(--baja-bg);color:var(--baja-tx);}
+  .c-festivo{background:var(--festivo-bg);color:var(--festivo-tx);}
+  .c-permiso{background:var(--permiso-bg);color:var(--permiso-tx);}
+  .c-vacio{background:#eceef1;}
+  .totals td{font-weight:600;background:#fafbfc;}
+  .totals td.name{color:var(--text);cursor:default;} .totals td.name:hover{text-decoration:none;}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
+  .legend span{font-size:11.5px;color:var(--text-2);display:flex;align-items:center;gap:5px;}
+  .swatch{width:10px;height:10px;border-radius:3px;display:inline-block;}
+  .hours-summary{display:grid;gap:10px;margin:14px 0 4px;}
+  .kpi{background:#fafbfc;border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+  .kpi .label{font-size:11px;color:var(--text-3);margin:0 0 4px;}
+  .kpi .value{font-size:20px;font-weight:700;margin:0;}
+  .kpi.total{background:var(--mañana-bg);} .kpi.total .value{color:var(--mañana);}
+  .kpi.bad{background:var(--alerta-bg);} .kpi.bad .value{color:var(--alerta);}
+  .kpi.good{background:var(--ok-bg);} .kpi.good .value{color:var(--ok);}
+  .kpi.warn{background:var(--warn-bg);} .kpi.warn .value{color:var(--warn);}
+
+  /* ANALISIS */
+  .kpis4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+  .alert-table td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border);}
+  .alert-table th{text-align:left;padding-left:6px;}
+  .tag{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+  .t-alerta{background:var(--alerta-bg);color:var(--alerta);}
+  .t-warn{background:var(--warn-bg);color:var(--warn);}
+  .t-ok{background:var(--ok-bg);color:var(--ok);}
+  .desv-neg{color:var(--alerta);font-weight:600;}
+  .desv-pos{color:var(--ok);font-weight:600;}
+  .note{font-size:11.5px;color:var(--text-3);background:#fafbfc;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:6px;padding:10px 12px;margin-top:12px;line-height:1.5;}
+
+  /* FICHA EMPLEADO */
+  .emp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap;}
+  .emp-id{display:flex;align-items:center;gap:12px;}
+  .avatar{width:38px;height:38px;border-radius:50%;background:var(--mañana-bg);color:var(--mañana);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;}
+  .btn{font-size:12.5px;padding:7px 12px;border:1px solid var(--border-strong);border-radius:7px;background:#fff;cursor:pointer;}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .horas-tab{border-collapse:collapse;width:100%;margin-bottom:6px;}
+  .horas-tab th{background:#d9dce2;color:var(--text);font-size:11.5px;padding:8px;border:1px solid var(--border-strong);text-transform:none;letter-spacing:0;}
+  .horas-tab td{border:1px solid var(--border-strong);padding:10px;text-align:center;font-weight:700;font-size:15px;}
+  .blue{background:var(--mañana-bg);color:var(--mañana);}
+  .yellow{background:var(--domingo-bg);color:var(--domingo-tx);}
+  .green{background:var(--vacaciones-bg);color:var(--vacaciones-tx);}
+  .red{background:var(--festivo-bg);color:var(--festivo-tx);}
+  .subl{font-size:10.5px;font-weight:500;color:var(--text-2);padding-top:2px;}
+  .summary-table td,.summary-table th{border:1px solid var(--border);padding:6px;font-size:11.5px;}
+  .summary-table th{background:#fafbfc;text-align:left;color:var(--text-3);font-weight:600;}
+  .adjust-table th{text-align:left;font-size:11px;color:var(--text-3);border-bottom:1px solid var(--border);padding:6px;}
+  .adjust-table td{padding:7px 6px;border-bottom:1px solid var(--border);text-align:left;}
+  .neg{color:var(--tarde);font-weight:600;} .pos{color:var(--vacaciones-tx);font-weight:600;}
+
+  /* HOJA ANUAL IMPRIMIBLE */
+  .sheet{background:#fff;border:1px solid var(--border);border-radius:10px;padding:22px;}
+  .sheet-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;}
+  .sheet-head .fecha{font-size:11px;color:var(--text-2);font-family:monospace;}
+  .sheet-head h2{font-size:26px;margin:6px 0 0;font-weight:700;}
+  .firma-box{border:1px solid var(--text);width:230px;height:78px;}
+  .firma-label{font-size:10px;font-weight:700;letter-spacing:.04em;margin-bottom:4px;text-align:center;}
+  .year-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+  .mth h4{font-size:11.5px;text-align:center;margin:0 0 4px;font-weight:700;letter-spacing:.05em;}
+  .mth table{font-size:9px;border-collapse:collapse;width:100%;}
+  .mth th{font-size:8.5px;padding:2px 0;color:var(--text);border:1px solid var(--border-strong);background:#f2f3f5;text-transform:none;letter-spacing:0;text-align:center;}
+  .mth td{padding:3px 0;border:1px solid var(--border-strong);font-weight:600;font-size:8.5px;}
+  .mth td.wk{background:#f2f3f5;color:var(--text-3);font-weight:500;border-right:1px solid var(--border-strong);width:16px;}
+  @media print{
+    header,.topnav,.no-print{display:none!important;}
+    body{background:#fff;} main{padding:0;max-width:none;}
+    .sheet{border:none;padding:0;}
+    .year-grid{gap:8px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="crumbs" id="crumbs"></div>
+  <div class="topnav">
+    <button id="nav-analisis" onclick="openAnalisis()">Análisis</button>
+    <button id="nav-cal" onclick="goHome()">Calendarios</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ANALISIS -->
+  <section class="view" id="view-analisis">
+    <h1 class="page">Análisis de fichajes</h1>
+    <p class="sub">Comparativa entre la jornada planificada y la jornada realmente fichada.</p>
+
+    <div class="toolbar">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <select id="an-dept" onchange="renderAnalisis()"><option value="all">Todos los departamentos</option></select>
+        <select id="an-tipo" onchange="renderAnalisis()">
+          <option value="all">Todas las incidencias</option>
+          <option value="Retraso entrada">Retraso en entrada</option>
+          <option value="Salida anticipada">Salida anticipada</option>
+          <option value="Exceso comedor">Exceso de comedor/pausa</option>
+          <option value="Exceso jornada">Exceso de jornada</option>
+          <option value="Sin fichaje">Sin fichaje</option>
+        </select>
+        <select><option>Semana 34 · 17–23 ago</option><option>Mes en curso</option><option>Año 2027</option></select>
+      </div>
+      <button class="btn">Exportar informe</button>
+    </div>
+
+    <div class="kpis4" id="an-kpis"></div>
+
+    <div class="panel">
+      <div class="panel-title"><h2>Incidencias detectadas</h2><span style="font-size:11.5px;color:var(--text-3);" id="an-count"></span></div>
+      <table class="alert-table">
+        <thead>
+          <tr>
+            <th>Empleado</th><th>Fecha</th><th>Previsto</th><th>Fichado</th>
+            <th>Comedor</th><th>Desviación</th><th>Incidencia</th>
+          </tr>
+        </thead>
+        <tbody id="an-body"></tbody>
+      </table>
+      <div class="note">
+        <strong>Nota para el desarrollo.</strong> El control de pausas y tiempos de comedor es un tratamiento de datos sensible.
+        En España debe cumplir el principio de proporcionalidad (art. 20.3 ET y LOPDGDD), informarse previamente a la plantilla
+        y a la representación legal de los trabajadores, y no puede usarse para vigilancia continuada. Conviene validar el
+        alcance con la asesoría laboral antes de activar estas alertas.
+      </div>
+    </div>
+  </section>
+
+  <!-- HOME -->
+  <section class="view active" id="view-home">
+    <h1 class="page">Calendario 2027</h1>
+    <p class="sub">Selecciona un departamento para ver su calendario de turnos.</p>
+    <div class="dept-grid" id="dept-grid"></div>
+  </section>
+
+  <!-- DEPARTAMENTO -->
+  <section class="view" id="view-dept">
+    <div class="toolbar">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <div class="seg">
+          <button id="mode-week" class="active" onclick="setMode('week')">Semanal</button>
+          <button id="mode-year" onclick="setMode('year')">Anual</button>
+        </div>
+        <select id="period-select"></select>
+        <select id="subgroup-filter" onchange="renderDept()"></select>
+        <input id="search-emp" type="text" placeholder="Buscar empleado..." oninput="renderDept()" style="width:170px;">
+      </div>
+      <button class="btn">+ Añadir empleado</button>
+    </div>
+
+    <div class="panel">
+      <div id="dept-table-wrap"></div>
+      <div class="hours-summary" id="hours-summary"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </section>
+
+  <!-- FICHA EMPLEADO -->
+  <section class="view" id="view-emp">
+    <div class="emp-header no-print">
+      <div class="emp-id">
+        <div class="avatar" id="emp-initials">MG</div>
+        <div>
+          <p style="font-weight:600;font-size:15px;margin:0;" id="emp-name">Mikel Gonzalez</p>
+          <p style="font-size:12px;color:var(--text-2);margin:0;" id="emp-meta">Muelle · Año 2027</p>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" onclick="window.print()">Imprimir hoja anual</button>
+        <button class="btn">✎ Editar día</button>
+      </div>
+    </div>
+
+    <div class="kpis4 no-print" id="emp-kpis"></div>
+
+    <div class="panel no-print">
+      <h2>Horas 2027</h2>
+      <table class="horas-tab">
+        <tr><th>Hr. Pendiente 2026</th><th>Hr. realizadas 2027</th><th>Hr. Pendiente 2027</th><th>Días Pend. 2027</th></tr>
+        <tr><td class="blue">0</td><td class="blue" id="hr-real">382</td><td class="yellow">9,5 Horas</td><td class="yellow">1,3 Días</td></tr>
+        <tr>
+          <td class="green">18<div class="subl">Días vacaciones disfrutados</div></td>
+          <td class="red">5<div class="subl">Festivos trabajados</div></td>
+          <td class="blue" id="hr-jorn">84<div class="subl">Jornadas trabajadas</div></td>
+          <td class="yellow">0<div class="subl">Horas extra pendientes</div></td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- HOJA ANUAL IMPRIMIBLE -->
+    <div class="sheet" id="emp-sheet">
+      <div class="sheet-head">
+        <div>
+          <div class="fecha" id="sheet-date"></div>
+          <h2 id="sheet-name">Mikel Gonzalez</h2>
+        </div>
+        <div>
+          <div class="firma-label">RECIBÍ FIRMA Y FECHA:</div>
+          <div class="firma-box"></div>
+        </div>
+      </div>
+      <div class="year-grid" id="year-grid"></div>
+      <div class="legend" id="sheet-legend"></div>
+    </div>
+
+    <div class="panel no-print" style="margin-top:18px;">
+      <h2>Resumen de turnos del año</h2>
+      <table class="summary-table" id="emp-summary"></table>
+
+      <div class="panel-title" style="margin-top:16px;"><h2>Ajustes manuales de horas</h2><button class="btn">+ Añadir</button></div>
+      <table class="adjust-table">
+        <tr><th>Fecha</th><th>Horas</th><th>Observación</th></tr>
+        <tr><td>10 ene</td><td class="neg">-2</td><td>Salió antes</td></tr>
+        <tr><td>22 ene</td><td class="pos">+1</td><td>Se quedó una hora más</td></tr>
+        <tr><td>7 feb</td><td class="neg">-1,5</td><td>Se va a dar antes</td></tr>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script>
+/* ================= DATOS ================= */
+const CODES = {
+  M:{f:'mañana'}, M1:{f:'mañana'}, M2:{f:'mañana'}, M3:{f:'mañana'}, M5:{f:'mañana'},
+  M8:{f:'mañana'}, M11:{f:'mañana'}, M13:{f:'mañana'},
+  T:{f:'tarde'}, T5:{f:'tarde'}, T6:{f:'tarde'},
+  N:{f:'noche'}, N6:{f:'noche'}, N12:{f:'noche'},
+  L:{f:'libranza'}, D:{f:'domingo'}, V:{f:'vacaciones'}, B:{f:'baja'},
+  F:{f:'festivo'}, P:{f:'permiso'}
+};
+
+const departments = {
+  trafico:{ name:"Tráfico", subgroups:["Administración","Nacional","Exportación","Agrupaciones"], groups:[
+    { name:"Equipo tráfico", employees:[
+      {name:"Iban Etxeberria", sub:"Nacional", hours:40, base:"M", days:[["mañana","07-15"],["mañana","07-15"],["mañana","07-15"],["mañana","07-15"],["mañana","07-15"],["libranza","L"],["domingo","D"]]},
+      {name:"Jon Ander Bilbao", sub:"Nacional", hours:40, base:"T", days:[["tarde","15-23"],["tarde","15-23"],["tarde","15-23"],["tarde","15-23"],["tarde","15-23"],["libranza","L"],["domingo","D"]]},
+      {name:"Sara Molina", sub:"Exportación", hours:35, base:"N", days:[["noche","23-07"],["noche","23-07"],["noche","23-07"],["noche","23-07"],["noche","23-07"],["libranza","L"],["domingo","D"]]},
+      {name:"Iñigo Larrea", sub:"Exportación", hours:20, base:"M", days:[["libranza","L"],["libranza","L"],["mañana","07-15"],["mañana","07-15"],["mañana","07-15"],["libranza","L"],["domingo","D"]]},
+      {name:"Nerea Aristi", sub:"Administración", hours:37.5, base:"M", days:[["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["mañana","08-15"],["libranza","L"],["domingo","D"]]},
+      {name:"Gorka Elizalde", sub:"Administración", hours:37.5, base:"M", days:[["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["mañana","08-15"],["libranza","L"],["domingo","D"]]},
+      {name:"Lucia Ramos", sub:"Agrupaciones", hours:40, base:"T", days:[["tarde","14-22"],["tarde","14-22"],["tarde","14-22"],["tarde","14-22"],["tarde","14-22"],["libranza","L"],["domingo","D"]]},
+      {name:"Asier Beltran", sub:"Agrupaciones", hours:30, base:"M", days:[["mañana","06-14"],["mañana","06-14"],["mañana","06-14"],["libranza","L"],["mañana","06-14"],["libranza","L"],["domingo","D"]]}
+    ]}
+  ]},
+  sac:{ name:"SAC", groups:[
+    { name:"Atención al cliente", employees:[
+      {name:"Laura Fernandez", hours:40, base:"M", days:[["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["libranza","L"],["domingo","D"]]},
+      {name:"Marta Ibañez", hours:40, base:"T", days:[["tarde","14-22"],["tarde","14-22"],["tarde","14-22"],["tarde","14-22"],["tarde","14-22"],["libranza","L"],["domingo","D"]]},
+      {name:"Diego Torres", hours:20, base:"M", days:[["mañana","08-12"],["mañana","08-12"],["mañana","08-12"],["mañana","08-12"],["libranza","L"],["libranza","L"],["domingo","D"]]}
+    ]}
+  ]},
+  muelle:{ name:"Muelle", groups:[
+    { name:"Personal STEF", employees:[
+      {name:"Andry Salas", hours:37.5, base:"N", days:[["noche","23-06:30"],["noche","23-06:30"],["noche","23-06:30"],["noche","23-06:30"],["noche","23-06:30"],["libranza","L"],["domingo","D"]]},
+      {name:"Mikel Gonzalez", hours:37.5, base:"M", days:[["libranza","L"],["mañana","06:30-14"],["mañana","06:30-14"],["mañana","06:30-13"],["mañana","06:30-14"],["mañana","06:30-15"],["domingo","D"]]},
+      {name:"Antxon Juantegui", hours:30, base:"T", days:[["tarde","14-20"],["tarde","14-20"],["tarde","14-19"],["tarde","14-21"],["tarde","14-20"],["libranza","L"],["domingo","D"]]},
+      {name:"Mohamed Rida", hours:0, base:"M", days:[["vacaciones","V"],["vacaciones","V"],["vacaciones","V"],["vacaciones","V"],["vacaciones","V"],["vacaciones","V"],["domingo","D"]]}
+    ]},
+    { name:"ETT", employees:[
+      {name:"Walter", hours:24.5, base:"M", days:[["libranza","L"],["mañana","06:30-10:30"],["mañana","06:30-10:30"],["mañana","06:30-10:30"],["mañana","06:30-10:30"],["mañana","06:30-15"],["domingo","D"]]},
+      {name:"Andres Vazquez", hours:9, base:"T", days:[["libranza","L"],["tarde","20-23"],["tarde","20-23"],["tarde","20-23"],["noche","20-02"],["libranza","L"],["domingo","D"]]}
+    ]}
+  ]},
+  choferes:{ name:"Chóferes", groups:[
+    { name:"Chóferes", employees:[
+      {name:"Ramon Diaz", hours:45, base:"N", days:[["noche","22-06"],["noche","22-06"],["noche","22-06"],["noche","22-06"],["noche","22-06"],["libranza","L"],["domingo","D"]]},
+      {name:"Aitor Perez", hours:40, base:"M", days:[["mañana","05-13"],["mañana","05-13"],["mañana","05-13"],["mañana","05-13"],["mañana","05-13"],["libranza","L"],["domingo","D"]]},
+      {name:"Julen Aguirre", hours:38, base:"T", days:[["tarde","13-21"],["tarde","13-21"],["tarde","13-21"],["tarde","13-21"],["tarde","13-21"],["libranza","L"],["domingo","D"]]}
+    ]}
+  ]},
+  mandos:{ name:"Mandos + Funcionales", groups:[
+    { name:"Mandos y funcionales", employees:[
+      {name:"Beatriz Ruiz", hours:40, base:"M", days:[["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["mañana","08-16"],["libranza","L"],["libranza","L"]]},
+      {name:"Carlos Mendez", hours:40, base:"M", days:[["mañana","09-17"],["mañana","09-17"],["mañana","09-17"],["mañana","09-17"],["mañana","09-17"],["libranza","L"],["libranza","L"]]}
+    ]}
+  ]},
+  mantenimiento:{ name:"Mantenimiento", groups:[
+    { name:"Mantenimiento", employees:[
+      {name:"Eneko Zubiaga", hours:38, base:"M", days:[["mañana","07-15"],["mañana","07-15"],["mañana","07-15"],["mañana","07-15"],["mañana","07-15"],["libranza","L"],["domingo","D"]]},
+      {name:"Patricia Gomez", hours:38, base:"T", days:[["tarde","15-23"],["tarde","15-23"],["tarde","15-23"],["tarde","15-23"],["tarde","15-23"],["libranza","L"],["domingo","D"]]},
+      {name:"Xabier Mora", hours:20, base:"N", days:[["noche","23-07"],["noche","23-07"],["noche","23-07"],["libranza","L"],["libranza","L"],["libranza","L"],["domingo","D"]]}
+    ]}
+  ]}
+};
+const deptOrder=["trafico","sac","muelle","choferes","mandos","mantenimiento"];
+
+/* Fichajes de ejemplo para el módulo de Análisis */
+const fichajes=[
+  {emp:"Mikel Gonzalez",dept:"muelle",fecha:"18/08",prev:"06:30-14:00",real:"06:52-14:03",comedor:32,desv:-0.35,tipo:"Retraso entrada",det:"22 min tarde"},
+  {emp:"Walter",dept:"muelle",fecha:"18/08",prev:"06:30-10:30",real:"06:28-10:31",comedor:18,desv:0.05,tipo:null,det:"Correcto"},
+  {emp:"Antxon Juantegui",dept:"muelle",fecha:"18/08",prev:"14:00-20:00",real:"14:02-19:21",comedor:26,desv:-0.65,tipo:"Salida anticipada",det:"39 min antes"},
+  {emp:"Andry Salas",dept:"muelle",fecha:"19/08",prev:"23:00-06:30",real:"22:58-07:12",comedor:41,desv:0.7,tipo:"Exceso jornada",det:"42 min de más"},
+  {emp:"Sara Molina",dept:"trafico",fecha:"19/08",prev:"23:00-07:00",real:"23:04-07:02",comedor:68,desv:-0.03,tipo:"Exceso comedor",det:"68 min (límite 45)"},
+  {emp:"Jon Ander Bilbao",dept:"trafico",fecha:"19/08",prev:"15:00-23:00",real:"15:01-23:00",comedor:38,desv:0,tipo:null,det:"Correcto"},
+  {emp:"Nerea Aristi",dept:"trafico",fecha:"20/08",prev:"08:00-16:00",real:"08:19-16:04",comedor:52,desv:-0.25,tipo:"Retraso entrada",det:"19 min tarde"},
+  {emp:"Lucia Ramos",dept:"trafico",fecha:"20/08",prev:"14:00-22:00",real:"—",comedor:0,desv:-8,tipo:"Sin fichaje",det:"No consta fichaje"},
+  {emp:"Laura Fernandez",dept:"sac",fecha:"20/08",prev:"08:00-16:00",real:"07:58-16:02",comedor:35,desv:0.07,tipo:null,det:"Correcto"},
+  {emp:"Ramon Diaz",dept:"choferes",fecha:"21/08",prev:"22:00-06:00",real:"22:00-06:44",comedor:29,desv:0.73,tipo:"Exceso jornada",det:"44 min de más"},
+  {emp:"Aitor Perez",dept:"choferes",fecha:"21/08",prev:"05:00-13:00",real:"05:31-13:00",comedor:47,desv:-0.52,tipo:"Retraso entrada",det:"31 min tarde"},
+  {emp:"Patricia Gomez",dept:"mantenimiento",fecha:"21/08",prev:"15:00-23:00",real:"15:00-22:38",comedor:61,desv:-0.37,tipo:"Exceso comedor",det:"61 min (límite 45)"},
+  {emp:"Eneko Zubiaga",dept:"mantenimiento",fecha:"22/08",prev:"07:00-15:00",real:"06:59-15:01",comedor:30,desv:0.03,tipo:null,det:"Correcto"},
+  {emp:"Beatriz Ruiz",dept:"mandos",fecha:"22/08",prev:"08:00-16:00",real:"08:04-15:32",comedor:44,desv:-0.4,tipo:"Salida anticipada",det:"28 min antes"}
+];
+
+/* ================= ESTADO ================= */
+let currentDept=null, mode='week', currentEmp=null;
+
+/* ================= UTIL ================= */
+const fmt=n=>n.toLocaleString('es-ES',{minimumFractionDigits:n%1===0?0:1,maximumFractionDigits:2});
+const allEmployees=d=>d.groups.flatMap(g=>g.employees.map(e=>({...e,group:g.name})));
+
+function crumbs(view,extra,extra2){
+  const c=document.getElementById('crumbs');
+  let h=`<a onclick="goHome()">Calendario 2027</a>`;
+  if(view==='analisis') h=`<span class="current">Análisis de fichajes</span>`;
+  if(view==='dept') h+=`<span>›</span><span class="current">${extra}</span>`;
+  if(view==='emp') h+=`<span>›</span><a onclick="openDepartment(currentDept)">${extra}</a><span>›</span><span class="current">${extra2}</span>`;
+  c.innerHTML=h;
+}
+function switchView(v){
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  document.getElementById('nav-analisis').classList.toggle('active',v==='analisis');
+  document.getElementById('nav-cal').classList.toggle('active',v!=='analisis');
+  window.scrollTo(0,0);
+}
+function legendHTML(){
+  const items=[['mañana','Mañana'],['tarde','Tarde'],['noche','Noche'],['libranza','Libranza (L)'],
+    ['domingo','Domingo (D)'],['vacaciones','Vacaciones (V)'],['baja','Baja (B)'],['festivo','Festivo (F)'],['permiso','Permiso (P)']];
+  return '<span>Leyenda:</span>'+items.map(([k,l])=>
+    `<span><i class="swatch" style="background:var(--${k}-bg,var(--libranza-bg));"></i>${l}</span>`).join('');
+}
+
+/* ================= HOME ================= */
+function renderHome(){
+  document.getElementById('dept-grid').innerHTML=deptOrder.map(id=>{
+    const d=departments[id], n=allEmployees(d).length;
+    const ini=d.name.split(/[\s+]+/).filter(Boolean).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    const extra=d.subgroups?` · ${d.subgroups.length} secciones`:'';
+    return `<div class="dept-card" onclick="openDepartment('${id}')">
+      <div class="dept-icon">${ini}</div><h3>${d.name}</h3>
+      <p>${n} empleados${extra}</p></div>`;
+  }).join('');
+}
+function goHome(){currentDept=null;crumbs('home');switchView('home');}
+
+/* ================= DEPARTAMENTO ================= */
+function openDepartment(id){
+  currentDept=id;mode='week';
+  const d=departments[id];
+  document.getElementById('mode-week').classList.add('active');
+  document.getElementById('mode-year').classList.remove('active');
+  const sg=document.getElementById('subgroup-filter');
+  if(d.subgroups){
+    sg.style.display='';
+    sg.innerHTML='<option value="all">Todas las secciones</option>'+d.subgroups.map(s=>`<option>${s}</option>`).join('');
+  } else { sg.style.display='none'; sg.innerHTML='<option value="all">Todas</option>'; }
+  document.getElementById('search-emp').value='';
+  crumbs('dept',d.name);
+  renderDept();
+  switchView('dept');
+}
+function setMode(m){
+  mode=m;
+  document.getElementById('mode-week').classList.toggle('active',m==='week');
+  document.getElementById('mode-year').classList.toggle('active',m==='year');
+  renderDept();
+}
+function filtered(){
+  const d=departments[currentDept];
+  const sg=document.getElementById('subgroup-filter').value;
+  const q=document.getElementById('search-emp').value.toLowerCase().trim();
+  return allEmployees(d).filter(e=>
+    (sg==='all'||e.sub===sg) && (!q||e.name.toLowerCase().includes(q)));
+}
+function renderDept(){
+  const ps=document.getElementById('period-select');
+  ps.innerHTML = mode==='week'
+    ? '<option>Semana 34 · 17–23 ago 2027</option><option>Semana 35 · 24–30 ago 2027</option>'
+    : '<option>Año 2027</option><option>Año 2026</option>';
+  mode==='week'?renderWeek():renderYear();
+  document.getElementById('legend').innerHTML=legendHTML();
+}
+function renderWeek(){
+  const list=filtered(), d=departments[currentDept];
+  let rows='';
+  d.groups.forEach(g=>{
+    const emps=list.filter(e=>e.group===g.name);
+    if(!emps.length)return;
+    rows+=`<tr class="group"><td colspan="9">${g.name}</td></tr>`;
+    emps.forEach(e=>{
+      const cells=e.days.map(([t,l])=>`<td><span class="cell c-${t}">${l}</span></td>`).join('');
+      const sub=e.sub?` <span style="color:var(--text-3);font-weight:400;font-size:11px;">· ${e.sub}</span>`:'';
+      rows+=`<tr><td class="name" onclick="openEmployee('${e.name}')">${e.name}${sub}</td>
+        <td class="num">${fmt(e.hours)}</td>${cells}</tr>`;
+    });
+  });
+  if(!rows)rows='<tr><td colspan="9" style="padding:24px;color:var(--text-3);">Sin resultados con ese filtro.</td></tr>';
+
+  let foot='';
+  ['noche','mañana','tarde'].forEach(f=>{
+    const c=Array(7).fill(0);
+    list.forEach(e=>e.days.forEach(([t],i)=>{if(t===f)c[i]++;}));
+    foot+=`<tr class="totals"><td class="name" colspan="2">Total ${f}</td>${c.map(n=>`<td>${n}</td>`).join('')}</tr>`;
+  });
+
+  document.getElementById('dept-table-wrap').innerHTML=`<table>
+    <thead><tr><th>Empleado</th><th>Tot.H</th><th>Lu 17</th><th>Ma 18</th><th>Mi 19</th><th>Ju 20</th><th>Vi 21</th><th>Sá 22</th><th>Do 23</th></tr></thead>
+    <tbody>${rows}</tbody><tfoot>${foot}</tfoot></table>`;
+
+  renderHoursCards(list);
+}
+function renderYear(){
+  const list=filtered();
+  const M=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  let rows='';
+  list.forEach(e=>{
+    const mh=M.map((_,i)=>Math.round(e.hours*4.33*(i===7?0.6:1)));
+    const tot=mh.reduce((a,b)=>a+b,0);
+    const sub=e.sub?` <span style="color:var(--text-3);font-weight:400;font-size:11px;">· ${e.sub}</span>`:'';
+    rows+=`<tr><td class="name" onclick="openEmployee('${e.name}')">${e.name}${sub}</td>
+      ${mh.map(h=>`<td class="num">${h}</td>`).join('')}
+      <td class="num" style="font-weight:700;color:var(--accent);">${fmt(tot)}</td></tr>`;
+  });
+  if(!rows)rows='<tr><td colspan="14" style="padding:24px;color:var(--text-3);">Sin resultados con ese filtro.</td></tr>';
+  document.getElementById('dept-table-wrap').innerHTML=`
+    <p style="font-size:12px;color:var(--text-3);margin:0 0 10px;">Horas trabajadas por mes durante 2027.</p>
+    <table><thead><tr><th>Empleado</th>${M.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+  renderHoursCards(list);
+}
+function renderHoursCards(list){
+  const d=departments[currentDept], s=document.getElementById('hours-summary');
+  const groups=d.subgroups&&document.getElementById('subgroup-filter').value==='all'
+    ? d.subgroups.map(sg=>({label:sg,sum:list.filter(e=>e.sub===sg).reduce((a,e)=>a+e.hours,0)}))
+    : d.groups.map(g=>({label:g.name,sum:list.filter(e=>e.group===g.name).reduce((a,e)=>a+e.hours,0)}));
+  const tot=list.reduce((a,e)=>a+e.hours,0);
+  const mult=mode==='year'?52:1, suf=mode==='year'?' h/año':' h';
+  s.style.gridTemplateColumns=`repeat(${groups.length+1},1fr)`;
+  s.innerHTML=groups.map(g=>`<div class="kpi"><p class="label">${g.label}</p><p class="value">${fmt(g.sum*mult)}${suf}</p></div>`).join('')
+    +`<div class="kpi total"><p class="label">Total ${mode==='year'?'anual':'semanal'}</p><p class="value">${fmt(tot*mult)}${suf}</p></div>`;
+}
+
+/* ================= FICHA EMPLEADO ================= */
+const MESES=['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+const FESTIVOS_2027=['1-1','1-6','3-26','5-1','8-15','10-12','11-1','12-6','12-8','12-25'];
+
+function codeFor(emp,d,m,dow){
+  if(FESTIVOS_2027.includes(`${m+1}-${d}`))return'F';
+  if(dow===6)return'D';
+  const seed=(emp.name.length*31+m*7+d)%100;
+  if(m===7&&d>=1&&d<=21)return'V';
+  if(seed<5)return'B'; if(seed<9)return'P'; if(seed<16)return'L';
+  if(dow===5)return seed<50?'L':'M2';
+  const base=emp.base||'M';
+  const variants={M:['M','M1','M2','M5','M13'],T:['T','T5','T6'],N:['N','N6','N12']}[base];
+  return variants[seed%variants.length];
+}
+function buildYear(emp){
+  let html='';
+  for(let m=0;m<12;m++){
+    const first=new Date(2027,m,1), days=new Date(2027,m+1,0).getDate();
+    let start=(first.getDay()+6)%7, rows='', cells='',wk=Math.ceil(((first-new Date(2027,0,1))/86400000+1)/7);
+    for(let i=0;i<start;i++)cells+='<td class="c-vacio"></td>';
+    for(let d=1;d<=days;d++){
+      const dow=(new Date(2027,m,d).getDay()+6)%7;
+      const code=codeFor(emp,d,m,dow);
+      cells+=`<td class="c-${CODES[code].f}" title="${d} ${MESES[m].toLowerCase()}">${code}</td>`;
+      if(dow===6||d===days){
+        while(cells.split('<td').length-1<7)cells+='<td class="c-vacio"></td>';
+        rows+=`<tr><td class="wk">${wk++}</td>${cells}</tr>`;cells='';
+      }
+    }
+    html+=`<div class="mth"><h4>${MESES[m]}</h4><table>
+      <tr><th></th><th>Lu</th><th>Ma</th><th>Mi</th><th>Ju</th><th>Vi</th><th>Sa</th><th>Do</th></tr>
+      ${rows}</table></div>`;
+  }
+  return html;
+}
+function openEmployee(name){
+  const d=departments[currentDept];
+  const emp=allEmployees(d).find(e=>e.name===name)||{name,base:'M',hours:37.5};
+  currentEmp=emp;
+  document.getElementById('emp-name').textContent=name;
+  document.getElementById('sheet-name').textContent=name;
+  document.getElementById('emp-meta').textContent=`${d.name}${emp.sub?' · '+emp.sub:''} · Año 2027`;
+  document.getElementById('emp-initials').textContent=name.split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('sheet-date').textContent=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit'});
+  document.getElementById('year-grid').innerHTML=buildYear(emp);
+  document.getElementById('sheet-legend').innerHTML=legendHTML();
+
+  const anual=Math.round(emp.hours*47);
+  document.getElementById('hr-real').innerHTML=fmt(anual);
+  document.getElementById('emp-kpis').innerHTML=`
+    <div class="kpi"><p class="label">Horas realizadas 2027</p><p class="value">${fmt(anual)}</p></div>
+    <div class="kpi"><p class="label">Horas contrato/semana</p><p class="value">${fmt(emp.hours)} h</p></div>
+    <div class="kpi good"><p class="label">Días vacaciones disfrutados</p><p class="value">18</p></div>
+    <div class="kpi warn"><p class="label">Incidencias del año</p><p class="value">7</p></div>`;
+  document.getElementById('emp-summary').innerHTML=`
+    <tr><th>Noche</th><td>N: 12</td><td>N6: 18</td><td>N12: 44</td><td>—</td></tr>
+    <tr><th>Mañana</th><td>M: 96</td><td>M1: 21</td><td>M2: 30</td><td>M13: 84</td></tr>
+    <tr><th>Tarde</th><td>T: 8</td><td>T5: 3</td><td>T6: 2</td><td>—</td></tr>
+    <tr><th>Ausencias</th><td>V: 21</td><td>B: 4</td><td>P: 3</td><td>L: 96</td></tr>`;
+  crumbs('emp',d.name,name);
+  switchView('emp');
+}
+
+/* ================= ANALISIS ================= */
+function openAnalisis(){
+  const s=document.getElementById('an-dept');
+  if(s.options.length===1)
+    deptOrder.forEach(id=>s.innerHTML+=`<option value="${id}">${departments[id].name}</option>`);
+  crumbs('analisis');renderAnalisis();switchView('analisis');
+}
+function renderAnalisis(){
+  const dp=document.getElementById('an-dept').value, tp=document.getElementById('an-tipo').value;
+  const rows=fichajes.filter(f=>(dp==='all'||f.dept===dp)&&(tp==='all'||f.tipo===tp));
+  const inc=rows.filter(f=>f.tipo);
+  const cnt=t=>rows.filter(f=>f.tipo===t).length;
+
+  document.getElementById('an-kpis').innerHTML=`
+    <div class="kpi bad"><p class="label">Incidencias totales</p><p class="value">${inc.length}</p></div>
+    <div class="kpi warn"><p class="label">Retrasos en entrada</p><p class="value">${cnt('Retraso entrada')}</p></div>
+    <div class="kpi warn"><p class="label">Exceso de comedor</p><p class="value">${cnt('Exceso comedor')}</p></div>
+    <div class="kpi good"><p class="label">Jornadas correctas</p><p class="value">${rows.length-inc.length}</p></div>`;
+  document.getElementById('an-count').textContent=`${rows.length} registros analizados`;
+
+  document.getElementById('an-body').innerHTML=rows.map(f=>{
+    const tag=f.tipo?`<span class="tag ${f.tipo==='Sin fichaje'?'t-alerta':'t-warn'}">${f.tipo}</span> <span style="color:var(--text-3);font-size:11px;">${f.det}</span>`
+      :`<span class="tag t-ok">Correcto</span>`;
+    const dc=f.desv<0?'desv-neg':f.desv>0?'desv-pos':'';
+    const com=f.comedor>45?`<span style="color:var(--alerta);font-weight:600;">${f.comedor} min</span>`:`${f.comedor} min`;
+    return `<tr><td style="font-weight:500;">${f.emp}<br><span style="font-size:11px;color:var(--text-3);">${departments[f.dept].name}</span></td>
+      <td>${f.fecha}</td><td style="font-family:monospace;font-size:11.5px;">${f.prev}</td>
+      <td style="font-family:monospace;font-size:11.5px;">${f.real}</td><td>${com}</td>
+      <td class="${dc}">${f.desv>0?'+':''}${fmt(f.desv)} h</td><td>${tag}</td></tr>`;
+  }).join('')||'<tr><td colspan="7" style="padding:24px;color:var(--text-3);">Sin incidencias con ese filtro.</td></tr>';
+}
+
+renderHome();crumbs('home');
+</script>
+</body>
+</html>
