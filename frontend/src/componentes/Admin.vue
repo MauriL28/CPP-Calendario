@@ -33,9 +33,26 @@ function departamentosDe(codigo) {
   return departamentos.value.filter((item) => item.delegacion === codigo);
 }
 
-function personas(departamento) {
-  const total = departamento.mandos.length + departamento.trabajadores.length;
-  return total === 1 ? "1 persona" : `${total} personas`;
+function ciudad(codigo) {
+  const visible = delegacionVisible(codigo);
+  const prefijo = `${codigo} `;
+  return visible.startsWith(prefijo) ? visible.slice(prefijo.length) : "";
+}
+
+function iniciales(nombre) {
+  const palabras = nombre.split(/\s+/).filter((parte) => /\p{L}/u.test(parte));
+  return palabras
+    .slice(0, 2)
+    .map((parte) => parte[0].toLocaleUpperCase("es"))
+    .join("");
+}
+
+function cifra(total, uno, varios) {
+  return total === 1 ? `1 ${uno}` : `${total} ${varios}`;
+}
+
+function recuento(departamento) {
+  return `${cifra(departamento.mandos.length, "mando", "mandos")} · ${cifra(departamento.trabajadores.length, "trabajador", "trabajadores")}`;
 }
 
 function abrir(departamento) {
@@ -85,8 +102,18 @@ onMounted(cargar);
 <template>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <div v-if="!actual" class="bloques">
+    <header class="lista-intro">
+      <h1>Departamentos</h1>
+      <p>Selecciona un departamento para gestionar su equipo.</p>
+    </header>
     <section v-for="codigo in delegaciones" :key="codigo" class="delegacion">
-      <h2>{{ delegacionVisible(codigo) }}</h2>
+      <div class="delegacion-cabecera">
+        <template v-if="ciudad(codigo)">
+          <span class="delegacion-codigo">{{ codigo }}</span>
+          <span class="delegacion-nombre">{{ ciudad(codigo) }}</span>
+        </template>
+        <span v-else class="delegacion-nombre">{{ delegacionVisible(codigo) }}</span>
+      </div>
       <div class="rejilla-deptos">
         <button
           v-for="departamento in departamentosDe(codigo)"
@@ -95,54 +122,92 @@ onMounted(cargar);
           class="tarjeta"
           @click="abrir(departamento)"
         >
-          <strong>{{ departamento.nombre }}</strong>
-          <span>{{ personas(departamento) }}</span>
+          <span class="tarjeta-iniciales">{{ iniciales(departamento.nombre) }}</span>
+          <span class="tarjeta-nombre">{{ departamento.nombre }}</span>
+          <span class="tarjeta-recuento">{{ recuento(departamento) }}</span>
         </button>
       </div>
     </section>
   </div>
   <section v-else class="detalle">
-    <button type="button" class="volver" @click="volver">Volver a las delegaciones</button>
-    <h2>{{ delegacionVisible(actual.delegacion) }} · {{ actual.nombre }}</h2>
-    <div class="zona-mandos">
+    <nav class="migas">
+      <button type="button" class="migas-enlace" @click="volver">Departamentos</button>
+      <span>›</span>
+      <span class="migas-medio">{{ delegacionVisible(actual.delegacion) }}</span>
+      <span>›</span>
+      <span class="migas-actual">{{ actual.nombre }}</span>
+    </nav>
+    <header class="detalle-cabecera">
+      <span class="detalle-iniciales">{{ iniciales(actual.nombre) }}</span>
       <div>
-        <h3>Mandos</h3>
-        <ul class="personas">
-          <li v-if="!actual.mandos.length" class="vacio">Sin mandos</li>
-          <li v-for="mando in actual.mandos" :key="mando.login">
-            <strong>{{ mando.nombre }}</strong>
-            <span>{{ mando.login }}</span>
-          </li>
-        </ul>
+        <h1>{{ actual.nombre }}</h1>
+        <p class="detalle-chip">{{ delegacionVisible(actual.delegacion) }}</p>
       </div>
-      <form class="formulario junto" @submit.prevent="guardar">
-        <h2>Alta de mando</h2>
-        <p class="dato-fijo">Delegación <strong>{{ delegacionVisible(actual.delegacion) }}</strong></p>
-        <p class="dato-fijo">Departamento <strong>{{ actual.nombre }}</strong></p>
-        <label>
-          Nombre
-          <input v-model="nombre" name="nombre" autocomplete="off" />
-        </label>
-        <label>
-          Login
-          <input v-model="login" name="login" autocomplete="off" />
-        </label>
-        <label>
-          Clave
-          <input v-model="clave" name="clave-mando" type="password" autocomplete="new-password" />
-        </label>
-        <button type="submit">Guardar mando</button>
-        <p v-if="errorMando" class="error" role="alert">{{ errorMando }}</p>
+    </header>
+    <div class="detalle-rejilla">
+      <div class="detalle-listas">
+        <section class="panel">
+          <header class="panel-cabecera">
+            <h2>Mandos</h2>
+            <span class="panel-cuenta">{{ actual.mandos.length }}</span>
+          </header>
+          <p v-if="!actual.mandos.length" class="panel-vacio">Este departamento aún no tiene mandos.</p>
+          <ul v-else class="panel-filas">
+            <li v-for="mando in actual.mandos" :key="mando.login">
+              <span class="avatar">{{ iniciales(mando.nombre) }}</span>
+              <span class="persona-datos">
+                <strong>{{ mando.nombre }}</strong>
+                <span>{{ mando.login }}</span>
+              </span>
+            </li>
+          </ul>
+        </section>
+        <section class="panel">
+          <header class="panel-cabecera">
+            <h2>Trabajadores</h2>
+            <span class="panel-cuenta">{{ actual.trabajadores.length }}</span>
+          </header>
+          <p v-if="!actual.trabajadores.length" class="panel-vacio">
+            Aún no hay trabajadores. Los crea el mando del departamento.
+          </p>
+          <ul v-else class="panel-filas">
+            <li v-for="trabajador in actual.trabajadores" :key="trabajador.login">
+              <span class="avatar">{{ iniciales(trabajador.nombre) }}</span>
+              <span class="persona-datos">
+                <strong>{{ trabajador.nombre }}</strong>
+                <span>{{ trabajador.login }}</span>
+              </span>
+              <span class="grupo-pastilla" :class="trabajador.grupo === 'ETT' ? 'grupo-ett' : 'grupo-stef'">
+                {{ trabajador.grupo }}
+              </span>
+            </li>
+          </ul>
+        </section>
+      </div>
+      <form class="panel alta-mando" @submit.prevent="guardar">
+        <header class="panel-cabecera">
+          <h2>Alta de mando</h2>
+        </header>
+        <div class="alta-cuerpo">
+          <p class="alta-aviso">
+            Se creará en {{ delegacionVisible(actual.delegacion) }} · {{ actual.nombre }}
+          </p>
+          <label>
+            Nombre
+            <input v-model="nombre" name="nombre" autocomplete="off" />
+          </label>
+          <label>
+            Login
+            <input v-model="login" name="login" autocomplete="off" />
+          </label>
+          <label>
+            Clave
+            <input v-model="clave" name="clave-mando" type="password" autocomplete="new-password" />
+          </label>
+          <p v-if="errorMando" class="error" role="alert">{{ errorMando }}</p>
+          <button class="primario" type="submit">Guardar mando</button>
+        </div>
       </form>
     </div>
-    <h3>Trabajadores</h3>
-    <ul class="personas">
-      <li v-if="!actual.trabajadores.length" class="vacio">Sin trabajadores</li>
-      <li v-for="trabajador in actual.trabajadores" :key="trabajador.login">
-        <strong>{{ trabajador.nombre }}</strong>
-        <span>{{ trabajador.login }}</span>
-        <span>{{ trabajador.grupo }}</span>
-      </li>
-    </ul>
   </section>
 </template>

@@ -8,6 +8,12 @@ from horas import hora_texto
 bp = Blueprint("usuarios", __name__)
 
 
+def _decimal(valor):
+    if valor is None:
+        return None
+    return float(valor)
+
+
 def listar_del_departamento(cur, filtro, params):
     cur.execute(
         f"""
@@ -27,7 +33,8 @@ def listar_del_departamento(cur, filtro, params):
     cur.execute(
         f"""
         SELECT g.codigo AS delegacion, d.codigo AS departamento,
-               u.nombre, u.login, u.grupo
+               u.nombre, u.login, u.grupo,
+               u.horario_inicio, u.horario_fin, u.horas_contrato, u.vacaciones
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
         JOIN delegacion g ON g.id = d.delegacion_id
@@ -73,6 +80,10 @@ def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos):
             "nombre": trabajador["nombre"],
             "login": trabajador["login"],
             "grupo": trabajador["grupo"],
+            "horario_inicio": hora_texto(trabajador["horario_inicio"]),
+            "horario_fin": hora_texto(trabajador["horario_fin"]),
+            "horas_contrato": _decimal(trabajador["horas_contrato"]),
+            "vacaciones": _decimal(trabajador["vacaciones"]),
             "turnos": [],
         }
         por_login[trabajador["login"]] = persona
