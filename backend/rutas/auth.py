@@ -19,7 +19,7 @@ def login():
         with cursor() as cur:
             cur.execute(
                 """
-                SELECT u.id, u.rol, g.codigo AS delegacion
+                SELECT u.id, u.nombre, u.rol, d.nombre AS departamento, g.codigo AS delegacion
                 FROM usuario u
                 LEFT JOIN departamento d ON d.id = u.departamento_id
                 LEFT JOIN delegacion g ON g.id = d.delegacion_id
@@ -47,9 +47,11 @@ def login():
                 return jsonify(error="Credenciales incorrectas"), 401
             rol = fila["rol"]
             usuario_id = fila["id"]
+            nombre = fila["nombre"]
+            departamento = fila["departamento"]
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
         return jsonify(error=str(exc)), 503
 
-    return jsonify(access_token=emitir_token(usuario_id, rol, delegaciones))
+    return jsonify(access_token=emitir_token(usuario_id, rol, delegaciones, nombre, departamento))

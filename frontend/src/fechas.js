@@ -19,6 +19,31 @@ export function sumarDias(iso, dias) {
   return isoFecha(fecha);
 }
 
+const DELEGACIONES = {
+  "60I": "San Sebastián",
+  "05I": "Irún",
+};
+
+const ROLES = {
+  admin: "Administrador",
+  mando: "Mando",
+  trabajador: "Trabajador",
+};
+
+export function delegacionVisible(codigo) {
+  const nombre = DELEGACIONES[codigo];
+  return nombre ? `${codigo} ${nombre}` : codigo;
+}
+
+export function rolVisible(rol) {
+  return ROLES[rol] || rol;
+}
+
+export function fechaVisible(iso) {
+  const [anio, mes, dia] = iso.split("-");
+  return `${dia}/${mes}/${anio}`;
+}
+
 export function textoCelda(turno) {
   if (!turno) {
     return "";

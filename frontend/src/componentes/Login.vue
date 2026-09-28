@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { entrar } from "../api/auth.js";
 
-const emit = defineEmits(["inicio", "entrada"]);
+const emit = defineEmits(["entrada"]);
 
 const usuario = ref("");
 const clave = ref("");
@@ -10,10 +10,8 @@ const error = ref("");
 
 async function enviar() {
   error.value = "";
-  emit("inicio");
   try {
-    const sesion = await entrar(usuario.value, clave.value);
-    emit("entrada", sesion);
+    emit("entrada", await entrar(usuario.value, clave.value));
   } catch (causa) {
     error.value = causa instanceof Error ? causa.message : "No se pudo entrar";
   }
@@ -21,16 +19,16 @@ async function enviar() {
 </script>
 
 <template>
-  <form class="formulario" @submit.prevent="enviar">
+  <form class="login-caja" @submit.prevent="enviar">
     <label>
       Usuario
-      <input v-model="usuario" name="usuario" autocomplete="username" />
+      <input v-model="usuario" name="usuario" autocomplete="username" required />
     </label>
     <label>
       Clave
-      <input v-model="clave" name="clave" type="password" autocomplete="current-password" />
+      <input v-model="clave" name="clave" type="password" autocomplete="current-password" required />
     </label>
     <button type="submit">Entrar</button>
+    <p v-if="error" class="error" role="alert">{{ error }}</p>
   </form>
-  <p v-if="error" class="error">{{ error }}</p>
 </template>

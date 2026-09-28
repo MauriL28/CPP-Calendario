@@ -8,8 +8,13 @@ def configurar_jwt(app):
     JWTManager(app)
 
 
-def emitir_token(usuario_id, rol, delegaciones):
+def emitir_token(usuario_id, rol, delegaciones, nombre, departamento):
     return create_access_token(
         identity=str(usuario_id),
-        additional_claims={"rol": rol, "delegaciones": delegaciones},
+        additional_claims={
+            "rol": rol,
+            "delegaciones": delegaciones,
+            "nombre": nombre,
+            "departamento": departamento,
+        },
     )

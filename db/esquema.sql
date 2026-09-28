@@ -54,6 +54,8 @@ CREATE TABLE usuario (
     vacaciones         NUMERIC(5, 2),
     horas_contrato     NUMERIC(8, 2),
     horas_convenio     NUMERIC(8, 2),
+    horario_inicio     TIME,
+    horario_fin        TIME,
     tarifas_ett        NUMERIC(10, 4),
     numero_sap         VARCHAR(40),
     activo             BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -61,7 +63,11 @@ CREATE TABLE usuario (
         (rol = 'admin' AND departamento_id IS NULL)
         OR (rol <> 'admin' AND departamento_id IS NOT NULL)
     ),
-    CONSTRAINT usuario_seccion_mismo_depto CHECK (seccion_id IS NULL OR departamento_id IS NOT NULL)
+    CONSTRAINT usuario_seccion_mismo_depto CHECK (seccion_id IS NULL OR departamento_id IS NOT NULL),
+    CONSTRAINT usuario_horario_completo CHECK (
+        (horario_inicio IS NULL AND horario_fin IS NULL)
+        OR (horario_inicio IS NOT NULL AND horario_fin IS NOT NULL)
+    )
 );
 
 -- Responsable: un departamento, como mucho un jefe. Ese usuario, como mucho un depto.

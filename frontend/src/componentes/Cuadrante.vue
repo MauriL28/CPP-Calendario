@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from "vue";
-import { lunesDe, sumarDias, textoCelda } from "../fechas.js";
-import { copiarSemana, guardarTurno, semana } from "../api/turnos.js";
+import { fechaVisible, lunesDe, sumarDias, textoCelda } from "../fechas.js";
+import { aplicarHorarios, copiarSemana, guardarTurno, semana } from "../api/turnos.js";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -10,6 +10,26 @@ const props = defineProps({
 });
 
 const diasNombre = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const ausencias = ["L", "D", "V", "B", "F", "P"];
+const familias = {
+  L: "libranza",
+  D: "domingo",
+  V: "vacaciones",
+  B: "baja",
+  F: "festivo",
+  P: "permiso",
+};
+const leyenda = [
+  { id: "manana", nombre: "Mañana" },
+  { id: "tarde", nombre: "Tarde" },
+  { id: "noche", nombre: "Noche" },
+  { id: "libranza", nombre: "Libranza" },
+  { id: "domingo", nombre: "Domingo" },
+  { id: "vacaciones", nombre: "Vacaciones" },
+  { id: "baja", nombre: "Baja" },
+  { id: "festivo", nombre: "Festivo" },
+  { id: "permiso", nombre: "Permiso" },
+];
 const semanaDesde = ref("");
 const cuadrante = ref(null);
 const errorSemana = ref("");
@@ -31,7 +51,36 @@ async function cargar(desde) {
   }
 }
 
+function esFin(indice) {
+  return indice >= 5;
+}
+
+function familia(turno) {
+  if (!turno) {
+    return "";
+  }
+  if (turno.ausencia) {
+    return familias[turno.ausencia] || "";
+  }
+  const [hora, minuto] = (turno.hora_inicio || "00:00").split(":").map(Number);
+  const inicio = hora * 60 + minuto;
+  if (inicio >= 22 * 60 || inicio < 6 * 60) {
+    return "noche";
+  }
+  if (inicio < 14 * 60) {
+    return "manana";
+  }
+  return "tarde";
+}
+
+function editando(trabajador, dia) {
+  return celda.value && celda.value.login === trabajador.login && celda.value.fecha === dia.fecha;
+}
+
 function abrirCelda(trabajador, dia) {
+  if (!props.editable) {
+    return;
+  }
   const turno = dia.turno;
   celda.value = {
     login: trabajador.login,
@@ -49,6 +98,21 @@ function abrirCelda(trabajador, dia) {
     turnoAusencia.value = "L";
     turnoInicio.value = turno?.hora_inicio || "";
     turnoFin.value = turno?.hora_fin || "";
+  }
+}
+
+function cerrarCelda() {
+  celda.value = null;
+  errorTurno.value = "";
+}
+
+async function aplicar() {
+  errorSemana.value = "";
+  try {
+    await aplicarHorarios(props.token, semanaDesde.value);
+    await cargar(semanaDesde.value);
+  } catch (causa) {
+    errorSemana.value = causa instanceof Error ? causa.message : "No se pudieron aplicar los horarios";
   }
 }
 
@@ -90,21 +154,23 @@ cargar(lunesDe(new Date()));
 </script>
 
 <template>
-  <section v-if="cuadrante" class="semana">
+  <section v-if="cuadrante" class="semana" :class="{ lectura: !editable }">
     <div class="semana-nav">
       <button type="button" @click="cargar(sumarDias(semanaDesde, -7))">Semana anterior</button>
-      <span>{{ cuadrante.desde }} – {{ cuadrante.dias[6] }}</span>
+      <span class="rango">{{ fechaVisible(cuadrante.desde) }} – {{ fechaVisible(cuadrante.dias[6]) }}</span>
       <button type="button" @click="cargar(sumarDias(semanaDesde, 7))">Semana siguiente</button>
+      <button v-if="editable" type="button" @click="aplicar">Aplicar horarios</button>
       <button v-if="editable" type="button" @click="copiar">Copiar semana anterior</button>
     </div>
-    <p v-if="errorSemana" class="error">{{ errorSemana }}</p>
+    <p v-if="!editable" class="aviso-lectura">Solo lectura</p>
+    <p v-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
     <table class="cuadrante">
       <thead>
         <tr>
           <th>Trabajador</th>
-          <th v-for="(dia, indice) in cuadrante.dias" :key="dia">
+          <th v-for="(dia, indice) in cuadrante.dias" :key="dia" :class="{ fin: esFin(indice) }">
             <span class="dia-nombre">{{ diasNombre[indice] }}</span>
-            <span class="dia-numero">{{ dia.slice(8) }}</span>
+            <span class="dia-numero">{{ fechaVisible(dia).slice(0, 5) }}</span>
           </th>
         </tr>
       </thead>
@@ -112,48 +178,62 @@ cargar(lunesDe(new Date()));
         <tr v-for="trabajador in cuadrante.trabajadores" :key="trabajador.login">
           <th>{{ trabajador.nombre }}</th>
           <td
-            v-for="dia in trabajador.dias"
+            v-for="(dia, indice) in trabajador.dias"
             :key="dia.fecha"
-            :class="{ ausencia: dia.turno?.ausencia, horario: dia.turno && !dia.turno.ausencia }"
+            :class="[
+              esFin(indice) ? 'fin' : '',
+              editando(trabajador, dia) ? 'editando' : familia(dia.turno) ? `turno-${familia(dia.turno)}` : '',
+            ]"
           >
-            <button v-if="editable" type="button" class="celda" @click="abrirCelda(trabajador, dia)">
+            <form v-if="editando(trabajador, dia)" class="editor-celda" @submit.prevent="guardar">
+              <label>
+                Tipo
+                <select v-model="turnoModo">
+                  <option value="horario">Horario</option>
+                  <option value="ausencia">Ausencia</option>
+                </select>
+              </label>
+              <template v-if="turnoModo === 'horario'">
+                <label>
+                  Inicio
+                  <input v-model="turnoInicio" type="time" required />
+                </label>
+                <label>
+                  Fin
+                  <input v-model="turnoFin" type="time" required />
+                </label>
+              </template>
+              <label v-else>
+                Ausencia
+                <select v-model="turnoAusencia">
+                  <option v-for="codigo in ausencias" :key="codigo" :value="codigo">{{ codigo }}</option>
+                </select>
+              </label>
+              <span class="editor-acciones">
+                <button type="submit">Guardar</button>
+                <button type="button" @click="cerrarCelda">Cancelar</button>
+              </span>
+              <p v-if="errorTurno" class="error" role="alert">{{ errorTurno }}</p>
+            </form>
+            <button
+              v-else-if="editable"
+              type="button"
+              class="celda"
+              @click="abrirCelda(trabajador, dia)"
+            >
               {{ textoCelda(dia.turno) }}
             </button>
-            <span v-else class="celda">{{ textoCelda(dia.turno) }}</span>
+            <span v-else class="celda lectura">{{ textoCelda(dia.turno) }}</span>
           </td>
         </tr>
       </tbody>
     </table>
-    <form v-if="editable && celda" class="formulario" @submit.prevent="guardar">
-      <p class="celda-titulo">{{ celda.nombre }} · {{ celda.fecha }}</p>
-      <label>
-        Tipo
-        <select v-model="turnoModo">
-          <option value="horario">Horario</option>
-          <option value="ausencia">Ausencia</option>
-        </select>
-      </label>
-      <template v-if="turnoModo === 'horario'">
-        <label>
-          Hora inicio
-          <input v-model="turnoInicio" type="time" required />
-        </label>
-        <label>
-          Hora fin
-          <input v-model="turnoFin" type="time" required />
-        </label>
-      </template>
-      <label v-else>
-        Ausencia
-        <select v-model="turnoAusencia">
-          <option v-for="codigo in ['L', 'D', 'V', 'B', 'F', 'P']" :key="codigo" :value="codigo">
-            {{ codigo }}
-          </option>
-        </select>
-      </label>
-      <button type="submit">Guardar turno</button>
-    </form>
-    <p v-if="errorTurno" class="error">{{ errorTurno }}</p>
+    <ul class="leyenda">
+      <li v-for="item in leyenda" :key="item.id">
+        <span class="muestra" :class="`turno-${item.id}`"></span>
+        {{ item.nombre }}
+      </li>
+    </ul>
   </section>
-  <p v-else-if="errorSemana" class="error">{{ errorSemana }}</p>
+  <p v-else-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
 </template>

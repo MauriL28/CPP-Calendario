@@ -24,9 +24,78 @@ main {
 }
 
 h1 {
-  margin: 0 0 1.5rem;
-  font-size: 2rem;
+  margin: 0;
+  font-size: 1.5rem;
   font-weight: 600;
+}
+
+.cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #d5d8de;
+}
+
+.sesion {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  text-align: right;
+}
+
+.sesion p {
+  margin: 0;
+}
+
+.quien {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.quien span,
+.donde {
+  color: #3d4450;
+  font-size: 0.875rem;
+}
+
+.login-caja {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 22rem;
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid #d5d8de;
+  border-radius: 0.5rem;
+}
+
+.login-caja h2 {
+  margin: 0;
+}
+
+.login-caja label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.login-caja input {
+  font: inherit;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid #c5cad3;
+  border-radius: 0.25rem;
+}
+
+.login-caja button,
+.cabecera button,
+.semana-nav button,
+.editor-acciones button {
+  font: inherit;
+  padding: 0.45rem 0.8rem;
 }
 
 h2 {
@@ -47,23 +116,109 @@ ul {
   list-style: none;
 }
 
+.bloques {
+  display: grid;
+  gap: 1rem;
+}
+
 .delegacion {
   background: #fff;
   border: 1px solid #d5d8de;
   border-radius: 0.5rem;
   padding: 1rem 1.25rem;
-  margin-top: 1rem;
+}
+
+.rejilla-deptos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem;
+}
+
+.tarjeta {
+  display: grid;
+  gap: 0.25rem;
+  text-align: left;
+  font: inherit;
+  padding: 0.9rem 1rem;
+  background: #f7f8fa;
+  border: 1px solid #d5d8de;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.tarjeta span {
+  color: #3d4450;
+  font-size: 0.875rem;
+}
+
+.detalle h3 {
+  margin: 1rem 0 0.35rem;
+}
+
+.volver,
+.vistas button {
+  font: inherit;
+  padding: 0.4rem 0.75rem;
+}
+
+.vistas {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.vistas button.activo {
+  background: #1a1a1a;
+  color: #fff;
+  border-color: #1a1a1a;
 }
 
 .departamentos > li + li {
   margin-top: 1.25rem;
 }
 
-.secciones,
-.mandos {
-  margin-top: 0.35rem;
-  padding-left: 1rem;
+.zona-mandos {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem);
+  gap: 1rem 1.5rem;
+  align-items: start;
+  margin-bottom: 1.5rem;
+}
+
+.personas {
+  margin-top: 0.5rem;
+  padding: 0;
+}
+
+.personas li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #e6e8ec;
+  color: #1a1a1a;
+}
+
+.personas li.vacio {
   color: #3d4450;
+  border-bottom: 0;
+}
+
+.dato-fijo {
+  flex: 1 0 100%;
+  margin: 0;
+  color: #3d4450;
+  font-size: 0.875rem;
+}
+
+.formulario.junto {
+  margin: 0;
+}
+
+@media (max-width: 40rem) {
+  .zona-mandos {
+    grid-template-columns: 1fr;
+  }
 }
 
 .formulario {
@@ -71,11 +226,17 @@ ul {
   flex-wrap: wrap;
   align-items: end;
   gap: 0.75rem 1rem;
-  margin-bottom: 1rem;
+  margin: 1.5rem 0 1rem;
   padding: 1rem;
   background: #fff;
   border: 1px solid #d5d8de;
   border-radius: 0.5rem;
+}
+
+.formulario h2,
+.formulario .error {
+  flex: 1 0 100%;
+  margin: 0;
 }
 
 .formulario label {
@@ -99,12 +260,6 @@ ul {
   padding: 0.45rem 0.8rem;
 }
 
-.celda-titulo {
-  flex: 1 0 100%;
-  margin: 0;
-  font-weight: 600;
-}
-
 .error {
   margin: 0 0 1rem;
   color: #9b1c1c;
@@ -118,9 +273,14 @@ ul {
   margin: 0.5rem 0 0.75rem;
 }
 
-.semana-nav button {
-  font: inherit;
-  padding: 0.4rem 0.7rem;
+.rango {
+  font-weight: 600;
+}
+
+.aviso-lectura {
+  margin: 0 0 0.75rem;
+  color: #3d4450;
+  font-size: 0.875rem;
 }
 
 table.cuadrante {
@@ -145,6 +305,10 @@ table.cuadrante thead th {
   font-weight: 600;
 }
 
+table.cuadrante thead th.fin {
+  background: #d3d8e4;
+}
+
 table.cuadrante th:first-child,
 table.cuadrante tbody th {
   text-align: left;
@@ -162,13 +326,72 @@ table.cuadrante tbody th {
   color: #3d4450;
 }
 
-table.cuadrante td.horario {
-  background: #f7f9fb;
+table.cuadrante td.turno-manana,
+.muestra.turno-manana {
+  background: #ffe08a;
 }
 
-table.cuadrante td.ausencia {
-  background: #f4efe4;
-  font-weight: 700;
+table.cuadrante td.turno-tarde,
+.muestra.turno-tarde {
+  background: #ffc078;
+}
+
+table.cuadrante td.turno-noche,
+.muestra.turno-noche {
+  background: #a5d8ff;
+}
+
+table.cuadrante td.turno-libranza,
+.muestra.turno-libranza {
+  background: #dee2e6;
+}
+
+table.cuadrante td.turno-domingo,
+.muestra.turno-domingo {
+  background: #adb5bd;
+}
+
+table.cuadrante td.turno-vacaciones,
+.muestra.turno-vacaciones {
+  background: #b2f2bb;
+}
+
+table.cuadrante td.turno-baja,
+.muestra.turno-baja {
+  background: #ffc9c9;
+}
+
+table.cuadrante td.turno-festivo,
+.muestra.turno-festivo {
+  background: #eebefa;
+}
+
+table.cuadrante td.turno-permiso,
+.muestra.turno-permiso {
+  background: #c3fae8;
+}
+
+.leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.leyenda li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+}
+
+.muestra {
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid #d5d8de;
+  border-radius: 0.15rem;
 }
 
 .celda {
@@ -185,4 +408,43 @@ span.celda {
   align-items: center;
   justify-content: center;
   cursor: default;
+}
+
+.lectura .celda {
+  color: #3d4450;
+  cursor: default;
+}
+
+td.editando {
+  background: #fff;
+  min-width: 9rem;
+}
+
+.editor-celda {
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+}
+
+.editor-celda label {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+}
+
+.editor-celda input,
+.editor-celda select {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.2rem 0.3rem;
+}
+
+.editor-acciones {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.editor-celda .error {
+  margin: 0;
+  font-size: 0.75rem;
 }

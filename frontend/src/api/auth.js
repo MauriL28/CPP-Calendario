@@ -9,6 +9,8 @@ export async function entrar(login, clave) {
   return {
     token: cuerpo.access_token,
     rol: carga.rol,
+    nombre: carga.nombre,
+    departamento: carga.departamento || "",
     delegaciones: carga.delegaciones,
   };
 }

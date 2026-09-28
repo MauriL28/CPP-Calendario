@@ -247,6 +247,96 @@ def copiar_semana():
     return jsonify(desde=desde.isoformat())
 
 
+@bp.post("/turnos/aplicar-horarios")
+@jwt_required()
+def aplicar_horarios():
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+    cuerpo = request.get_json(silent=True) or {}
+    desde, error = _lunes(cuerpo.get("desde", ""), True)
+    if error:
+        return error
+    domingo = desde + timedelta(days=6)
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT departamento_id
+                FROM usuario
+                WHERE id = %s AND rol = 'mando'
+                """,
+                (get_jwt_identity(),),
+            )
+            mando = cur.fetchone()
+            if mando is None or mando["departamento_id"] is None:
+                return jsonify(error="No autorizado"), 403
+            cur.execute("SELECT noche_inicio, noche_fin FROM empresa WHERE id = 1")
+            franja = cur.fetchone()
+            if franja is None:
+                noche_inicio = datetime.strptime("22:00", "%H:%M").time()
+                noche_fin = datetime.strptime("06:00", "%H:%M").time()
+            else:
+                noche_inicio = franja["noche_inicio"]
+                noche_fin = franja["noche_fin"]
+            cur.execute(
+                """
+                SELECT id, horario_inicio, horario_fin
+                FROM usuario
+                WHERE rol = 'trabajador' AND departamento_id = %s
+                """,
+                (mando["departamento_id"],),
+            )
+            trabajadores = cur.fetchall()
+            cur.execute(
+                """
+                SELECT t.usuario_id, t.fecha
+                FROM turno t
+                JOIN usuario u ON u.id = t.usuario_id
+                WHERE u.rol = 'trabajador'
+                  AND u.departamento_id = %s
+                  AND t.fecha >= %s
+                  AND t.fecha <= %s
+                """,
+                (mando["departamento_id"], desde, domingo),
+            )
+            ocupados = {(fila["usuario_id"], fila["fecha"]) for fila in cur.fetchall()}
+            for trabajador in trabajadores:
+                inicio = trabajador["horario_inicio"]
+                fin = trabajador["horario_fin"]
+                if inicio is None or fin is None:
+                    continue
+                planificadas, nocturnas = horas_de_turno(inicio, fin, noche_inicio, noche_fin)
+                for offset in range(5):
+                    fecha = desde + timedelta(days=offset)
+                    if (trabajador["id"], fecha) in ocupados:
+                        continue
+                    cur.execute(
+                        """
+                        INSERT INTO turno (
+                            usuario_id, fecha, ausencia, hora_inicio, hora_fin,
+                            horas_planificadas, horas_nocturnas
+                        )
+                        VALUES (%s, %s, NULL, %s, %s, %s, %s)
+                        ON CONFLICT (usuario_id, fecha) DO NOTHING
+                        """,
+                        (
+                            trabajador["id"],
+                            fecha,
+                            inicio,
+                            fin,
+                            planificadas,
+                            nocturnas,
+                        ),
+                    )
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(desde=desde.isoformat())
+
+
 @bp.put("/turnos")
 @jwt_required()
 def guardar_turno():

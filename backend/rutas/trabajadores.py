@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from horas import hora_texto, parse_hora
 
 bp = Blueprint("trabajadores", __name__)
 
@@ -18,10 +19,20 @@ def crear_trabajador():
     login_nombre = cuerpo.get("login")
     clave = cuerpo.get("clave")
     grupo = cuerpo.get("grupo")
+    hora_inicio = parse_hora(cuerpo.get("hora_inicio"))
+    hora_fin = parse_hora(cuerpo.get("hora_fin"))
+    vacaciones = _numero(cuerpo.get("vacaciones"))
+    horas_contrato = _numero(cuerpo.get("horas_contrato"))
     if not all(isinstance(valor, str) and valor.strip() for valor in (nombre, login_nombre, clave)):
         return jsonify(error="Faltan datos"), 400
     if grupo not in ("STEF", "ETT"):
         return jsonify(error="El grupo tiene que ser STEF o ETT"), 400
+    if hora_inicio == "mal" or hora_fin == "mal":
+        return jsonify(error="La hora no es válida"), 400
+    if hora_inicio is None or hora_fin is None or vacaciones is None or horas_contrato is None:
+        return jsonify(error="Faltan datos"), 400
+    if vacaciones == "mal" or horas_contrato == "mal":
+        return jsonify(error="Faltan datos"), 400
 
     try:
         with cursor() as cur:
@@ -44,9 +55,13 @@ def crear_trabajador():
                 return jsonify(error="El login ya existe"), 409
             cur.execute(
                 """
-                INSERT INTO usuario (nombre, login, clave, rol, grupo, departamento_id)
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s)
-                RETURNING nombre, login, rol, grupo
+                INSERT INTO usuario (
+                    nombre, login, clave, rol, grupo, departamento_id,
+                    horario_inicio, horario_fin, vacaciones, horas_contrato
+                )
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s)
+                RETURNING nombre, login, rol, grupo,
+                          horario_inicio, horario_fin, vacaciones, horas_contrato
                 """,
                 (
                     nombre.strip(),
@@ -54,6 +69,10 @@ def crear_trabajador():
                     clave,
                     grupo,
                     mando["departamento_id"],
+                    hora_inicio,
+                    hora_fin,
+                    vacaciones,
+                    horas_contrato,
                 ),
             )
             creado = cur.fetchone()
@@ -67,4 +86,26 @@ def crear_trabajador():
         login=creado["login"],
         rol=creado["rol"],
         grupo=creado["grupo"],
+        hora_inicio=hora_texto(creado["horario_inicio"]),
+        hora_fin=hora_texto(creado["horario_fin"]),
+        vacaciones=float(creado["vacaciones"]),
+        horas_contrato=float(creado["horas_contrato"]),
     ), 201
+
+
+def _numero(valor):
+    if isinstance(valor, bool) or valor is None or valor == "":
+        return None
+    if isinstance(valor, (int, float)):
+        if valor < 0:
+            return "mal"
+        return float(valor)
+    if isinstance(valor, str):
+        try:
+            numero = float(valor.strip().replace(",", "."))
+        except ValueError:
+            return "mal"
+        if numero < 0:
+            return "mal"
+        return numero
+    return "mal"
