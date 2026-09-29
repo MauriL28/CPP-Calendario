@@ -126,15 +126,48 @@ CREATE TABLE ajuste (
 
 CREATE INDEX ajuste_afectado_fecha ON ajuste (usuario_afectado_id, fecha);
 
+-- Un evento del extracto (una fila del Excel), no el día ya sumado.
+-- orden es la fila del Excel: desempata horas iguales y hace repetible la carga.
+-- usuario_id solo si numero_sap casa con un único usuario en toda la tabla.
+CREATE TABLE fichaje_evento (
+    id          BIGSERIAL PRIMARY KEY,
+    orden       INTEGER NOT NULL UNIQUE,
+    numero_sap  TEXT    NOT NULL,
+    usuario_id  UUID REFERENCES usuario (id),
+    tipo        TEXT,
+    fecha       DATE,
+    hora        TIME    NOT NULL
+);
+
+CREATE INDEX fichaje_evento_sap_fecha ON fichaje_evento (numero_sap, fecha);
+
+-- El cruce con el turno (coincide) no se rellena al cargar eventos.
+-- horas_fichadas sigue sin usarse en esa carga (queda 0).
 CREATE TABLE fichaje (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    usuario_id      UUID REFERENCES usuario (id),
-    fecha           DATE          NOT NULL,
-    horas_fichadas  NUMERIC(8, 2) NOT NULL DEFAULT 0,
-    coincide        estado_cruce  NOT NULL,
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id        UUID REFERENCES usuario (id),
+    fecha             DATE          NOT NULL,
+    horas_fichadas    NUMERIC(8, 2) NOT NULL DEFAULT 0,
+    coincide          estado_cruce,
+    horas_trabajadas  NUMERIC(8, 2),
+    horas_pausa       NUMERIC(8, 2),
+    incidencia        BOOLEAN       NOT NULL,
     CONSTRAINT fichaje_sin_usuario CHECK (
-        (coincide = 'sin_emparejar' AND usuario_id IS NULL)
+        coincide IS NULL
+        OR (coincide = 'sin_emparejar' AND usuario_id IS NULL)
         OR (coincide <> 'sin_emparejar' AND usuario_id IS NOT NULL)
+    ),
+    CONSTRAINT fichaje_horas_incidencia CHECK (
+        (
+            incidencia
+            AND horas_trabajadas IS NULL
+            AND horas_pausa IS NULL
+        )
+        OR (
+            NOT incidencia
+            AND horas_trabajadas IS NOT NULL
+            AND horas_pausa IS NOT NULL
+        )
     )
 );
 
