@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py db.py seguridad.py horas.py ./
+COPY app.py db.py seguridad.py horas.py fichajes.py ./
 COPY rutas ./rutas
 
 EXPOSE 5000

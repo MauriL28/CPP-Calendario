@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { listar } from "../api/departamentos.js";
+import { importarFichajes } from "../api/fichajes.js";
 import { crearMando } from "../api/usuarios.js";
 import { delegacionVisible } from "../fechas.js";
 
@@ -9,6 +10,7 @@ const props = defineProps({
   delegaciones: { type: Array, required: true },
 });
 
+const vista = ref("departamentos");
 const departamentos = ref([]);
 const error = ref("");
 const elegido = ref(null);
@@ -16,6 +18,10 @@ const nombre = ref("");
 const login = ref("");
 const clave = ref("");
 const errorMando = ref("");
+const archivo = ref(null);
+const enviando = ref(false);
+const errorFichajes = ref("");
+const resumen = ref(null);
 
 const actual = computed(() => {
   if (!elegido.value) {
@@ -74,6 +80,29 @@ async function cargar() {
   }
 }
 
+function alArchivo(evento) {
+  const elegidoArchivo = evento.target.files?.[0] ?? null;
+  archivo.value = elegidoArchivo;
+  errorFichajes.value = "";
+  resumen.value = null;
+}
+
+async function importar() {
+  if (!archivo.value || enviando.value) {
+    return;
+  }
+  enviando.value = true;
+  errorFichajes.value = "";
+  resumen.value = null;
+  try {
+    resumen.value = await importarFichajes(props.token, archivo.value);
+  } catch (causa) {
+    errorFichajes.value = causa instanceof Error ? causa.message : "No se pudo importar el archivo";
+  } finally {
+    enviando.value = false;
+  }
+}
+
 async function guardar() {
   if (!elegido.value) {
     return;
@@ -100,8 +129,16 @@ onMounted(cargar);
 </script>
 
 <template>
-  <p v-if="error" class="error" role="alert">{{ error }}</p>
-  <div v-if="!actual" class="bloques">
+  <nav class="vistas">
+    <button type="button" :class="{ activo: vista === 'departamentos' }" @click="vista = 'departamentos'">
+      Departamentos
+    </button>
+    <button type="button" :class="{ activo: vista === 'fichajes' }" @click="vista = 'fichajes'">
+      Fichajes
+    </button>
+  </nav>
+  <p v-if="vista === 'departamentos' && error" class="error" role="alert">{{ error }}</p>
+  <div v-if="vista === 'departamentos' && !actual" class="bloques">
     <header class="lista-intro">
       <h1>Departamentos</h1>
       <p>Selecciona un departamento para gestionar su equipo.</p>
@@ -129,7 +166,7 @@ onMounted(cargar);
       </div>
     </section>
   </div>
-  <section v-else class="detalle">
+  <section v-else-if="vista === 'departamentos'" class="detalle">
     <nav class="migas">
       <button type="button" class="migas-enlace" @click="volver">Departamentos</button>
       <span>›</span>
@@ -209,5 +246,46 @@ onMounted(cargar);
         </div>
       </form>
     </div>
+  </section>
+  <section v-else class="fichajes">
+    <header class="lista-intro">
+      <h1>Fichajes</h1>
+      <p>Importa el extracto de SAP. El archivo tiene que ser .xlsx, con la hoja Data.</p>
+    </header>
+    <form class="panel fichajes-form" @submit.prevent="importar">
+      <header class="panel-cabecera">
+        <h2>Importar</h2>
+      </header>
+      <div class="alta-cuerpo">
+        <label>
+          Archivo
+          <input type="file" accept=".xlsx" @change="alArchivo" />
+        </label>
+        <p v-if="errorFichajes" class="error" role="alert">{{ errorFichajes }}</p>
+        <button class="primario" type="submit" :disabled="enviando || !archivo">Importar</button>
+      </div>
+    </form>
+    <dl v-if="resumen" class="panel fichajes-resumen">
+      <div>
+        <dt>Filas leídas</dt>
+        <dd>{{ resumen.filas_leidas }}</dd>
+      </div>
+      <div>
+        <dt>Emparejadas</dt>
+        <dd>{{ resumen.emparejadas }}</dd>
+      </div>
+      <div>
+        <dt>Sin emparejar</dt>
+        <dd>{{ resumen.sin_emparejar }}</dd>
+      </div>
+      <div>
+        <dt>Días con incidencia</dt>
+        <dd>{{ resumen.dias_con_incidencia }}</dd>
+      </div>
+      <div>
+        <dt>Filas nuevas</dt>
+        <dd>{{ resumen.filas_nuevas }}</dd>
+      </div>
+    </dl>
   </section>
 </template>

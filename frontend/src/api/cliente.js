@@ -1,16 +1,20 @@
-export async function pedir(ruta, { method = "GET", token, cuerpo } = {}) {
+export async function pedir(ruta, { method = "GET", token, cuerpo, formulario, espera = 8000 } = {}) {
   const headers = {};
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  if (cuerpo !== undefined) {
+  let body;
+  if (formulario !== undefined) {
+    body = formulario;
+  } else if (cuerpo !== undefined) {
     headers["Content-Type"] = "application/json";
+    body = JSON.stringify(cuerpo);
   }
   const respuesta = await fetch(ruta, {
     method,
     headers,
-    body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
-    signal: AbortSignal.timeout(8000),
+    body,
+    signal: AbortSignal.timeout(espera),
   });
   if (!respuesta.ok) {
     throw new Error(await mensaje(respuesta));

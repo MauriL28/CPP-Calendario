@@ -774,6 +774,53 @@ button.migas-enlace:not(.tarjeta):not(.celda):hover {
   color: #fff;
 }
 
+.fichajes-form,
+.fichajes-resumen {
+  max-width: 520px;
+}
+
+.fichajes-form button.primario {
+  height: 42px;
+  font-weight: 600;
+}
+
+.alta-cuerpo input[type="file"] {
+  height: auto;
+  padding: 8px 12px;
+}
+
+.fichajes-resumen {
+  margin: 16px 0 0;
+  padding: 4px 0;
+}
+
+.fichajes-resumen div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+}
+
+.fichajes-resumen div + div {
+  border-top: 1px solid var(--border);
+}
+
+.fichajes-resumen dt {
+  color: var(--text-2);
+}
+
+.fichajes-resumen dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .fichajes-form,
+  .fichajes-resumen {
+    max-width: none;
+  }
+}
+
 .departamentos > li + li {
   margin-top: 1.25rem;
 }

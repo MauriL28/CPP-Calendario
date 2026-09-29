@@ -14,7 +14,13 @@ import openpyxl
 from db import cursor
 
 TIPOS = ("Llegada", "Salida", "Inicio Pausa", "Final Pausa")
-COLUMNAS = ("Nº pers.", "Texto CHT", "Fe.lóg.", "Hora")
+COLUMNAS = (
+    "Nº pers.",
+    "Nombre del empleado o candidat",
+    "Texto CHT",
+    "Fe.lóg.",
+    "Hora",
+)
 
 
 def _sap(valor):
@@ -216,18 +222,77 @@ def _borrar_fichajes_previos(cur):
     )
 
 
-def _insertar_eventos(cur, eventos):
-    cur.execute("DELETE FROM fichaje_evento")
-    cur.executemany(
-        """
-        INSERT INTO fichaje_evento (orden, numero_sap, tipo, fecha, hora)
-        VALUES (%s, %s, %s, %s, %s)
-        """,
-        [
-            (ev["orden"], ev["numero_sap"], ev["tipo"], ev["fecha"], ev["hora"])
-            for ev in eventos
-        ],
+def _mismo_reloj(izquierda, derecha):
+    def partes(valor):
+        if isinstance(valor, datetime):
+            valor = valor.time()
+        return (valor.hour, valor.minute, valor.second, valor.microsecond)
+
+    return partes(izquierda) == partes(derecha)
+
+
+def _igual_evento(previo, ev):
+    return (
+        previo["numero_sap"] == ev["numero_sap"]
+        and previo["tipo"] == ev["tipo"]
+        and previo["fecha"] == ev["fecha"]
+        and _mismo_reloj(previo["hora"], ev["hora"])
     )
+
+
+def _insertar_eventos(cur, eventos):
+    """Devuelve (nuevas, actualizadas).
+
+    La fila que ya está, con el mismo orden y los mismos datos, no se borra
+    ni se vuelve a insertar. Así la segunda carga del mismo libro no cuenta
+    como filas nuevas.
+    """
+    cur.execute(
+        """
+        SELECT orden, numero_sap, tipo, fecha, hora
+        FROM fichaje_evento
+        """
+    )
+    previos = {fila["orden"]: fila for fila in cur.fetchall()}
+    ordenes = [ev["orden"] for ev in eventos]
+    if ordenes:
+        cur.execute(
+            "DELETE FROM fichaje_evento WHERE NOT (orden = ANY(%s))",
+            (ordenes,),
+        )
+    else:
+        cur.execute("DELETE FROM fichaje_evento")
+    nuevos = []
+    cambiados = []
+    for ev in eventos:
+        previo = previos.get(ev["orden"])
+        if previo is None:
+            nuevos.append(ev)
+        elif not _igual_evento(previo, ev):
+            cambiados.append(ev)
+    if nuevos:
+        cur.executemany(
+            """
+            INSERT INTO fichaje_evento (orden, numero_sap, tipo, fecha, hora)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            [
+                (ev["orden"], ev["numero_sap"], ev["tipo"], ev["fecha"], ev["hora"])
+                for ev in nuevos
+            ],
+        )
+    if cambiados:
+        cur.executemany(
+            """
+            UPDATE fichaje_evento
+            SET numero_sap = %s, tipo = %s, fecha = %s, hora = %s, usuario_id = NULL
+            WHERE orden = %s
+            """,
+            [
+                (ev["numero_sap"], ev["tipo"], ev["fecha"], ev["hora"], ev["orden"])
+                for ev in cambiados
+            ],
+        )
     cur.execute(
         """
         UPDATE fichaje_evento AS e
@@ -242,6 +307,7 @@ def _insertar_eventos(cur, eventos):
         WHERE e.numero_sap = m.numero_sap
         """
     )
+    return len(nuevos), len(cambiados)
 
 
 def _leer_eventos(cur):
@@ -311,11 +377,11 @@ def _numeros_ambiguos(cur):
     return {fila["numero_sap"] for fila in cur.fetchall()}
 
 
-def cargar(ruta):
+def cargar(ruta, registro=None):
     leidas, saltadas, eventos = leer_excel(ruta)
     with cursor() as cur:
         _borrar_fichajes_previos(cur)
-        _insertar_eventos(cur, eventos)
+        nuevas, actualizadas = _insertar_eventos(cur, eventos)
         guardados = _leer_eventos(cur)
         ambiguos = _numeros_ambiguos(cur)
         dias = agrupar_dias(guardados)
@@ -328,30 +394,52 @@ def cargar(ruta):
         filas_evento = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM fichaje")
         filas_fichaje = cur.fetchone()["n"]
-    con_usuario = [ev for ev in guardados if ev["usuario_id"] is not None]
-    sin_coincidencia = [
-        ev
-        for ev in guardados
-        if ev["usuario_id"] is None and ev["numero_sap"] not in ambiguos
-    ]
-    filas_ambiguas = [
-        ev for ev in guardados if ev["numero_sap"] in ambiguos
-    ]
-    dias_resueltos = [dia for dia in dias if dia["usuario_id"] is not None]
+        con_usuario = [ev for ev in guardados if ev["usuario_id"] is not None]
+        sin_coincidencia = [
+            ev
+            for ev in guardados
+            if ev["usuario_id"] is None and ev["numero_sap"] not in ambiguos
+        ]
+        filas_ambiguas = [ev for ev in guardados if ev["numero_sap"] in ambiguos]
+        dias_resueltos = [dia for dia in dias if dia["usuario_id"] is not None]
+        incidencias = sum(1 for dia in dias if dia["incidencia"])
+        sin_emparejar = len(sin_coincidencia) + len(filas_ambiguas)
+        if registro is not None:
+            cur.execute(
+                """
+                INSERT INTO fichaje_importacion (
+                    usuario_id, nombre_archivo, filas_leidas,
+                    filas_insertadas_o_actualizadas,
+                    filas_sin_emparejar, dias_incidencia
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    registro["usuario_id"],
+                    registro["nombre_archivo"],
+                    leidas,
+                    nuevas + actualizadas,
+                    sin_emparejar,
+                    incidencias,
+                ),
+            )
     return {
         "filas_leidas": leidas,
         "filas_saltadas": saltadas,
         "filas_insertadas": filas_evento,
+        "filas_nuevas": nuevas,
+        "filas_actualizadas": actualizadas,
         "filas_con_usuario": len(con_usuario),
         "filas_sin_coincidencia": len(sin_coincidencia),
         "filas_ambiguas": len(filas_ambiguas),
+        "sin_emparejar": sin_emparejar,
         "numeros_ambiguos": len(ambiguos),
         "personas_excel": len({ev["numero_sap"] for ev in guardados}),
         "personas_emparejadas": len({ev["numero_sap"] for ev in con_usuario}),
         "usuarios_con_sap": usuarios_con_sap,
         "dias": len(dias),
         "dias_resueltos": len(dias_resueltos),
-        "incidencias": sum(1 for dia in dias if dia["incidencia"]),
+        "incidencias": incidencias,
         "incidencias_resueltas": sum(1 for dia in dias_resueltos if dia["incidencia"]),
         "fichajes_insertados": fichajes,
         "fichajes_en_tabla": filas_fichaje,
@@ -384,6 +472,8 @@ def main():
     print(f"filas_leidas={resultado['filas_leidas']}")
     print(f"filas_saltadas={resultado['filas_saltadas']}")
     print(f"filas_insertadas={resultado['filas_insertadas']}")
+    print(f"filas_nuevas={resultado['filas_nuevas']}")
+    print(f"filas_actualizadas={resultado['filas_actualizadas']}")
     print(f"filas_con_usuario={resultado['filas_con_usuario']}")
     print(f"filas_sin_coincidencia={resultado['filas_sin_coincidencia']}")
     print(f"filas_ambiguas={resultado['filas_ambiguas']}")

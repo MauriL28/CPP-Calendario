@@ -173,6 +173,18 @@ CREATE TABLE fichaje (
 
 CREATE INDEX fichaje_usuario_fecha ON fichaje (usuario_id, fecha);
 
+-- Cada importación del extracto. No es el log del servidor.
+CREATE TABLE fichaje_importacion (
+    id                              BIGSERIAL PRIMARY KEY,
+    usuario_id                      UUID        NOT NULL REFERENCES usuario (id),
+    momento                         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    nombre_archivo                  TEXT        NOT NULL,
+    filas_leidas                    INTEGER     NOT NULL,
+    filas_insertadas_o_actualizadas INTEGER     NOT NULL,
+    filas_sin_emparejar             INTEGER     NOT NULL,
+    dias_incidencia                 INTEGER     NOT NULL
+);
+
 CREATE TABLE festivo (
     fecha   DATE PRIMARY KEY,
     nombre  VARCHAR(120) NOT NULL

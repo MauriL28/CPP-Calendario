@@ -47,3 +47,27 @@ ALTER TABLE fichaje ADD CONSTRAINT fichaje_horas_incidencia CHECK (
         AND horas_pausa IS NOT NULL
     )
 );
+
+-- Registro de cada importación. Idempotente: initdb no vuelve a ejecutar esquema.sql.
+CREATE TABLE IF NOT EXISTS fichaje_importacion (
+    id BIGSERIAL PRIMARY KEY
+);
+
+ALTER TABLE fichaje_importacion ADD COLUMN IF NOT EXISTS usuario_id UUID REFERENCES usuario (id);
+ALTER TABLE fichaje_importacion ADD COLUMN IF NOT EXISTS momento TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE fichaje_importacion ADD COLUMN IF NOT EXISTS nombre_archivo TEXT;
+ALTER TABLE fichaje_importacion ADD COLUMN IF NOT EXISTS filas_leidas INTEGER;
+ALTER TABLE fichaje_importacion ADD COLUMN IF NOT EXISTS filas_insertadas_o_actualizadas INTEGER;
+ALTER TABLE fichaje_importacion ADD COLUMN IF NOT EXISTS filas_sin_emparejar INTEGER;
+ALTER TABLE fichaje_importacion ADD COLUMN IF NOT EXISTS dias_incidencia INTEGER;
+
+ALTER TABLE fichaje_importacion ALTER COLUMN usuario_id SET NOT NULL;
+ALTER TABLE fichaje_importacion ALTER COLUMN momento SET NOT NULL;
+ALTER TABLE fichaje_importacion ALTER COLUMN nombre_archivo SET NOT NULL;
+ALTER TABLE fichaje_importacion ALTER COLUMN filas_leidas SET NOT NULL;
+ALTER TABLE fichaje_importacion ALTER COLUMN filas_insertadas_o_actualizadas SET NOT NULL;
+ALTER TABLE fichaje_importacion ALTER COLUMN filas_sin_emparejar SET NOT NULL;
+ALTER TABLE fichaje_importacion ALTER COLUMN dias_incidencia SET NOT NULL;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON fichaje_importacion TO calendario;
+GRANT USAGE, SELECT ON SEQUENCE fichaje_importacion_id_seq TO calendario;
