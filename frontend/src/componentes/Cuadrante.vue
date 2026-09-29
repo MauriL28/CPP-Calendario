@@ -1,7 +1,7 @@
 <script setup>
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 import { fechaVisible, lunesDe, sumarDias, textoCelda } from "../fechas.js";
-import { aplicarHorarios, copiarSemana, guardarTurno, semana } from "../api/turnos.js";
+import { aplicarHorarios, borrarTurno, copiarSemana, guardarTurno, semana } from "../api/turnos.js";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -34,6 +34,7 @@ const semanaDesde = ref("");
 const cuadrante = ref(null);
 const errorSemana = ref("");
 const celda = ref(null);
+const dialogo = ref(null);
 const turnoModo = ref("horario");
 const turnoInicio = ref("");
 const turnoFin = ref("");
@@ -42,7 +43,9 @@ const errorTurno = ref("");
 
 async function cargar(desde) {
   errorSemana.value = "";
-  celda.value = null;
+  if (dialogo.value?.open) {
+    dialogo.value.close();
+  }
   try {
     cuadrante.value = await semana(props.token, desde, props.propia);
     semanaDesde.value = cuadrante.value.desde;
@@ -73,11 +76,7 @@ function familia(turno) {
   return "tarde";
 }
 
-function editando(trabajador, dia) {
-  return celda.value && celda.value.login === trabajador.login && celda.value.fecha === dia.fecha;
-}
-
-function abrirCelda(trabajador, dia) {
+async function abrirCelda(trabajador, dia) {
   if (!props.editable) {
     return;
   }
@@ -86,6 +85,7 @@ function abrirCelda(trabajador, dia) {
     login: trabajador.login,
     nombre: trabajador.nombre,
     fecha: dia.fecha,
+    origen: dia.origen || "",
   };
   errorTurno.value = "";
   if (turno && turno.ausencia) {
@@ -99,11 +99,24 @@ function abrirCelda(trabajador, dia) {
     turnoInicio.value = turno?.hora_inicio || "";
     turnoFin.value = turno?.hora_fin || "";
   }
+  await nextTick();
+  dialogo.value?.showModal();
+  dialogo.value?.querySelector("select")?.focus();
 }
 
 function cerrarCelda() {
+  dialogo.value?.close();
+}
+
+function alCerrarCelda() {
   celda.value = null;
   errorTurno.value = "";
+}
+
+function alFondo(evento) {
+  if (evento.target === dialogo.value) {
+    cerrarCelda();
+  }
 }
 
 async function aplicar() {
@@ -143,9 +156,27 @@ async function guardar() {
   }
   try {
     await guardarTurno(props.token, cuerpo);
-    await cargar(semanaDesde.value);
+    const desde = semanaDesde.value;
+    cerrarCelda();
+    await cargar(desde);
   } catch (causa) {
     errorTurno.value = causa instanceof Error ? causa.message : "No se pudo guardar el turno";
+  }
+}
+
+async function quitar() {
+  if (!celda.value) {
+    return;
+  }
+  errorTurno.value = "";
+  const desde = semanaDesde.value;
+  const cuerpo = { login: celda.value.login, fecha: celda.value.fecha };
+  try {
+    await borrarTurno(props.token, cuerpo);
+    cerrarCelda();
+    await cargar(desde);
+  } catch (causa) {
+    errorTurno.value = causa instanceof Error ? causa.message : "No se pudo quitar la excepción";
   }
 }
 
@@ -180,43 +211,10 @@ cargar(lunesDe(new Date()));
           <td
             v-for="(dia, indice) in trabajador.dias"
             :key="dia.fecha"
-            :class="[
-              esFin(indice) ? 'fin' : '',
-              editando(trabajador, dia) ? 'editando' : familia(dia.turno) ? `turno-${familia(dia.turno)}` : '',
-            ]"
+            :class="[esFin(indice) ? 'fin' : '', familia(dia.turno) ? `turno-${familia(dia.turno)}` : '']"
           >
-            <form v-if="editando(trabajador, dia)" class="editor-celda" @submit.prevent="guardar">
-              <label>
-                Tipo
-                <select v-model="turnoModo">
-                  <option value="horario">Horario</option>
-                  <option value="ausencia">Ausencia</option>
-                </select>
-              </label>
-              <template v-if="turnoModo === 'horario'">
-                <label>
-                  Inicio
-                  <input v-model="turnoInicio" type="time" required />
-                </label>
-                <label>
-                  Fin
-                  <input v-model="turnoFin" type="time" required />
-                </label>
-              </template>
-              <label v-else>
-                Ausencia
-                <select v-model="turnoAusencia">
-                  <option v-for="codigo in ausencias" :key="codigo" :value="codigo">{{ codigo }}</option>
-                </select>
-              </label>
-              <span class="editor-acciones">
-                <button type="submit">Guardar</button>
-                <button type="button" @click="cerrarCelda">Cancelar</button>
-              </span>
-              <p v-if="errorTurno" class="error" role="alert">{{ errorTurno }}</p>
-            </form>
             <button
-              v-else-if="editable"
+              v-if="editable"
               type="button"
               class="celda"
               @click="abrirCelda(trabajador, dia)"
@@ -236,4 +234,50 @@ cargar(lunesDe(new Date()));
     </ul>
   </section>
   <p v-else-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
+  <dialog ref="dialogo" class="editor-dia" @close="alCerrarCelda" @click="alFondo">
+    <form v-if="celda" @submit.prevent="guardar">
+      <header class="editor-dia-cabecera">
+        <h2>Editar día</h2>
+        <p class="editor-dia-quien">
+          {{ celda.nombre }}<br />
+          {{ fechaVisible(celda.fecha) }}
+        </p>
+      </header>
+      <div class="editor-dia-cuerpo">
+        <label class="ancho">
+          Tipo
+          <select v-model="turnoModo">
+            <option value="horario">Horario</option>
+            <option value="ausencia">Ausencia</option>
+          </select>
+        </label>
+        <template v-if="turnoModo === 'horario'">
+          <label>
+            Hora de inicio
+            <input v-model="turnoInicio" type="time" required />
+          </label>
+          <label>
+            Hora de fin
+            <input v-model="turnoFin" type="time" required />
+          </label>
+        </template>
+        <label v-else class="ancho">
+          Ausencia
+          <select v-model="turnoAusencia">
+            <option v-for="codigo in ausencias" :key="codigo" :value="codigo">{{ codigo }}</option>
+          </select>
+        </label>
+      </div>
+      <p v-if="errorTurno" class="error" role="alert">{{ errorTurno }}</p>
+      <footer class="editor-dia-pie">
+        <button v-if="celda.origen === 'guardado'" type="button" @click="quitar">
+          Quitar excepción y volver al horario habitual
+        </button>
+        <span class="editor-dia-acciones">
+          <button type="button" @click="cerrarCelda">Cancelar</button>
+          <button class="primario" type="submit">Guardar</button>
+        </span>
+      </footer>
+    </form>
+  </dialog>
 </template>

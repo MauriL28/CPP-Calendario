@@ -43,7 +43,7 @@ def departamentos():
                 params,
             )
             filas = cur.fetchall()
-            mandos, trabajadores, turnos = listar_del_departamento(cur, filtro, params)
+            mandos, trabajadores, turnos, horarios = listar_del_departamento(cur, filtro, params)
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
@@ -68,4 +68,4 @@ def departamentos():
             lista.append(item)
         if fila["seccion"] is not None:
             item["secciones"].append({"nombre": fila["seccion"]})
-    return jsonify(adjuntar_personas(lista, por_codigo, mandos, trabajadores, turnos))
+    return jsonify(adjuntar_personas(lista, por_codigo, mandos, trabajadores, turnos, horarios))

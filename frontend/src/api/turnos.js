@@ -24,3 +24,7 @@ export function copiarSemana(token, desde) {
 export function guardarTurno(token, cuerpo) {
   return pedir("/turnos", { method: "PUT", token, cuerpo });
 }
+
+export function borrarTurno(token, cuerpo) {
+  return pedir("/turnos", { method: "DELETE", token, cuerpo });
+}

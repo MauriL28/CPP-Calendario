@@ -875,6 +875,20 @@ table.equipo tr:last-child td {
   gap: 12px;
 }
 
+.equipo-acciones {
+  white-space: nowrap;
+}
+
+.equipo-acciones button + button {
+  margin-left: 8px;
+}
+
+.alta-dialogo-persona {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
 .alta-dialogo {
   width: calc(100% - 32px);
   max-width: 560px;
@@ -960,6 +974,39 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
   font-weight: 600;
   color: var(--text-2);
   white-space: nowrap;
+}
+
+.alta-dias-marcas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.alta-casilla {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.alta-dialogo input[type="checkbox"] {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.alta-dia-horas {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.alta-dia-horas > span {
+  padding-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .alta-dialogo input,
@@ -1257,36 +1304,99 @@ span.celda {
   cursor: default;
 }
 
-td.editando {
+.editor-dia {
+  width: calc(100% - 32px);
+  max-width: 480px;
+  margin: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
   background: var(--panel);
-  min-width: 9rem;
+  color: var(--text);
 }
 
-.editor-celda {
-  display: grid;
-  gap: 0.35rem;
-  text-align: left;
+.editor-dia::backdrop {
+  background: rgba(32, 36, 44, 0.45);
 }
 
-.editor-celda label {
-  display: grid;
-  gap: 0.15rem;
-  font-size: 0.75rem;
+.editor-dia-cabecera {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
 }
 
-.editor-celda input,
-.editor-celda select {
-  font: inherit;
-  font-size: 0.8125rem;
-  padding: 0.2rem 0.3rem;
-}
-
-.editor-acciones {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.editor-celda .error {
+.editor-dia-cabecera h2 {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.editor-dia-quien {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.editor-dia-cuerpo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 20px;
+}
+
+.editor-dia-cuerpo .ancho {
+  grid-column: 1 / -1;
+}
+
+.editor-dia label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.editor-dia input,
+.editor-dia select {
+  display: block;
+  width: 100%;
+  height: 40px;
+  margin-top: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel);
+}
+
+.editor-dia input:focus,
+.editor-dia select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.editor-dia .error {
+  margin: 0 20px 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--alerta-bg);
+  color: var(--alerta);
+  font-size: 13px;
+}
+
+.editor-dia-pie {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.editor-dia-acciones {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
 }

@@ -33,12 +33,12 @@ def listar_del_departamento(cur, filtro, params):
     cur.execute(
         f"""
         SELECT g.codigo AS delegacion, d.codigo AS departamento,
-               u.nombre, u.login, u.grupo,
-               u.horario_inicio, u.horario_fin, u.horas_contrato, u.vacaciones
+               u.nombre, u.login, u.grupo, u.horas_contrato, u.vacaciones
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
         JOIN delegacion g ON g.id = d.delegacion_id
         WHERE u.rol = 'trabajador'
+          AND u.activo
           AND g.codigo = ANY(%s)
           {filtro}
         ORDER BY u.nombre
@@ -63,10 +63,34 @@ def listar_del_departamento(cur, filtro, params):
         params,
     )
     turnos = cur.fetchall()
-    return mandos, trabajadores, turnos
+    cur.execute(
+        f"""
+        SELECT u.login, hd.dia_semana, hd.horario_inicio, hd.horario_fin
+        FROM usuario u
+        JOIN departamento d ON d.id = u.departamento_id
+        JOIN delegacion g ON g.id = d.delegacion_id
+        JOIN LATERAL (
+            SELECT v.desde
+            FROM horario_version v
+            WHERE v.usuario_id = u.id
+              AND v.desde <= CURRENT_DATE
+            ORDER BY v.desde DESC
+            LIMIT 1
+        ) vig ON true
+        JOIN horario_dia hd
+          ON hd.usuario_id = u.id AND hd.desde = vig.desde
+        WHERE u.rol = 'trabajador'
+          AND g.codigo = ANY(%s)
+          {filtro}
+        ORDER BY u.login, hd.dia_semana
+        """,
+        params,
+    )
+    horarios = cur.fetchall()
+    return mandos, trabajadores, turnos, horarios
 
 
-def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos):
+def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos, horarios):
     for mando in mandos:
         item = por_codigo.get((mando["delegacion"], mando["departamento"]))
         if item is not None:
@@ -80,14 +104,24 @@ def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos):
             "nombre": trabajador["nombre"],
             "login": trabajador["login"],
             "grupo": trabajador["grupo"],
-            "horario_inicio": hora_texto(trabajador["horario_inicio"]),
-            "horario_fin": hora_texto(trabajador["horario_fin"]),
+            "horario": [],
             "horas_contrato": _decimal(trabajador["horas_contrato"]),
             "vacaciones": _decimal(trabajador["vacaciones"]),
             "turnos": [],
         }
         por_login[trabajador["login"]] = persona
         item["trabajadores"].append(persona)
+    for fila in horarios:
+        persona = por_login.get(fila["login"])
+        if persona is None:
+            continue
+        persona["horario"].append(
+            {
+                "dia_semana": fila["dia_semana"],
+                "inicio": hora_texto(fila["horario_inicio"]),
+                "fin": hora_texto(fila["horario_fin"]),
+            }
+        )
     for turno in turnos:
         persona = por_login.get(turno["login"])
         if persona is None:

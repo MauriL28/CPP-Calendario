@@ -54,8 +54,6 @@ CREATE TABLE usuario (
     vacaciones         NUMERIC(5, 2),
     horas_contrato     NUMERIC(8, 2),
     horas_convenio     NUMERIC(8, 2),
-    horario_inicio     TIME,
-    horario_fin        TIME,
     tarifas_ett        NUMERIC(10, 4),
     numero_sap         VARCHAR(40),
     activo             BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -63,11 +61,7 @@ CREATE TABLE usuario (
         (rol = 'admin' AND departamento_id IS NULL)
         OR (rol <> 'admin' AND departamento_id IS NOT NULL)
     ),
-    CONSTRAINT usuario_seccion_mismo_depto CHECK (seccion_id IS NULL OR departamento_id IS NOT NULL),
-    CONSTRAINT usuario_horario_completo CHECK (
-        (horario_inicio IS NULL AND horario_fin IS NULL)
-        OR (horario_inicio IS NOT NULL AND horario_fin IS NOT NULL)
-    )
+    CONSTRAINT usuario_seccion_mismo_depto CHECK (seccion_id IS NULL OR departamento_id IS NOT NULL)
 );
 
 -- Responsable: un departamento, como mucho un jefe. Ese usuario, como mucho un depto.
@@ -77,6 +71,25 @@ ALTER TABLE departamento
 CREATE UNIQUE INDEX usuario_sap_por_depto
     ON usuario (departamento_id, numero_sap)
     WHERE numero_sap IS NOT NULL;
+
+-- Horario habitual con vigencia. dia_semana: 0 = lunes … 6 = domingo.
+-- Un día sin fila en la versión vigente es libre.
+-- Una versión sin filas de detalle: desde esa fecha no hay horario habitual.
+CREATE TABLE horario_version (
+    usuario_id  UUID NOT NULL REFERENCES usuario (id),
+    desde       DATE NOT NULL,
+    PRIMARY KEY (usuario_id, desde)
+);
+
+CREATE TABLE horario_dia (
+    usuario_id      UUID NOT NULL,
+    desde           DATE NOT NULL,
+    dia_semana      SMALLINT NOT NULL CHECK (dia_semana BETWEEN 0 AND 6),
+    horario_inicio  TIME NOT NULL,
+    horario_fin     TIME NOT NULL,
+    PRIMARY KEY (usuario_id, desde, dia_semana),
+    FOREIGN KEY (usuario_id, desde) REFERENCES horario_version (usuario_id, desde)
+);
 
 CREATE TABLE turno (
     usuario_id          UUID NOT NULL REFERENCES usuario (id),
