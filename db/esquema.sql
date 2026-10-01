@@ -68,8 +68,9 @@ CREATE TABLE usuario (
 ALTER TABLE departamento
     ADD COLUMN responsable_id UUID UNIQUE REFERENCES usuario (id);
 
-CREATE UNIQUE INDEX usuario_sap_por_depto
-    ON usuario (departamento_id, numero_sap)
+-- Un número de personal SAP identifica a una sola persona en toda la empresa.
+CREATE UNIQUE INDEX usuario_numero_sap
+    ON usuario (numero_sap)
     WHERE numero_sap IS NOT NULL;
 
 -- Horario habitual con vigencia. dia_semana: 0 = lunes … 6 = domingo.
@@ -141,17 +142,20 @@ CREATE TABLE fichaje_evento (
 
 CREATE INDEX fichaje_evento_sap_fecha ON fichaje_evento (numero_sap, fecha);
 
--- El cruce con el turno (coincide) no se rellena al cargar eventos.
--- horas_fichadas sigue sin usarse en esa carga (queda 0).
+-- coincide y horas_planificadas se rellenan al importar.
+-- Una incidencia deja coincide y horas_planificadas vacíos. horas_fichadas sigue en 0.
+-- numero_sap queda en la fila para mostrar un día sin_emparejar, que no tiene usuario.
 CREATE TABLE fichaje (
-    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    usuario_id        UUID REFERENCES usuario (id),
-    fecha             DATE          NOT NULL,
-    horas_fichadas    NUMERIC(8, 2) NOT NULL DEFAULT 0,
-    coincide          estado_cruce,
-    horas_trabajadas  NUMERIC(8, 2),
-    horas_pausa       NUMERIC(8, 2),
-    incidencia        BOOLEAN       NOT NULL,
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id          UUID REFERENCES usuario (id),
+    numero_sap          TEXT,
+    fecha               DATE          NOT NULL,
+    horas_fichadas      NUMERIC(8, 2) NOT NULL DEFAULT 0,
+    coincide            estado_cruce,
+    horas_planificadas  NUMERIC(8, 2),
+    horas_trabajadas    NUMERIC(8, 2),
+    horas_pausa         NUMERIC(8, 2),
+    incidencia          BOOLEAN       NOT NULL,
     CONSTRAINT fichaje_sin_usuario CHECK (
         coincide IS NULL
         OR (coincide = 'sin_emparejar' AND usuario_id IS NULL)

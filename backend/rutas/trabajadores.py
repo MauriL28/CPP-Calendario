@@ -35,6 +35,9 @@ def crear_trabajador():
     desde, error = _desde(cuerpo.get("desde"))
     if error:
         return error
+    numero_sap, error = _numero_sap(cuerpo.get("numero_sap"))
+    if error:
+        return error
 
     try:
         with cursor() as cur:
@@ -55,14 +58,16 @@ def crear_trabajador():
             )
             if cur.fetchone() is not None:
                 return jsonify(error="El login ya existe"), 409
+            if _sap_ocupado(cur, numero_sap):
+                return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
             cur.execute(
                 """
                 INSERT INTO usuario (
                     nombre, login, clave, rol, grupo, departamento_id,
-                    vacaciones, horas_contrato
+                    vacaciones, horas_contrato, numero_sap
                 )
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s)
-                RETURNING id, nombre, login, rol, grupo, vacaciones, horas_contrato
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s)
+                RETURNING id, nombre, login, rol, grupo, vacaciones, horas_contrato, numero_sap
                 """,
                 (
                     nombre.strip(),
@@ -72,6 +77,7 @@ def crear_trabajador():
                     mando["departamento_id"],
                     vacaciones,
                     horas_contrato,
+                    numero_sap,
                 ),
             )
             creado = cur.fetchone()
@@ -94,6 +100,8 @@ def crear_trabajador():
                 )
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.errors.UniqueViolation as exc:
+        return _error_unico(exc)
     except psycopg.Error as exc:
         return jsonify(error=str(exc)), 503
 
@@ -104,6 +112,7 @@ def crear_trabajador():
         grupo=creado["grupo"],
         vacaciones=float(creado["vacaciones"]),
         horas_contrato=float(creado["horas_contrato"]),
+        numero_sap=creado["numero_sap"],
     ), 201
 
 
@@ -169,6 +178,59 @@ def dar_de_baja(login_nombre):
         return jsonify(error=str(exc)), 503
 
     return jsonify(login=login_nombre, activo=False, desde=desde.isoformat())
+
+
+@bp.put("/trabajadores/<login_nombre>/numero-sap")
+@jwt_required()
+def cambiar_numero_sap(login_nombre):
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+
+    cuerpo = request.get_json(silent=True) or {}
+    numero_sap, error = _numero_sap(cuerpo.get("numero_sap"))
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT departamento_id
+                FROM usuario
+                WHERE id = %s AND rol = 'mando'
+                """,
+                (get_jwt_identity(),),
+            )
+            mando = cur.fetchone()
+            if mando is None or mando["departamento_id"] is None:
+                return jsonify(error="No autorizado"), 403
+            cur.execute(
+                """
+                SELECT id
+                FROM usuario
+                WHERE login = %s
+                  AND rol = 'trabajador'
+                  AND departamento_id = %s
+                """,
+                (login_nombre, mando["departamento_id"]),
+            )
+            trabajador = cur.fetchone()
+            if trabajador is None:
+                return jsonify(error="Ese trabajador no es de tu departamento"), 404
+            if _sap_ocupado(cur, numero_sap, trabajador["id"]):
+                return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
+            cur.execute(
+                "UPDATE usuario SET numero_sap = %s WHERE id = %s",
+                (numero_sap, trabajador["id"]),
+            )
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.errors.UniqueViolation as exc:
+        return _error_unico(exc)
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(login=login_nombre, numero_sap=numero_sap)
 
 
 @bp.put("/trabajadores/<login_nombre>/horario")
@@ -253,6 +315,40 @@ def cambiar_horario(login_nombre):
             for dia, inicio, fin in filas
         ],
     )
+
+
+def _numero_sap(valor):
+    if valor is None or valor == "":
+        return None, None
+    if not isinstance(valor, str):
+        return None, (jsonify(error="Faltan datos"), 400)
+    texto = valor.strip()
+    if not texto:
+        return None, None
+    if len(texto) > 40:
+        return None, (jsonify(error="El número de personal es demasiado largo"), 400)
+    return texto, None
+
+
+def _sap_ocupado(cur, numero, excepto_id=None):
+    if numero is None:
+        return False
+    cur.execute(
+        """
+        SELECT 1
+        FROM usuario
+        WHERE numero_sap = %s
+          AND id IS DISTINCT FROM %s
+        """,
+        (numero, excepto_id),
+    )
+    return cur.fetchone() is not None
+
+
+def _error_unico(exc):
+    if getattr(exc.diag, "constraint_name", None) == "usuario_numero_sap":
+        return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
+    return jsonify(error=str(exc)), 503
 
 
 def _desde(valor):

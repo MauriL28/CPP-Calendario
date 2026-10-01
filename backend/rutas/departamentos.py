@@ -31,7 +31,7 @@ def departamentos():
                 params.append(propio["departamento_id"])
             cur.execute(
                 f"""
-                SELECT g.codigo AS delegacion, d.codigo, d.nombre, d.orden,
+                SELECT g.codigo AS delegacion, d.id, d.codigo, d.nombre, d.orden,
                        s.nombre AS seccion
                 FROM departamento d
                 JOIN delegacion g ON g.id = d.delegacion_id
@@ -56,6 +56,7 @@ def departamentos():
         item = por_codigo.get(clave)
         if item is None:
             item = {
+                "id": str(fila["id"]),
                 "delegacion": fila["delegacion"],
                 "codigo": fila["codigo"],
                 "nombre": fila["nombre"],

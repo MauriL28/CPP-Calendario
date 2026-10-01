@@ -1,7 +1,8 @@
 """Carga de fichajes: un evento por fila del Excel y las horas del día.
 
-No cruza con el turno y no rellena coincide. Horas en NUMERIC(8,2):
-segundos / 3600, redondeo half-up a 2 decimales, sin sumar 24 h.
+Al terminar, cruza cada día con el turno efectivo y rellena coincide.
+Horas en NUMERIC(8,2): segundos / 3600, redondeo half-up a 2 decimales,
+sin sumar 24 h.
 """
 
 import sys
@@ -12,8 +13,10 @@ from decimal import Decimal, ROUND_HALF_UP
 import openpyxl
 
 from db import cursor
+from rutas.turnos import _agrupar_versiones, _franja, resolver_turno
 
 TIPOS = ("Llegada", "Salida", "Inicio Pausa", "Final Pausa")
+MARGEN_DESCUADRE_MINUTOS = 20
 COLUMNAS = (
     "Nº pers.",
     "Nombre del empleado o candidat",
@@ -207,21 +210,6 @@ def agrupar_dias(eventos):
     return dias
 
 
-def _borrar_fichajes_previos(cur):
-    cur.execute(
-        """
-        DELETE FROM fichaje AS f
-        WHERE f.coincide IS NULL
-          AND EXISTS (
-              SELECT 1
-              FROM fichaje_evento AS e
-              WHERE e.usuario_id = f.usuario_id
-                AND e.fecha = f.fecha
-          )
-        """
-    )
-
-
 def _mismo_reloj(izquierda, derecha):
     def partes(valor):
         if isinstance(valor, datetime):
@@ -321,45 +309,152 @@ def _leer_eventos(cur):
     return list(cur.fetchall())
 
 
-def _insertar_fichajes(cur, dias):
-    insertados = 0
-    for dia in dias:
-        if dia["usuario_id"] is None or dia["fecha"] is None:
-            continue
-        cur.execute(
-            """
-            SELECT COUNT(*) AS n
-            FROM fichaje
-            WHERE usuario_id = %s AND fecha = %s AND coincide IS NOT NULL
-            """,
-            (dia["usuario_id"], dia["fecha"]),
+def _margen():
+    return Decimal(MARGEN_DESCUADRE_MINUTOS) / Decimal(60)
+
+
+def _coincide_con_turno(horas_trabajadas, turno):
+    if turno is None:
+        return "sin_plan"
+    planificadas = turno["horas_planificadas"]
+    if not isinstance(planificadas, Decimal):
+        planificadas = Decimal(str(planificadas))
+    if abs(horas_trabajadas - planificadas) <= _margen():
+        return "ok"
+    return "descuadre"
+
+
+def _turnos_resueltos(cur, dias):
+    """Días con usuario y sin incidencia. La clave es (usuario_id, fecha)."""
+    utiles = [
+        dia
+        for dia in dias
+        if dia["usuario_id"] is not None and dia["fecha"] is not None and not dia["incidencia"]
+    ]
+    if not utiles:
+        return {}
+    ids = list({dia["usuario_id"] for dia in utiles})
+    fechas = [dia["fecha"] for dia in utiles]
+    cur.execute(
+        """
+        SELECT usuario_id, fecha, ausencia::text AS ausencia,
+               hora_inicio, hora_fin, horas_planificadas, horas_nocturnas
+        FROM turno
+        WHERE usuario_id = ANY(%s)
+          AND fecha = ANY(%s)
+        """,
+        (ids, fechas),
+    )
+    turnos = {(fila["usuario_id"], fila["fecha"]): fila for fila in cur.fetchall()}
+    cur.execute(
+        """
+        SELECT v.usuario_id, v.desde, d.dia_semana, d.horario_inicio, d.horario_fin
+        FROM horario_version v
+        LEFT JOIN horario_dia d
+          ON d.usuario_id = v.usuario_id AND d.desde = v.desde
+        WHERE v.usuario_id = ANY(%s)
+          AND v.desde <= %s
+        """,
+        (ids, max(fechas)),
+    )
+    versiones = _agrupar_versiones(cur.fetchall())
+    noche_inicio, noche_fin = _franja(cur)
+    resueltos = {}
+    for dia in utiles:
+        fila = turnos.get((dia["usuario_id"], dia["fecha"]))
+        turno, _origen = resolver_turno(
+            dia["fecha"],
+            fila,
+            versiones.get(dia["usuario_id"], []),
+            noche_inicio,
+            noche_fin,
         )
-        if cur.fetchone()["n"]:
-            continue
+        resueltos[(dia["usuario_id"], dia["fecha"])] = (turno, _origen)
+    return resueltos
+
+
+def _horas_plan(turno):
+    if turno is None:
+        return None
+    plan = turno["horas_planificadas"]
+    if not isinstance(plan, Decimal):
+        plan = Decimal(str(plan))
+    return plan.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _cruce(dia, turnos):
+    if dia["usuario_id"] is None:
+        return "sin_emparejar", None
+    if dia["incidencia"]:
+        return None, None
+    turno, _origen = turnos[(dia["usuario_id"], dia["fecha"])]
+    return _coincide_con_turno(dia["horas_trabajadas"], turno), _horas_plan(turno)
+
+
+def _guardar_fichaje(cur, dia, coincide, planificadas):
+    if dia["usuario_id"] is not None:
         cur.execute(
             """
-            DELETE FROM fichaje
-            WHERE usuario_id = %s AND fecha = %s AND coincide IS NULL
-            """,
-            (dia["usuario_id"], dia["fecha"]),
-        )
-        cur.execute(
-            """
-            INSERT INTO fichaje (
-                usuario_id, fecha, horas_fichadas,
-                horas_trabajadas, horas_pausa, incidencia, coincide
-            )
-            VALUES (%s, %s, 0, %s, %s, %s, NULL)
+            UPDATE fichaje
+            SET numero_sap = %s,
+                horas_trabajadas = %s,
+                horas_pausa = %s,
+                horas_planificadas = %s,
+                incidencia = %s,
+                coincide = %s
+            WHERE usuario_id = %s
+              AND fecha = %s
             """,
             (
-                dia["usuario_id"],
-                dia["fecha"],
+                dia["numero_sap"],
                 dia["horas_trabajadas"],
                 dia["horas_pausa"],
+                planificadas,
                 dia["incidencia"],
+                coincide,
+                dia["usuario_id"],
+                dia["fecha"],
             ),
         )
-        insertados += 1
+        if cur.rowcount:
+            return False
+    cur.execute(
+        """
+        INSERT INTO fichaje (
+            usuario_id, numero_sap, fecha, horas_fichadas,
+            horas_trabajadas, horas_pausa, horas_planificadas, incidencia, coincide
+        )
+        VALUES (%s, %s, %s, 0, %s, %s, %s, %s, %s)
+        """,
+        (
+            dia["usuario_id"],
+            dia["numero_sap"],
+            dia["fecha"],
+            dia["horas_trabajadas"],
+            dia["horas_pausa"],
+            planificadas,
+            dia["incidencia"],
+            coincide,
+        ),
+    )
+    return True
+
+
+def _insertar_fichajes(cur, dias):
+    turnos = _turnos_resueltos(cur, dias)
+    cur.execute(
+        """
+        DELETE FROM fichaje
+        WHERE usuario_id IS NULL AND coincide = 'sin_emparejar'
+        """
+    )
+    insertados = 0
+    for dia in dias:
+        if dia["fecha"] is None:
+            continue
+        coincide, planificadas = _cruce(dia, turnos)
+        if _guardar_fichaje(cur, dia, coincide, planificadas):
+            insertados += 1
     return insertados
 
 
@@ -380,7 +475,6 @@ def _numeros_ambiguos(cur):
 def cargar(ruta, registro=None):
     leidas, saltadas, eventos = leer_excel(ruta)
     with cursor() as cur:
-        _borrar_fichajes_previos(cur)
         nuevas, actualizadas = _insertar_eventos(cur, eventos)
         guardados = _leer_eventos(cur)
         ambiguos = _numeros_ambiguos(cur)

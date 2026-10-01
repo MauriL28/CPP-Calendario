@@ -1,7 +1,7 @@
 <script setup>
 import { nextTick, ref } from "vue";
 import { fechaVisible, lunesDe, sumarDias, textoCelda } from "../fechas.js";
-import { aplicarHorarios, borrarTurno, copiarSemana, guardarTurno, semana } from "../api/turnos.js";
+import { borrarTurno, copiarSemana, guardarTurno, semana } from "../api/turnos.js";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -119,16 +119,6 @@ function alFondo(evento) {
   }
 }
 
-async function aplicar() {
-  errorSemana.value = "";
-  try {
-    await aplicarHorarios(props.token, semanaDesde.value);
-    await cargar(semanaDesde.value);
-  } catch (causa) {
-    errorSemana.value = causa instanceof Error ? causa.message : "No se pudieron aplicar los horarios";
-  }
-}
-
 async function copiar() {
   errorSemana.value = "";
   try {
@@ -190,7 +180,6 @@ cargar(lunesDe(new Date()));
       <button type="button" @click="cargar(sumarDias(semanaDesde, -7))">Semana anterior</button>
       <span class="rango">{{ fechaVisible(cuadrante.desde) }} – {{ fechaVisible(cuadrante.dias[6]) }}</span>
       <button type="button" @click="cargar(sumarDias(semanaDesde, 7))">Semana siguiente</button>
-      <button v-if="editable" type="button" @click="aplicar">Aplicar horarios</button>
       <button v-if="editable" type="button" @click="copiar">Copiar semana anterior</button>
     </div>
     <p v-if="!editable" class="aviso-lectura">Solo lectura</p>

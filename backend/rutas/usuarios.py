@@ -18,7 +18,7 @@ def listar_del_departamento(cur, filtro, params):
     cur.execute(
         f"""
         SELECT g.codigo AS delegacion, d.codigo AS departamento,
-               u.nombre, u.login
+               u.nombre, u.login, u.numero_sap
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
         JOIN delegacion g ON g.id = d.delegacion_id
@@ -33,7 +33,7 @@ def listar_del_departamento(cur, filtro, params):
     cur.execute(
         f"""
         SELECT g.codigo AS delegacion, d.codigo AS departamento,
-               u.nombre, u.login, u.grupo, u.horas_contrato, u.vacaciones
+               u.nombre, u.login, u.grupo, u.horas_contrato, u.vacaciones, u.numero_sap
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
         JOIN delegacion g ON g.id = d.delegacion_id
@@ -94,7 +94,13 @@ def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos, h
     for mando in mandos:
         item = por_codigo.get((mando["delegacion"], mando["departamento"]))
         if item is not None:
-            item["mandos"].append({"nombre": mando["nombre"], "login": mando["login"]})
+            item["mandos"].append(
+                {
+                    "nombre": mando["nombre"],
+                    "login": mando["login"],
+                    "numero_sap": mando["numero_sap"],
+                }
+            )
     por_login = {}
     for trabajador in trabajadores:
         item = por_codigo.get((trabajador["delegacion"], trabajador["departamento"]))
@@ -107,6 +113,7 @@ def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos, h
             "horario": [],
             "horas_contrato": _decimal(trabajador["horas_contrato"]),
             "vacaciones": _decimal(trabajador["vacaciones"]),
+            "numero_sap": trabajador["numero_sap"],
             "turnos": [],
         }
         por_login[trabajador["login"]] = persona
@@ -154,6 +161,9 @@ def crear_usuario():
     campos = (nombre, login_nombre, clave, delegacion, departamento)
     if not all(isinstance(valor, str) and valor.strip() for valor in campos):
         return jsonify(error="Faltan datos"), 400
+    numero_sap, error = _numero_sap(cuerpo.get("numero_sap"))
+    if error:
+        return error
 
     try:
         with cursor() as cur:
@@ -177,17 +187,21 @@ def crear_usuario():
             )
             if cur.fetchone() is not None:
                 return jsonify(error="El login ya existe"), 409
+            if _sap_ocupado(cur, numero_sap):
+                return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
             cur.execute(
                 """
-                INSERT INTO usuario (nombre, login, clave, rol, departamento_id)
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'mando', %s)
-                RETURNING nombre, login, rol
+                INSERT INTO usuario (nombre, login, clave, rol, departamento_id, numero_sap)
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'mando', %s, %s)
+                RETURNING nombre, login, rol, numero_sap
                 """,
-                (nombre.strip(), login_nombre.strip(), clave, depto["id"]),
+                (nombre.strip(), login_nombre.strip(), clave, depto["id"], numero_sap),
             )
             creado = cur.fetchone()
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.errors.UniqueViolation as exc:
+        return _error_unico(exc)
     except psycopg.Error as exc:
         return jsonify(error=str(exc)), 503
 
@@ -197,4 +211,77 @@ def crear_usuario():
         rol=creado["rol"],
         delegacion=delegacion.strip(),
         departamento=departamento.strip(),
+        numero_sap=creado["numero_sap"],
     ), 201
+
+
+@bp.put("/usuarios/<login_nombre>/numero-sap")
+@jwt_required()
+def cambiar_numero_sap_mando(login_nombre):
+    if get_jwt().get("rol") != "admin":
+        return jsonify(error="No autorizado"), 403
+
+    cuerpo = request.get_json(silent=True) or {}
+    numero_sap, error = _numero_sap(cuerpo.get("numero_sap"))
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, departamento_id
+                FROM usuario
+                WHERE login = %s AND rol = 'mando'
+                """,
+                (login_nombre,),
+            )
+            mando = cur.fetchone()
+            if mando is None or mando["departamento_id"] is None:
+                return jsonify(error="No autorizado"), 404
+            if _sap_ocupado(cur, numero_sap, mando["id"]):
+                return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
+            cur.execute(
+                "UPDATE usuario SET numero_sap = %s WHERE id = %s",
+                (numero_sap, mando["id"]),
+            )
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.errors.UniqueViolation as exc:
+        return _error_unico(exc)
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(login=login_nombre, numero_sap=numero_sap)
+
+
+def _numero_sap(valor):
+    if valor is None or valor == "":
+        return None, None
+    if not isinstance(valor, str):
+        return None, (jsonify(error="Faltan datos"), 400)
+    if len(valor.strip()) > 40:
+        return None, (jsonify(error="El número de personal es demasiado largo"), 400)
+    texto = valor.strip()
+    return (texto or None), None
+
+
+def _sap_ocupado(cur, numero, excepto_id=None):
+    if numero is None:
+        return False
+    cur.execute(
+        """
+        SELECT 1
+        FROM usuario
+        WHERE numero_sap = %s
+          AND id IS DISTINCT FROM %s
+        """,
+        (numero, excepto_id),
+    )
+    return cur.fetchone() is not None
+
+
+def _error_unico(exc):
+    if getattr(exc.diag, "constraint_name", None) == "usuario_numero_sap":
+        return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
+    return jsonify(error=str(exc)), 503

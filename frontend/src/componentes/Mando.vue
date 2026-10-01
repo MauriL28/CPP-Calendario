@@ -1,7 +1,13 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
-import { cambiarHorario, crearTrabajador, darDeBaja as pedirBaja } from "../api/usuarios.js";
+import {
+  cambiarHorario,
+  cambiarNumeroSap,
+  crearTrabajador,
+  darDeBaja as pedirBaja,
+} from "../api/usuarios.js";
+import Analisis from "./Analisis.vue";
 import Cuadrante from "./Cuadrante.vue";
 
 const props = defineProps({
@@ -15,6 +21,7 @@ const error = ref("");
 const nombre = ref("");
 const login = ref("");
 const clave = ref("");
+const numeroSap = ref("");
 const grupo = ref("STEF");
 const letras = ["L", "M", "X", "J", "V", "S", "D"];
 const diasMarcados = ref([true, true, true, true, true, false, false]);
@@ -33,6 +40,10 @@ const horasHorario = ref(letras.map(() => ({ inicio: "", fin: "" })));
 const plantillaHorario = ref(null);
 const propiosHorario = ref(letras.map(() => false));
 const errorHorario = ref("");
+const dialogoSap = ref(null);
+const trabajadorSap = ref(null);
+const numeroSapEdit = ref("");
+const errorSap = ref("");
 const aviso = ref(false);
 const busqueda = ref("");
 const filtroGrupo = ref("");
@@ -83,6 +94,7 @@ function vaciarAlta() {
   nombre.value = "";
   login.value = "";
   clave.value = "";
+  numeroSap.value = "";
   grupo.value = "STEF";
   reiniciarHorario();
   vacaciones.value = "";
@@ -187,6 +199,44 @@ function cantidad(valor) {
     return "—";
   }
   return Number(valor).toLocaleString("es-ES");
+}
+
+function abrirSap(trabajador) {
+  trabajadorSap.value = trabajador;
+  numeroSapEdit.value = trabajador.numero_sap || "";
+  errorSap.value = "";
+  dialogoSap.value?.showModal();
+  dialogoSap.value?.querySelector("[name='numero-sap-edit']")?.focus();
+}
+
+function cerrarSap() {
+  dialogoSap.value?.close();
+}
+
+function alCerrarSap() {
+  trabajadorSap.value = null;
+  errorSap.value = "";
+}
+
+function alFondoSap(evento) {
+  if (evento.target === dialogoSap.value) {
+    cerrarSap();
+  }
+}
+
+async function guardarSap() {
+  const persona = trabajadorSap.value;
+  if (!persona) {
+    return;
+  }
+  errorSap.value = "";
+  try {
+    const respuesta = await cambiarNumeroSap(props.token, persona.login, numeroSapEdit.value);
+    persona.numero_sap = respuesta.numero_sap;
+    cerrarSap();
+  } catch (causa) {
+    errorSap.value = causa instanceof Error ? causa.message : "No se pudo guardar el número";
+  }
 }
 
 function cuenta(total) {
@@ -379,6 +429,7 @@ async function guardar() {
       login: login.value,
       clave: clave.value,
       grupo: grupo.value,
+      numero_sap: numeroSap.value,
       horario_dias: horarioDias,
       vacaciones: numero(vacaciones.value),
       horas_contrato: numero(horasContrato.value),
@@ -407,6 +458,9 @@ watch(vista, (nueva) => {
   if (nueva !== "equipo" && dialogoHorario.value?.open) {
     cerrarHorario();
   }
+  if (nueva !== "equipo" && dialogoSap.value?.open) {
+    cerrarSap();
+  }
 });
 
 onMounted(cargarDepartamentos);
@@ -420,8 +474,12 @@ onMounted(cargarDepartamentos);
     <button type="button" :class="{ activo: vista === 'equipo' }" @click="vista = 'equipo'">
       Equipo
     </button>
+    <button type="button" :class="{ activo: vista === 'analisis' }" @click="vista = 'analisis'">
+      Análisis
+    </button>
   </nav>
   <Cuadrante v-show="vista === 'cuadrante'" ref="cuadrante" :token="token" editable />
+  <Analisis v-if="vista === 'analisis'" :token="token" mando />
   <section v-if="vista === 'equipo'" class="equipo">
     <header class="equipo-intro">
       <h1>Equipo</h1>
@@ -466,6 +524,7 @@ onMounted(cargarDepartamentos);
                   <span class="persona-datos">
                     <strong>{{ trabajador.nombre }}</strong>
                     <span>{{ trabajador.login }}</span>
+                    <span v-if="trabajador.numero_sap">{{ trabajador.numero_sap }}</span>
                   </span>
                 </span>
               </td>
@@ -479,6 +538,7 @@ onMounted(cargarDepartamentos);
               <td class="col-extra">{{ cantidad(trabajador.vacaciones) }}</td>
               <td class="equipo-acciones">
                 <button type="button" @click="abrirHorario(trabajador)">Cambiar horario</button>
+                <button type="button" @click="abrirSap(trabajador)">Editar número SAP</button>
                 <button type="button" @click="darDeBaja(trabajador)">Dar de baja</button>
               </td>
             </tr>
@@ -507,6 +567,11 @@ onMounted(cargarDepartamentos);
             Clave
             <input v-model="clave" name="clave-trabajador" type="password" autocomplete="new-password" />
           </label>
+          <label class="ancho">
+            Número de personal (SAP)
+            <input v-model="numeroSap" name="numero-sap" autocomplete="off" />
+          </label>
+          <p class="ancho campo-pista">Lo pasa RRHH. Déjalo en blanco si aún no lo tienes.</p>
           <h3>Contrato</h3>
           <div class="alta-tres">
             <label>
@@ -621,6 +686,29 @@ onMounted(cargarDepartamentos);
       <footer class="alta-dialogo-pie">
         <button type="button" @click="cerrarHorario">Cancelar</button>
         <button class="primario" type="submit">Guardar horario</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog ref="dialogoSap" class="alta-dialogo" @close="alCerrarSap" @click="alFondoSap">
+    <form @submit.prevent="guardarSap">
+      <header class="alta-dialogo-cabecera">
+        <div>
+          <h2>Número de personal (SAP)</h2>
+          <p v-if="trabajadorSap" class="alta-dialogo-persona">{{ trabajadorSap.nombre }}</p>
+        </div>
+        <button type="button" class="dialogo-cerrar" @click="cerrarSap">✕</button>
+      </header>
+      <div class="alta-dialogo-cuerpo">
+        <label class="ancho">
+          Número de personal (SAP)
+          <input v-model="numeroSapEdit" name="numero-sap-edit" autocomplete="off" />
+        </label>
+        <p class="ancho campo-pista">Lo pasa RRHH. Déjalo en blanco si aún no lo tienes.</p>
+      </div>
+      <p v-if="errorSap" class="error" role="alert">{{ errorSap }}</p>
+      <footer class="alta-dialogo-pie">
+        <button type="button" @click="cerrarSap">Cancelar</button>
+        <button class="primario" type="submit">Guardar</button>
       </footer>
     </form>
   </dialog>
