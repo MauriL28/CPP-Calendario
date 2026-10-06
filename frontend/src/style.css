@@ -860,6 +860,11 @@ button.migas-enlace:not(.tarjeta):not(.celda):hover {
   margin-bottom: 12px;
 }
 
+.equipo-grupos {
+  display: grid;
+  gap: 16px;
+}
+
 .equipo-buscar {
   width: 220px;
   height: 40px;
@@ -1205,6 +1210,52 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
   margin: 0.5rem 0 0.75rem;
 }
 
+.semana-nav .modo-vista {
+  margin: 0;
+}
+
+.cuadrante-scroll.mensual {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+table.cuadrante.mensual {
+  width: max-content;
+  min-width: 100%;
+}
+
+table.cuadrante.mensual th:not(:first-child),
+table.cuadrante.mensual td:not(:first-child) {
+  min-width: 4.6rem;
+}
+
+table.cuadrante.mensual thead th:first-child,
+table.cuadrante.mensual tbody th,
+table.cuadrante.mensual tfoot td:first-child {
+  position: sticky;
+  left: 0;
+}
+
+table.cuadrante.mensual thead th:first-child {
+  z-index: 2;
+  background: var(--libranza-bg);
+}
+
+table.cuadrante.mensual tbody th {
+  z-index: 1;
+  background: var(--panel);
+}
+
+table.cuadrante.mensual tbody tr.grupo-fila th {
+  position: static;
+  z-index: auto;
+}
+
+table.cuadrante.mensual tfoot td:first-child {
+  z-index: 1;
+  background: #fafbfc;
+}
+
 .rango {
   font-weight: 600;
 }
@@ -1223,6 +1274,110 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
   margin: 6px 0 0;
   font-size: 14px;
   color: var(--text-2);
+}
+
+.ficha {
+  display: grid;
+  gap: 16px;
+}
+
+.ficha-cabecera {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ficha-cabecera h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.ficha-cabecera p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.ficha-anual {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ficha-anual strong {
+  margin-left: 10px;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.ficha-meses {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ficha-mes-nombre {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ficha-mes-horas {
+  display: block;
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.ficha-mes-pista {
+  display: block;
+  height: 4px;
+  margin-top: 10px;
+}
+
+.ficha-mes-barra {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+.ficha-contadores {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .ficha-meses {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .ficha-cabecera {
+    flex-wrap: wrap;
+  }
+
+  .ficha-meses,
+  .ficha-contadores {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+button.enlace:not(.tarjeta):not(.celda) {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .semana.lectura {
@@ -1298,6 +1453,22 @@ table.cuadrante tbody th {
   padding-left: 0.6rem;
 }
 
+table.cuadrante tbody tr.grupo-fila th {
+  background: var(--bg);
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+table.cuadrante tfoot td {
+  background: #fafbfc;
+  font-weight: 600;
+}
+
+table.cuadrante tfoot td:first-child {
+  text-align: left;
+  padding-left: 0.6rem;
+}
+
 .dia-nombre,
 .dia-numero {
   display: block;
@@ -1308,71 +1479,136 @@ table.cuadrante tbody th {
   color: var(--text-2);
 }
 
-table.cuadrante td.fin:not(.editando):not([class*="turno-"]) {
+.festivos .equipo-barra {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.dia-festivo {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--festivo-tx);
+}
+
+table.cuadrante tbody td {
+  height: 1px;
+  padding: 3px;
+  background: #fff;
+}
+
+table.cuadrante tbody td .celda {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+table.cuadrante td.fin:not(.editando):not([class*="turno-"]) .celda {
   background: var(--libranza-bg);
 }
 
 table.cuadrante td.turno-manana,
 .muestra.turno-manana {
-  background: var(--manana-bg);
   color: var(--manana);
   font-weight: 600;
 }
 
+table.cuadrante td.turno-manana .celda,
+.muestra.turno-manana {
+  background: var(--manana-bg);
+}
+
 table.cuadrante td.turno-tarde,
 .muestra.turno-tarde {
-  background: var(--tarde-bg);
   color: var(--tarde);
   font-weight: 600;
 }
 
+table.cuadrante td.turno-tarde .celda,
+.muestra.turno-tarde {
+  background: var(--tarde-bg);
+}
+
 table.cuadrante td.turno-noche,
 .muestra.turno-noche {
-  background: var(--noche-bg);
   color: var(--noche);
   font-weight: 600;
 }
 
+table.cuadrante td.turno-noche .celda,
+.muestra.turno-noche {
+  background: var(--noche-bg);
+}
+
 table.cuadrante td.turno-libranza,
 .muestra.turno-libranza {
-  background: var(--libranza-bg);
   color: var(--text-2);
   font-weight: 600;
 }
 
+table.cuadrante td.turno-libranza .celda,
+.muestra.turno-libranza {
+  background: var(--libranza-bg);
+}
+
 table.cuadrante td.turno-domingo,
 .muestra.turno-domingo {
-  background: var(--domingo-bg);
   color: var(--domingo-tx);
   font-weight: 600;
 }
 
+table.cuadrante td.turno-domingo .celda,
+.muestra.turno-domingo {
+  background: var(--domingo-bg);
+}
+
 table.cuadrante td.turno-vacaciones,
 .muestra.turno-vacaciones {
-  background: var(--vacaciones-bg);
   color: var(--vacaciones-tx);
   font-weight: 600;
 }
 
+table.cuadrante td.turno-vacaciones .celda,
+.muestra.turno-vacaciones {
+  background: var(--vacaciones-bg);
+}
+
 table.cuadrante td.turno-baja,
 .muestra.turno-baja {
-  background: var(--baja-bg);
   color: var(--baja-tx);
   font-weight: 600;
 }
 
+table.cuadrante td.turno-baja .celda,
+.muestra.turno-baja {
+  background: var(--baja-bg);
+}
+
 table.cuadrante td.turno-festivo,
 .muestra.turno-festivo {
-  background: var(--festivo-bg);
   color: var(--festivo-tx);
   font-weight: 600;
 }
 
+table.cuadrante td.turno-festivo .celda,
+.muestra.turno-festivo {
+  background: var(--festivo-bg);
+}
+
 table.cuadrante td.turno-permiso,
 .muestra.turno-permiso {
-  background: var(--permiso-bg);
   color: var(--permiso-tx);
   font-weight: 600;
+}
+
+table.cuadrante td.turno-permiso .celda,
+.muestra.turno-permiso {
+  background: var(--permiso-bg);
 }
 
 table.cuadrante td[class*="turno-"] .celda {

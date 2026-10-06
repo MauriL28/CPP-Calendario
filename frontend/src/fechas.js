@@ -39,9 +39,38 @@ export function rolVisible(rol) {
   return ROLES[rol] || rol;
 }
 
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+export function numeroSemanaIso(iso) {
+  const [anio, mes, dia] = iso.split("-").map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  const diaSemana = fecha.getUTCDay() || 7;
+  fecha.setUTCDate(fecha.getUTCDate() + 4 - diaSemana);
+  const inicio = new Date(Date.UTC(fecha.getUTCFullYear(), 0, 1));
+  return Math.ceil((fecha - inicio) / 86400000 / 7 + 1 / 7);
+}
+
+export function rangoSemana(desde, hasta) {
+  return `Semana ${numeroSemanaIso(desde)} · ${diaMes(desde)} – ${diaMes(hasta)}`;
+}
+
+function diaMes(iso) {
+  const [, mes, dia] = iso.split("-").map(Number);
+  return `${dia} ${MESES[mes - 1]}`;
+}
+
 export function fechaVisible(iso) {
   const [anio, mes, dia] = iso.split("-");
   return `${dia}/${mes}/${anio}`;
+}
+
+function horaCompacta(hora) {
+  const [horas, minutos] = hora.split(":");
+  const texto = String(Number(horas));
+  if (Number(minutos) === 0) {
+    return texto;
+  }
+  return `${texto}:${minutos}`;
 }
 
 export function textoCelda(turno) {
@@ -51,5 +80,5 @@ export function textoCelda(turno) {
   if (turno.ausencia) {
     return turno.ausencia;
   }
-  return `${turno.hora_inicio}–${turno.hora_fin}`;
+  return `${horaCompacta(turno.hora_inicio)}-${horaCompacta(turno.hora_fin)}`;
 }

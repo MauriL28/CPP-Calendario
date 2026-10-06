@@ -14,6 +14,8 @@ export default defineConfig({
       "/usuarios": "http://127.0.0.1:5001",
       "/departamentos": "http://127.0.0.1:5001",
       "/fichajes": "http://127.0.0.1:5001",
+      "/ajustes": "http://127.0.0.1:5001",
+      "/festivos": "http://127.0.0.1:5001",
       "/health": "http://127.0.0.1:5001",
     },
   },

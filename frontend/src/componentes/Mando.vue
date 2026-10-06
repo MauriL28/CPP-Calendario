@@ -2,19 +2,24 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
 import {
+  borrarAjuste,
   cambiarHorario,
   cambiarNumeroSap,
+  crearAjuste,
   crearTrabajador,
   darDeBaja as pedirBaja,
+  listarAjustes,
 } from "../api/usuarios.js";
 import Analisis from "./Analisis.vue";
 import Cuadrante from "./Cuadrante.vue";
+import FichaEmpleado from "./FichaEmpleado.vue";
 
 const props = defineProps({
   token: { type: String, required: true },
 });
 
 const vista = ref("cuadrante");
+const fichaLogin = ref("");
 const cuadrante = ref(null);
 const departamentos = ref([]);
 const error = ref("");
@@ -41,30 +46,54 @@ const plantillaHorario = ref(null);
 const propiosHorario = ref(letras.map(() => false));
 const errorHorario = ref("");
 const dialogoSap = ref(null);
+const dialogoAjustes = ref(null);
+const trabajadorAjuste = ref(null);
+const ajustes = ref([]);
+const fechaAjuste = ref("");
+const horasAjuste = ref("");
+const motivoAjuste = ref("");
+const errorAjuste = ref("");
 const trabajadorSap = ref(null);
 const numeroSapEdit = ref("");
 const errorSap = ref("");
 const aviso = ref(false);
 const busqueda = ref("");
-const filtroGrupo = ref("");
 let avisoTemporizador = 0;
 
 const equipo = computed(() => departamentos.value[0] || null);
 const trabajadores = computed(() => equipo.value?.trabajadores ?? []);
 const filtrados = computed(() => {
   const texto = busqueda.value.trim().toLocaleLowerCase("es");
+  if (!texto) {
+    return trabajadores.value;
+  }
   return trabajadores.value.filter((trabajador) => {
-    if (filtroGrupo.value && trabajador.grupo !== filtroGrupo.value) {
-      return false;
-    }
-    if (!texto) {
-      return true;
-    }
     const nombreVisible = trabajador.nombre.toLocaleLowerCase("es");
     const loginVisible = trabajador.login.toLocaleLowerCase("es");
     return nombreVisible.includes(texto) || loginVisible.includes(texto);
   });
 });
+const gruposEquipo = computed(() => [
+  {
+    id: "STEF",
+    titulo: "Personal STEF",
+    vacio: "Sin personal STEF en este departamento.",
+    personas: filtrados.value.filter((trabajador) => trabajador.grupo === "STEF"),
+    hay: trabajadores.value.some((trabajador) => trabajador.grupo === "STEF"),
+  },
+  {
+    id: "ETT",
+    titulo: "ETT",
+    vacio: "Sin personal ETT en este departamento.",
+    personas: filtrados.value.filter((trabajador) => trabajador.grupo === "ETT"),
+    hay: trabajadores.value.some((trabajador) => trabajador.grupo === "ETT"),
+  },
+]);
+
+function abrirFicha(trabajador) {
+  fichaLogin.value = trabajador.login;
+  vista.value = "ficha";
+}
 
 function iniciales(texto) {
   const palabras = texto.split(/\s+/).filter((parte) => /\p{L}/u.test(parte));
@@ -443,6 +472,103 @@ async function guardar() {
   }
 }
 
+function fechaVisible(iso) {
+  const [anio, mes, dia] = iso.split("-");
+  return `${dia}/${mes}/${anio}`;
+}
+
+function horasConSigno(valor) {
+  const numeroHoras = Number(valor);
+  const texto = Math.abs(numeroHoras).toLocaleString("es-ES", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+  if (numeroHoras > 0) {
+    return `+${texto}`;
+  }
+  if (numeroHoras < 0) {
+    return `-${texto}`;
+  }
+  return texto;
+}
+
+async function abrirAjustes(trabajador) {
+  trabajadorAjuste.value = trabajador;
+  fechaAjuste.value = "";
+  horasAjuste.value = "";
+  motivoAjuste.value = "";
+  errorAjuste.value = "";
+  ajustes.value = [];
+  dialogoAjustes.value?.showModal();
+  try {
+    ajustes.value = await listarAjustes(props.token, trabajador.login);
+  } catch (causa) {
+    errorAjuste.value = causa instanceof Error ? causa.message : "No se pudieron cargar los ajustes";
+  }
+}
+
+function cerrarAjustes() {
+  dialogoAjustes.value?.close();
+}
+
+function alCerrarAjustes() {
+  trabajadorAjuste.value = null;
+  ajustes.value = [];
+  errorAjuste.value = "";
+}
+
+function alFondoAjustes(evento) {
+  if (evento.target === dialogoAjustes.value) {
+    cerrarAjustes();
+  }
+}
+
+async function guardarAjuste() {
+  const persona = trabajadorAjuste.value;
+  if (!persona) {
+    return;
+  }
+  const textoHoras = String(horasAjuste.value ?? "").trim();
+  const numeroHoras = Number(textoHoras);
+  if (textoHoras === "" || Number.isNaN(numeroHoras) || !fechaAjuste.value || !motivoAjuste.value.trim()) {
+    errorAjuste.value = "Faltan datos";
+    return;
+  }
+  if (numeroHoras === 0) {
+    errorAjuste.value = "Las horas no pueden ser 0";
+    return;
+  }
+  errorAjuste.value = "";
+  try {
+    const creado = await crearAjuste(props.token, {
+      usuario_afectado: persona.login,
+      fecha: fechaAjuste.value,
+      horas: numeroHoras,
+      motivo: motivoAjuste.value.trim(),
+    });
+    ajustes.value = [...ajustes.value, creado].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
+    fechaAjuste.value = "";
+    horasAjuste.value = "";
+    motivoAjuste.value = "";
+  } catch (causa) {
+    errorAjuste.value = causa instanceof Error ? causa.message : "No se pudo guardar el ajuste";
+  }
+}
+
+async function eliminarAjuste(ajuste) {
+  const persona = trabajadorAjuste.value;
+  if (!persona || !window.confirm("¿Eliminar este ajuste?")) {
+    return;
+  }
+  errorAjuste.value = "";
+  try {
+    await borrarAjuste(props.token, ajuste.id);
+    ajustes.value = ajustes.value.filter((item) => item.id !== ajuste.id);
+  } catch (causa) {
+    errorAjuste.value = causa instanceof Error ? causa.message : "No se pudo eliminar el ajuste";
+  }
+}
+
 function numero(valor) {
   if (valor === "" || valor === null) {
     return null;
@@ -461,6 +587,9 @@ watch(vista, (nueva) => {
   if (nueva !== "equipo" && dialogoSap.value?.open) {
     cerrarSap();
   }
+  if (nueva !== "equipo" && dialogoAjustes.value?.open) {
+    cerrarAjustes();
+  }
 });
 
 onMounted(cargarDepartamentos);
@@ -478,8 +607,11 @@ onMounted(cargarDepartamentos);
       Análisis
     </button>
   </nav>
-  <Cuadrante v-show="vista === 'cuadrante'" ref="cuadrante" :token="token" editable />
+  <div v-show="vista === 'cuadrante'">
+    <Cuadrante ref="cuadrante" :token="token" editable />
+  </div>
   <Analisis v-if="vista === 'analisis'" :token="token" mando />
+  <FichaEmpleado v-if="vista === 'ficha'" :token="token" :login="fichaLogin" />
   <section v-if="vista === 'equipo'" class="equipo">
     <header class="equipo-intro">
       <h1>Equipo</h1>
@@ -494,57 +626,54 @@ onMounted(cargarDepartamentos);
     <template v-else-if="equipo">
       <div class="equipo-barra">
         <input v-model="busqueda" class="equipo-buscar" type="search" placeholder="Buscar trabajador..." />
-        <select v-model="filtroGrupo" class="equipo-grupo">
-          <option value="">Todos los grupos</option>
-          <option value="STEF">STEF</option>
-          <option value="ETT">ETT</option>
-        </select>
         <button type="button" class="primario" @click="abrirAlta">+ Añadir trabajador</button>
       </div>
-      <section class="panel">
-        <header class="panel-cabecera">
-          <h2>{{ cuenta(filtrados.length) }}</h2>
-        </header>
-        <p v-if="!filtrados.length" class="panel-vacio">Ningún trabajador coincide con la búsqueda.</p>
-        <table v-else class="equipo">
-          <thead>
-            <tr>
-              <th>Trabajador</th>
-              <th>Grupo</th>
-              <th>Horario</th>
-              <th class="col-extra">Horas/semana</th>
-              <th class="col-extra">Vacaciones/año</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="trabajador in filtrados" :key="trabajador.login">
-              <td>
-                <span class="equipo-persona">
-                  <span class="avatar">{{ iniciales(trabajador.nombre) }}</span>
-                  <span class="persona-datos">
-                    <strong>{{ trabajador.nombre }}</strong>
-                    <span>{{ trabajador.login }}</span>
-                    <span v-if="trabajador.numero_sap">{{ trabajador.numero_sap }}</span>
+      <div class="equipo-grupos">
+        <section v-for="grupoEquipo in gruposEquipo" :key="grupoEquipo.id" class="panel">
+          <header class="panel-cabecera">
+            <h2>{{ grupoEquipo.titulo }}</h2>
+            <span class="panel-cuenta">{{ cuenta(grupoEquipo.personas.length) }}</span>
+          </header>
+          <p v-if="!grupoEquipo.hay" class="panel-vacio">{{ grupoEquipo.vacio }}</p>
+          <p v-else-if="!grupoEquipo.personas.length" class="panel-vacio">
+            Ningún trabajador coincide con la búsqueda.
+          </p>
+          <table v-else class="equipo">
+            <thead>
+              <tr>
+                <th>Trabajador</th>
+                <th>Horario</th>
+                <th class="col-extra">Horas/semana</th>
+                <th class="col-extra">Vacaciones/año</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="trabajador in grupoEquipo.personas" :key="trabajador.login">
+                <td>
+                  <span class="equipo-persona">
+                    <span class="avatar">{{ iniciales(trabajador.nombre) }}</span>
+                    <span class="persona-datos">
+                      <strong>{{ trabajador.nombre }}</strong>
+                      <span>{{ trabajador.login }}</span>
+                      <span v-if="trabajador.numero_sap">{{ trabajador.numero_sap }}</span>
+                    </span>
                   </span>
-                </span>
-              </td>
-              <td>
-                <span class="grupo-pastilla" :class="trabajador.grupo === 'ETT' ? 'grupo-ett' : 'grupo-stef'">
-                  {{ trabajador.grupo }}
-                </span>
-              </td>
-              <td>{{ horario(trabajador) }}</td>
-              <td class="col-extra">{{ cantidad(trabajador.horas_contrato) }}</td>
-              <td class="col-extra">{{ cantidad(trabajador.vacaciones) }}</td>
-              <td class="equipo-acciones">
-                <button type="button" @click="abrirHorario(trabajador)">Cambiar horario</button>
-                <button type="button" @click="abrirSap(trabajador)">Editar número SAP</button>
-                <button type="button" @click="darDeBaja(trabajador)">Dar de baja</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
+                </td>
+                <td>{{ horario(trabajador) }}</td>
+                <td class="col-extra">{{ cantidad(trabajador.horas_contrato) }}</td>
+                <td class="col-extra">{{ cantidad(trabajador.vacaciones) }}</td>
+                <td class="equipo-acciones">
+                  <button type="button" @click="abrirHorario(trabajador)">Cambiar horario</button>
+                  <button type="button" @click="abrirAjustes(trabajador)">Ajustes</button>
+                  <button type="button" @click="abrirSap(trabajador)">Editar número SAP</button>
+                  <button type="button" @click="darDeBaja(trabajador)">Dar de baja</button>
+                  <button type="button" @click="abrirFicha(trabajador)">Ver ficha</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
     </template>
   </section>
   <dialog ref="dialogo" class="alta-dialogo" @close="alCerrarAlta" @click="alFondo">
@@ -709,6 +838,49 @@ onMounted(cargarDepartamentos);
       <footer class="alta-dialogo-pie">
         <button type="button" @click="cerrarSap">Cancelar</button>
         <button class="primario" type="submit">Guardar</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog ref="dialogoAjustes" class="alta-dialogo" @close="alCerrarAjustes" @click="alFondoAjustes">
+    <header class="alta-dialogo-cabecera">
+      <div>
+        <h2>Ajustes</h2>
+        <p v-if="trabajadorAjuste" class="alta-dialogo-persona">{{ trabajadorAjuste.nombre }}</p>
+      </div>
+      <button type="button" class="dialogo-cerrar" @click="cerrarAjustes">✕</button>
+    </header>
+    <div class="alta-dialogo-cuerpo">
+      <p v-if="!ajustes.length" class="panel-vacio ancho">Sin ajustes registrados.</p>
+      <ul v-else class="panel-filas ancho">
+        <li v-for="ajuste in ajustes" :key="ajuste.id">
+          <span class="persona-datos">
+            <strong>{{ fechaVisible(ajuste.fecha) }} · {{ horasConSigno(ajuste.horas) }}</strong>
+            <span>{{ ajuste.motivo }}</span>
+            <span>{{ ajuste.registra }}</span>
+          </span>
+          <button type="button" @click="eliminarAjuste(ajuste)">Eliminar</button>
+        </li>
+      </ul>
+    </div>
+    <form @submit.prevent="guardarAjuste">
+      <div class="alta-dialogo-cuerpo">
+        <label>
+          Fecha
+          <input v-model="fechaAjuste" name="fecha-ajuste" type="date" />
+        </label>
+        <label>
+          Horas
+          <input v-model="horasAjuste" name="horas-ajuste" type="number" step="0.01" />
+        </label>
+        <label class="ancho">
+          Motivo
+          <input v-model="motivoAjuste" name="motivo-ajuste" />
+        </label>
+      </div>
+      <p v-if="errorAjuste" class="error" role="alert">{{ errorAjuste }}</p>
+      <footer class="alta-dialogo-pie">
+        <button type="button" @click="cerrarAjustes">Cerrar</button>
+        <button class="primario" type="submit">Añadir ajuste</button>
       </footer>
     </form>
   </dialog>

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from calendar import monthrange
 
 import psycopg
 from flask import Blueprint, jsonify, request
@@ -73,11 +74,23 @@ def _horas_habituales(fecha, versiones):
     return version["dias"].get(fecha.weekday())
 
 
+def _domingo_libre():
+    return {
+        "ausencia": "D",
+        "hora_inicio": None,
+        "hora_fin": None,
+        "horas_planificadas": 0.0,
+        "horas_nocturnas": 0.0,
+    }, "habitual"
+
+
 def resolver_turno(fecha, fila, versiones, noche_inicio, noche_fin):
     if fila is not None:
         return _turno(fila), "guardado"
     horas = _horas_habituales(fecha, versiones)
     if horas is None:
+        if fecha.weekday() == 6:
+            return _domingo_libre()
         return None, None
     inicio, fin = horas
     planificadas, nocturnas = horas_de_turno(inicio, fin, noche_inicio, noche_fin)
@@ -120,7 +133,7 @@ def turno_efectivo(usuario, fecha):
     return resolver_turno(fecha, None, versiones, noche_inicio, noche_fin)[0]
 
 
-def _material_semana(cur, ids, dias):
+def _material_rango(cur, ids, inicio, fin):
     turnos = {}
     versiones = {}
     if ids:
@@ -133,7 +146,7 @@ def _material_semana(cur, ids, dias):
               AND fecha >= %s
               AND fecha <= %s
             """,
-            (ids, dias[0], dias[6]),
+            (ids, inicio, fin),
         )
         for fila in cur.fetchall():
             turnos[(fila["usuario_id"], fila["fecha"])] = fila
@@ -146,14 +159,34 @@ def _material_semana(cur, ids, dias):
             WHERE v.usuario_id = ANY(%s)
               AND v.desde <= %s
             """,
-            (ids, dias[6]),
+            (ids, fin),
         )
         versiones = _agrupar_versiones(cur.fetchall())
     noche_inicio, noche_fin = _franja(cur)
     return turnos, versiones, noche_inicio, noche_fin
 
 
-def _dias_resueltos(usuario_id, dias, turnos, versiones, noche_inicio, noche_fin):
+def _material_semana(cur, ids, dias):
+    return _material_rango(cur, ids, dias[0], dias[6])
+
+
+def _festivos_rango(cur, inicio, fin):
+    cur.execute(
+        """
+        SELECT fecha, nombre
+        FROM festivo
+        WHERE fecha >= %s AND fecha <= %s
+        """,
+        (inicio, fin),
+    )
+    return {fila["fecha"]: fila["nombre"] for fila in cur.fetchall()}
+
+
+def _festivos_semana(cur, dias):
+    return _festivos_rango(cur, dias[0], dias[6])
+
+
+def _dias_resueltos(usuario_id, dias, turnos, versiones, noche_inicio, noche_fin, festivos):
     suyas = versiones.get(usuario_id, [])
     resultado = []
     for dia in dias:
@@ -164,15 +197,50 @@ def _dias_resueltos(usuario_id, dias, turnos, versiones, noche_inicio, noche_fin
             noche_inicio,
             noche_fin,
         )
-        entrada = {"fecha": dia.isoformat(), "turno": turno}
+        entrada = {"fecha": dia.isoformat(), "turno": turno, "festivo": dia in festivos}
         if turno is not None:
             entrada["origen"] = origen
+        if dia in festivos:
+            entrada["nombre"] = festivos[dia]
         resultado.append(entrada)
     return resultado
 
 
 def _semana(desde):
     return [desde + timedelta(days=i) for i in range(7)]
+
+
+def _mes(anio_texto, mes_texto):
+    if anio_texto in (None, "") or mes_texto in (None, ""):
+        return None, (jsonify(error="Faltan datos"), 400)
+    try:
+        anio = int(anio_texto)
+        mes = int(mes_texto)
+        inicio = datetime(anio, mes, 1).date()
+    except (TypeError, ValueError):
+        return None, (jsonify(error="La fecha no es válida"), 400)
+    ultimo = monthrange(anio, mes)[1]
+    return [inicio + timedelta(days=i) for i in range(ultimo)], None
+
+
+def _trabajadores_resueltos(trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos):
+    return [
+        {
+            "nombre": trabajador["nombre"],
+            "login": trabajador["login"],
+            "grupo": trabajador["grupo"],
+            "dias": _dias_resueltos(
+                trabajador["id"],
+                dias,
+                turnos,
+                versiones,
+                noche_inicio,
+                noche_fin,
+                festivos,
+            ),
+        }
+        for trabajador in trabajadores
+    ]
 
 
 def _visible_en_semana(trabajador, dias, turnos):
@@ -217,6 +285,7 @@ def listar_turnos():
             turnos, versiones, noche_inicio, noche_fin = _material_semana(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias
             )
+            festivos = _festivos_semana(cur, dias)
             trabajadores = [
                 trabajador
                 for trabajador in trabajadores
@@ -236,7 +305,13 @@ def listar_turnos():
                 "login": trabajador["login"],
                 "grupo": trabajador["grupo"],
                 "dias": _dias_resueltos(
-                    trabajador["id"], dias, turnos, versiones, noche_inicio, noche_fin
+                    trabajador["id"],
+                    dias,
+                    turnos,
+                    versiones,
+                    noche_inicio,
+                    noche_fin,
+                    festivos,
                 ),
             }
             for trabajador in trabajadores
@@ -270,6 +345,7 @@ def listar_turnos_mios():
             turnos, versiones, noche_inicio, noche_fin = _material_semana(
                 cur, [trabajador["id"]], dias
             )
+            festivos = _festivos_semana(cur, dias)
             if not _visible_en_semana(trabajador, dias, turnos):
                 trabajador = None
     except SinBaseDeDatos:
@@ -285,12 +361,118 @@ def listar_turnos_mios():
                 "login": trabajador["login"],
                 "grupo": trabajador["grupo"],
                 "dias": _dias_resueltos(
-                    trabajador["id"], dias, turnos, versiones, noche_inicio, noche_fin
+                    trabajador["id"],
+                    dias,
+                    turnos,
+                    versiones,
+                    noche_inicio,
+                    noche_fin,
+                    festivos,
                 ),
             }
         )
     return jsonify(
         desde=desde.isoformat(),
+        dias=[dia.isoformat() for dia in dias],
+        trabajadores=personas,
+    )
+
+
+@bp.get("/turnos/mes")
+@jwt_required()
+def listar_turnos_mes():
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+    dias, error = _mes(request.args.get("anio"), request.args.get("mes"))
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT departamento_id
+                FROM usuario
+                WHERE id = %s AND rol = 'mando'
+                """,
+                (get_jwt_identity(),),
+            )
+            mando = cur.fetchone()
+            if mando is None or mando["departamento_id"] is None:
+                return jsonify(error="No autorizado"), 403
+            cur.execute(
+                """
+                SELECT id, nombre, login, grupo, activo
+                FROM usuario
+                WHERE rol = 'trabajador' AND departamento_id = %s
+                ORDER BY nombre
+                """,
+                (mando["departamento_id"],),
+            )
+            trabajadores = cur.fetchall()
+            turnos, versiones, noche_inicio, noche_fin = _material_rango(
+                cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
+            )
+            festivos = _festivos_rango(cur, dias[0], dias[-1])
+            trabajadores = [
+                trabajador
+                for trabajador in trabajadores
+                if _visible_en_semana(trabajador, dias, turnos)
+            ]
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(
+        desde=dias[0].isoformat(),
+        dias=[dia.isoformat() for dia in dias],
+        trabajadores=_trabajadores_resueltos(
+            trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos
+        ),
+    )
+
+
+@bp.get("/turnos/mios/mes")
+@jwt_required()
+def listar_turnos_mios_mes():
+    if get_jwt().get("rol") != "trabajador":
+        return jsonify(error="No autorizado"), 403
+    dias, error = _mes(request.args.get("anio"), request.args.get("mes"))
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, nombre, login, grupo, activo
+                FROM usuario
+                WHERE id = %s AND rol = 'trabajador'
+                """,
+                (get_jwt_identity(),),
+            )
+            trabajador = cur.fetchone()
+            if trabajador is None:
+                return jsonify(error="No autorizado"), 403
+            turnos, versiones, noche_inicio, noche_fin = _material_rango(
+                cur, [trabajador["id"]], dias[0], dias[-1]
+            )
+            festivos = _festivos_rango(cur, dias[0], dias[-1])
+            if not _visible_en_semana(trabajador, dias, turnos):
+                trabajador = None
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    personas = []
+    if trabajador is not None:
+        personas = _trabajadores_resueltos(
+            [trabajador], dias, turnos, versiones, noche_inicio, noche_fin, festivos
+        )
+    return jsonify(
+        desde=dias[0].isoformat(),
         dias=[dia.isoformat() for dia in dias],
         trabajadores=personas,
     )

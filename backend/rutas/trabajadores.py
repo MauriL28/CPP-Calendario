@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import psycopg
 from flask import Blueprint, jsonify, request
@@ -6,6 +6,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
 from horas import hora_texto, parse_hora
+from rutas.turnos import _agrupar_versiones, _franja, resolver_turno
 
 bp = Blueprint("trabajadores", __name__)
 
@@ -349,6 +350,142 @@ def _error_unico(exc):
     if getattr(exc.diag, "constraint_name", None) == "usuario_numero_sap":
         return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
     return jsonify(error=str(exc)), 503
+
+
+@bp.get("/trabajadores/<login_nombre>/ficha")
+@jwt_required()
+def ficha(login_nombre):
+    rol = get_jwt().get("rol")
+    if rol not in ("mando", "trabajador"):
+        return jsonify(error="No autorizado"), 403
+    anio, error = _anio(request.args.get("anio"))
+    if error:
+        return error
+    inicio = date(anio, 1, 1)
+    fin = date(anio, 12, 31)
+
+    try:
+        with cursor() as cur:
+            mando = None
+            if rol == "mando":
+                cur.execute(
+                    """
+                    SELECT departamento_id
+                    FROM usuario
+                    WHERE id = %s AND rol = 'mando'
+                    """,
+                    (get_jwt_identity(),),
+                )
+                mando = cur.fetchone()
+                if mando is None or mando["departamento_id"] is None:
+                    return jsonify(error="No autorizado"), 403
+            cur.execute(
+                """
+                SELECT u.id, u.nombre, u.grupo, u.departamento_id,
+                       d.nombre AS departamento
+                FROM usuario u
+                JOIN departamento d ON d.id = u.departamento_id
+                WHERE u.login = %s AND u.rol = 'trabajador'
+                """,
+                (login_nombre,),
+            )
+            trabajador = cur.fetchone()
+            if rol == "trabajador":
+                if trabajador is None or str(trabajador["id"]) != get_jwt_identity():
+                    return jsonify(error="No autorizado"), 403
+            elif trabajador is None or trabajador["departamento_id"] != mando["departamento_id"]:
+                return jsonify(error="Ese trabajador no es de tu departamento"), 404
+            cur.execute(
+                """
+                SELECT fecha, ausencia::text AS ausencia, hora_inicio, hora_fin,
+                       horas_planificadas, horas_nocturnas
+                FROM turno
+                WHERE usuario_id = %s AND fecha >= %s AND fecha <= %s
+                """,
+                (trabajador["id"], inicio, fin),
+            )
+            turnos = {fila["fecha"]: fila for fila in cur.fetchall()}
+            cur.execute(
+                """
+                SELECT v.usuario_id, v.desde, d.dia_semana, d.horario_inicio, d.horario_fin
+                FROM horario_version v
+                LEFT JOIN horario_dia d
+                  ON d.usuario_id = v.usuario_id AND d.desde = v.desde
+                WHERE v.usuario_id = %s AND v.desde <= %s
+                """,
+                (trabajador["id"], fin),
+            )
+            versiones = _agrupar_versiones(cur.fetchall()).get(trabajador["id"], [])
+            noche_inicio, noche_fin = _franja(cur)
+            cur.execute(
+                "SELECT fecha FROM festivo WHERE fecha >= %s AND fecha <= %s",
+                (inicio, fin),
+            )
+            festivos = {fila["fecha"] for fila in cur.fetchall()}
+            cur.execute(
+                """
+                SELECT fecha, horas, motivo
+                FROM ajuste
+                WHERE usuario_afectado_id = %s AND fecha >= %s AND fecha <= %s
+                ORDER BY fecha, id
+                """,
+                (trabajador["id"], inicio, fin),
+            )
+            ajustes = [
+                {
+                    "fecha": fila["fecha"].isoformat(),
+                    "horas": float(fila["horas"]),
+                    "motivo": fila["motivo"],
+                }
+                for fila in cur.fetchall()
+            ]
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    horas_mes = [0.0] * 12
+    ausencias = {"V": 0, "B": 0, "P": 0, "F": 0}
+    festivos_trabajados = 0
+    sabados_trabajados = 0
+    dia = inicio
+    while dia <= fin:
+        turno, _origen = resolver_turno(
+            dia, turnos.get(dia), versiones, noche_inicio, noche_fin
+        )
+        if turno is not None and turno["ausencia"]:
+            if turno["ausencia"] in ausencias:
+                ausencias[turno["ausencia"]] += 1
+        elif turno is not None:
+            horas_mes[dia.month - 1] += float(turno["horas_planificadas"])
+            if dia in festivos:
+                festivos_trabajados += 1
+            if dia.weekday() == 5:
+                sabados_trabajados += 1
+        dia += timedelta(days=1)
+
+    return jsonify(
+        nombre=trabajador["nombre"],
+        departamento=trabajador["departamento"],
+        grupo=trabajador["grupo"],
+        horas_por_mes=[round(valor, 2) for valor in horas_mes],
+        ausencias=ausencias,
+        festivos_trabajados=festivos_trabajados,
+        sabados_trabajados=sabados_trabajados,
+        ajustes=ajustes,
+    )
+
+
+def _anio(texto):
+    if texto is None or str(texto).strip() == "":
+        return None, (jsonify(error="Faltan datos"), 400)
+    try:
+        anio = int(str(texto))
+    except (TypeError, ValueError):
+        return None, (jsonify(error="anio no es válido"), 400)
+    if anio < 1 or anio > 9999:
+        return None, (jsonify(error="anio no es válido"), 400)
+    return anio, None
 
 
 def _desde(valor):

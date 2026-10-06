@@ -32,6 +32,24 @@ export function cambiarNumeroSap(token, login, numeroSap) {
   });
 }
 
+export function listarAjustes(token, login) {
+  return pedir(`/ajustes?usuario_afectado=${encodeURIComponent(login)}`, { token });
+}
+
+export function crearAjuste(token, datos) {
+  return pedir("/ajustes", { method: "POST", token, cuerpo: datos });
+}
+
+export function borrarAjuste(token, id) {
+  return pedir(`/ajustes/${encodeURIComponent(id)}`, { method: "DELETE", token });
+}
+
+export function fichaTrabajador(token, login, anio) {
+  return pedir(`/trabajadores/${encodeURIComponent(login)}/ficha?anio=${encodeURIComponent(anio)}`, {
+    token,
+  });
+}
+
 export function darDeBaja(token, login) {
   return pedir(`/trabajadores/${encodeURIComponent(login)}/baja`, {
     method: "PUT",

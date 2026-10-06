@@ -8,6 +8,7 @@ export async function entrar(login, clave) {
   const carga = datosDelToken(cuerpo.access_token);
   return {
     token: cuerpo.access_token,
+    login,
     rol: carga.rol,
     nombre: carga.nombre,
     departamento: carga.departamento || "",

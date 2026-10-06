@@ -5,6 +5,11 @@ export function semana(token, desde, propia) {
   return pedir(`${ruta}?desde=${desde}`, { token });
 }
 
+export function mes(token, anio, mesNumero, propia) {
+  const ruta = propia ? "/turnos/mios/mes" : "/turnos/mes";
+  return pedir(`${ruta}?anio=${anio}&mes=${mesNumero}`, { token });
+}
+
 export function copiarSemana(token, desde) {
   return pedir("/turnos/copiar-semana", {
     method: "POST",

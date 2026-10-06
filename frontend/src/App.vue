@@ -8,6 +8,7 @@ import logo from "./assets/logo.png";
 import { delegacionVisible, rolVisible } from "./fechas.js";
 
 const rol = ref("");
+const login = ref("");
 const nombre = ref("");
 const departamento = ref("");
 const token = ref("");
@@ -26,6 +27,7 @@ const iniciales = computed(() => {
 
 function alEntrar(sesion) {
   rol.value = sesion.rol;
+  login.value = sesion.login;
   nombre.value = sesion.nombre;
   departamento.value = sesion.departamento;
   token.value = sesion.token;
@@ -38,6 +40,7 @@ function alMarca() {
 
 function salir() {
   rol.value = "";
+  login.value = "";
   nombre.value = "";
   departamento.value = "";
   token.value = "";
@@ -76,7 +79,7 @@ function salir() {
     <main>
       <Admin v-if="rol === 'admin'" :key="marcaPaso" :token="token" :delegaciones="delegaciones" />
       <Mando v-else-if="rol === 'mando'" :key="marcaPaso" :token="token" />
-      <Trabajador v-else-if="rol === 'trabajador'" :token="token" />
+      <Trabajador v-else-if="rol === 'trabajador'" :token="token" :login="login" />
     </main>
     <footer class="pie">
       <div class="pie-interior">

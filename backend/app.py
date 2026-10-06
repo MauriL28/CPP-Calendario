@@ -1,8 +1,10 @@
 from flask import Flask, jsonify
 from werkzeug.exceptions import RequestEntityTooLarge
 
+from rutas.ajustes import bp as ajustes_bp
 from rutas.auth import bp as auth_bp
 from rutas.departamentos import bp as departamentos_bp
+from rutas.festivos import bp as festivos_bp
 from rutas.fichajes import LIMITE_BYTES, MARGEN_MULTIPARTE
 from rutas.fichajes import bp as fichajes_bp
 from rutas.salud import registrar as registrar_salud
@@ -17,11 +19,13 @@ def create_app():
     app.config["MAX_CONTENT_LENGTH"] = LIMITE_BYTES + MARGEN_MULTIPARTE
     configurar_jwt(app)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(ajustes_bp)
     app.register_blueprint(departamentos_bp)
     app.register_blueprint(usuarios_bp)
     app.register_blueprint(trabajadores_bp)
     app.register_blueprint(turnos_bp)
     app.register_blueprint(fichajes_bp)
+    app.register_blueprint(festivos_bp)
     registrar_salud(app)
 
     @app.errorhandler(RequestEntityTooLarge)

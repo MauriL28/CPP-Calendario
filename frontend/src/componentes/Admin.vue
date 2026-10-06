@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { listar } from "../api/departamentos.js";
 import { importarFichajes } from "../api/fichajes.js";
 import Analisis from "./Analisis.vue";
+import Festivos from "./Festivos.vue";
 import { cambiarNumeroSapMando, crearMando } from "../api/usuarios.js";
 import { delegacionVisible } from "../fechas.js";
 
@@ -210,6 +211,9 @@ onMounted(cargar);
     <button type="button" :class="{ activo: vista === 'analisis' }" @click="vista = 'analisis'">
       Análisis
     </button>
+    <button type="button" :class="{ activo: vista === 'festivos' }" @click="vista = 'festivos'">
+      Festivos
+    </button>
   </nav>
   <p v-if="vista === 'departamentos' && error" class="error" role="alert">{{ error }}</p>
   <div v-if="vista === 'departamentos' && !grupo" class="bloques">
@@ -368,6 +372,7 @@ onMounted(cargar);
     </dl>
   </section>
   <Analisis v-else-if="vista === 'analisis'" :token="token" />
+  <Festivos v-else-if="vista === 'festivos'" :token="token" />
   <dialog ref="dialogoSap" class="alta-dialogo" @close="alCerrarSap" @click="alFondoSap">
     <form @submit.prevent="guardarSap">
       <header class="alta-dialogo-cabecera">

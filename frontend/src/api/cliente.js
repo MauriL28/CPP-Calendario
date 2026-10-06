@@ -19,6 +19,9 @@ export async function pedir(ruta, { method = "GET", token, cuerpo, formulario, e
   if (!respuesta.ok) {
     throw new Error(await mensaje(respuesta));
   }
+  if (respuesta.status === 204) {
+    return null;
+  }
   return respuesta.json();
 }
 
