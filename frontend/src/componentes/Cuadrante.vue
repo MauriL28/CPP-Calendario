@@ -1,7 +1,7 @@
 <script setup>
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
-import { borrarTurno, copiarSemana, guardarTurno, mes, semana } from "../api/turnos.js";
+import { borrarTurno, copiarSemana, exportarCuadrante, guardarTurno, mes, semana } from "../api/turnos.js";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -308,11 +308,56 @@ async function refrescar() {
 }
 
 defineExpose({ recargar: refrescar });
+
+const raiz = ref(null);
+
+function alAntesDeImprimir() {
+  const visible = raiz.value instanceof HTMLElement && raiz.value.offsetParent !== null;
+  document.body.classList.toggle("imprimir-cuadrante", visible);
+}
+
+function alDespuesDeImprimir() {
+  document.body.classList.remove("imprimir-cuadrante");
+}
+
+function imprimir() {
+  window.print();
+}
+
+async function exportar() {
+  errorSemana.value = "";
+  const parametros =
+    modo.value === "mes"
+      ? { anio: String(anioMes.value), mes: String(numeroMes.value) }
+      : { desde: semanaDesde.value };
+  try {
+    await exportarCuadrante(props.token, parametros);
+  } catch (causa) {
+    errorSemana.value = causa instanceof Error ? causa.message : "No se pudo exportar el cuadrante";
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("beforeprint", alAntesDeImprimir);
+  window.addEventListener("afterprint", alDespuesDeImprimir);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("beforeprint", alAntesDeImprimir);
+  window.removeEventListener("afterprint", alDespuesDeImprimir);
+  alDespuesDeImprimir();
+});
+
 cargar(lunesDe(new Date()));
 </script>
 
 <template>
-  <section v-if="cuadrante" class="semana" :class="{ lectura: !editable }">
+  <section
+    v-if="cuadrante"
+    ref="raiz"
+    class="semana"
+    :class="{ lectura: !editable, 'pagina-horizontal': modo === 'mes' }"
+  >
     <div class="semana-nav">
       <div class="vistas modo-vista">
         <button type="button" :class="{ activo: modo === 'semana' }" @click="cambiarModo('semana')">
@@ -333,6 +378,8 @@ cargar(lunesDe(new Date()));
         <span class="rango">{{ tituloMes }}</span>
         <button type="button" @click="moverMes(1)">Mes siguiente</button>
       </template>
+      <button type="button" class="cuadrante-imprimir" @click="imprimir">Imprimir</button>
+      <button v-if="editable" type="button" class="cuadrante-exportar" @click="exportar">Exportar</button>
     </div>
     <p v-if="!editable" class="aviso-lectura">Solo lectura</p>
     <p v-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>

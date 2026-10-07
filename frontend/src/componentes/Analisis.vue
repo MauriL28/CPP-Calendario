@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
-import { analisisFichajes } from "../api/fichajes.js";
+import { analisisFichajes, exportarAnalisis } from "../api/fichajes.js";
 import { delegacionVisible } from "../fechas.js";
 
 const props = defineProps({
@@ -94,15 +94,28 @@ async function cargarDepartamentos() {
   }
 }
 
+function filtrosActuales() {
+  return {
+    departamento: props.mando ? "" : departamento.value,
+    coincide: estado.value,
+    desde: desde.value,
+    hasta: hasta.value,
+  };
+}
+
+async function exportar() {
+  error.value = "";
+  try {
+    await exportarAnalisis(props.token, filtrosActuales());
+  } catch (causa) {
+    error.value = causa instanceof Error ? causa.message : "No se pudo exportar el análisis";
+  }
+}
+
 async function cargar() {
   error.value = "";
   try {
-    datos.value = await analisisFichajes(props.token, {
-      departamento: props.mando ? "" : departamento.value,
-      coincide: estado.value,
-      desde: desde.value,
-      hasta: hasta.value,
-    });
+    datos.value = await analisisFichajes(props.token, filtrosActuales());
   } catch (causa) {
     datos.value = null;
     error.value = causa instanceof Error ? causa.message : "No se pudo cargar el análisis";
@@ -153,6 +166,7 @@ onMounted(async () => {
         Hasta
         <input v-model="hasta" class="equipo-buscar" type="date" />
       </label>
+      <button type="button" class="primario" @click="exportar">Exportar</button>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <template v-else-if="datos">

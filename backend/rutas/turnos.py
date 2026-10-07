@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta
 from calendar import monthrange
+from io import BytesIO
 
 import psycopg
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 
 from db import SinBaseDeDatos, cursor
 from horas import hora_texto, horas_de_turno, parse_hora
@@ -724,3 +727,194 @@ def borrar_turno():
         return jsonify(error=str(exc)), 503
 
     return jsonify(login=login_nombre.strip(), fecha=fecha.isoformat())
+
+
+MESES_ARCHIVO = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+DIAS_LARGOS = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
+DIAS_CORTOS = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
+GRUPOS_EXCEL = (("STEF", "Personal STEF"), ("ETT", "ETT"))
+
+
+def _hora_compacta(hora):
+    horas, minutos = hora.split(":")
+    texto = str(int(horas))
+    if int(minutos) == 0:
+        return texto
+    return f"{texto}:{minutos}"
+
+
+def _texto_celda(turno):
+    if not turno:
+        return ""
+    if turno["ausencia"]:
+        return turno["ausencia"]
+    return f"{_hora_compacta(turno['hora_inicio'])}-{_hora_compacta(turno['hora_fin'])}"
+
+
+def _nombre_archivo(codigo, dias, mensual):
+    depto = "".join(caracter if caracter.isalnum() else "_" for caracter in codigo).strip("_").upper()
+    if not depto:
+        depto = "CUADRANTE"
+    if mensual:
+        return f"{depto}_{MESES_ARCHIVO[dias[0].month - 1]}_{dias[0].year}.xlsx"
+    semana = dias[0].isocalendar()
+    return f"{depto}_semana_{semana.week}_{semana.year}.xlsx"
+
+
+def _cabecera_dia(dia, mensual):
+    if mensual:
+        return f"{DIAS_CORTOS[dia.weekday()]}\n{dia.day}"
+    return f"{DIAS_LARGOS[dia.weekday()]}\n{dia.strftime('%d/%m')}"
+
+
+def _filas_excel(trabajadores):
+    filas = []
+    vistos = set()
+    for grupo, titulo in GRUPOS_EXCEL:
+        personas = [trabajador for trabajador in trabajadores if trabajador["grupo"] == grupo]
+        if not personas:
+            continue
+        filas.append(("grupo", titulo))
+        for trabajador in personas:
+            vistos.add(trabajador["login"])
+            filas.append(("persona", trabajador))
+    for trabajador in trabajadores:
+        if trabajador["login"] not in vistos:
+            filas.append(("persona", trabajador))
+    return filas
+
+
+def _fuente_base(libro):
+    libro._fonts[0] = Font(name="Arial", size=12)
+
+
+def _libro(trabajadores, dias, mensual):
+    libro = Workbook()
+    _fuente_base(libro)
+    hoja = libro.active
+    hoja.title = "Cuadrante"
+    hoja.freeze_panes = "B2"
+    fuente = Font(name="Arial", size=12)
+    cabecera = Font(name="Arial", size=12, bold=True)
+    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    grupo_fondo = PatternFill("solid", fgColor="F2F2F2")
+    hoja.cell(1, 1, "Trabajador").font = cabecera
+    for indice, dia in enumerate(dias, start=2):
+        celda = hoja.cell(1, indice, _cabecera_dia(dia, mensual))
+        celda.font = cabecera
+        celda.alignment = centro
+    fila_excel = 2
+    for tipo, contenido in _filas_excel(trabajadores):
+        if tipo == "grupo":
+            celda = hoja.cell(fila_excel, 1, contenido)
+            celda.font = cabecera
+            celda.fill = grupo_fondo
+            if dias:
+                hoja.merge_cells(
+                    start_row=fila_excel,
+                    start_column=1,
+                    end_row=fila_excel,
+                    end_column=len(dias) + 1,
+                )
+                for columna in range(2, len(dias) + 2):
+                    vacia = hoja.cell(fila_excel, columna)
+                    vacia.font = fuente
+                    vacia.fill = grupo_fondo
+        else:
+            hoja.cell(fila_excel, 1, contenido["nombre"]).font = fuente
+            for indice, dia in enumerate(contenido["dias"], start=2):
+                celda = hoja.cell(fila_excel, indice, _texto_celda(dia["turno"]))
+                celda.font = fuente
+                celda.alignment = centro
+        fila_excel += 1
+    hoja.column_dimensions["A"].width = 24
+    ancho = 12 if not mensual else 6
+    for indice in range(2, len(dias) + 2):
+        hoja.column_dimensions[hoja.cell(1, indice).column_letter].width = ancho
+    hoja.row_dimensions[1].height = 30
+    buffer = BytesIO()
+    libro.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+@bp.get("/turnos/exportar")
+@jwt_required()
+def exportar_turnos():
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+    anio = request.args.get("anio")
+    mes = request.args.get("mes")
+    if anio not in (None, "") or mes not in (None, ""):
+        dias, error = _mes(anio, mes)
+        mensual = True
+    elif request.args.get("desde"):
+        desde, error = _lunes(request.args.get("desde", ""), False)
+        dias = None if error else _semana(desde)
+        mensual = False
+    else:
+        return jsonify(error="Faltan datos"), 400
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT u.departamento_id, d.codigo AS departamento
+                FROM usuario u
+                JOIN departamento d ON d.id = u.departamento_id
+                WHERE u.id = %s AND u.rol = 'mando'
+                """,
+                (get_jwt_identity(),),
+            )
+            mando = cur.fetchone()
+            if mando is None or mando["departamento_id"] is None:
+                return jsonify(error="No autorizado"), 403
+            cur.execute(
+                """
+                SELECT id, nombre, login, grupo, activo
+                FROM usuario
+                WHERE rol = 'trabajador' AND departamento_id = %s
+                ORDER BY nombre
+                """,
+                (mando["departamento_id"],),
+            )
+            trabajadores = cur.fetchall()
+            turnos, versiones, noche_inicio, noche_fin = _material_rango(
+                cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
+            )
+            festivos = _festivos_rango(cur, dias[0], dias[-1])
+            trabajadores = [
+                trabajador
+                for trabajador in trabajadores
+                if _visible_en_semana(trabajador, dias, turnos)
+            ]
+            resueltos = _trabajadores_resueltos(
+                trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos
+            )
+            codigo = mando["departamento"]
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return send_file(
+        _libro(resueltos, dias, mensual),
+        as_attachment=True,
+        download_name=_nombre_archivo(codigo, dias, mensual),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )

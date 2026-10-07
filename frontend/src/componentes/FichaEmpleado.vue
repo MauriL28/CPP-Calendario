@@ -72,6 +72,18 @@ function anchoMes(horas) {
   return `${(Number(horas) / maximo) * 100}%`;
 }
 
+function fechaImpresion() {
+  return new Date().toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function imprimir() {
+  window.print();
+}
+
 function numeroDe(clave) {
   const datos = ficha.value;
   if (!datos) {
@@ -116,15 +128,23 @@ onMounted(cargar);
 
 <template>
   <section class="ficha">
+    <p class="ficha-impresion">
+      <span>STEF</span>
+      <span>{{ fechaImpresion() }}</span>
+    </p>
     <header class="ficha-cabecera">
       <div>
         <h1>{{ ficha?.nombre || "Ficha" }}</h1>
         <p v-if="ficha">{{ ficha.departamento }} · {{ ficha.grupo }}</p>
       </div>
-      <label class="analisis-filtro">
-        Año
-        <input v-model="anio" class="equipo-grupo" type="number" min="1" max="9999" />
-      </label>
+      <div class="ficha-acciones">
+        <label class="analisis-filtro">
+          Año
+          <input v-model="anio" class="equipo-grupo ficha-anio-campo" type="number" min="1" max="9999" />
+          <span class="ficha-anio-texto">{{ anio }}</span>
+        </label>
+        <button type="button" class="ficha-imprimir" @click="imprimir">Imprimir</button>
+      </div>
     </header>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <template v-else-if="ficha">

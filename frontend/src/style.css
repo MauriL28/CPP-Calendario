@@ -1214,6 +1214,10 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
   margin: 0;
 }
 
+.semana-nav .cuadrante-imprimir {
+  margin-left: auto;
+}
+
 .cuadrante-scroll.mensual {
   overflow-x: auto;
   max-width: 100%;
@@ -1286,6 +1290,17 @@ table.cuadrante.mensual tfoot td:first-child {
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
+}
+
+.ficha-acciones {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.ficha-impresion,
+.ficha-anio-texto {
+  display: none;
 }
 
 .ficha-cabecera h1 {
@@ -1368,6 +1383,241 @@ table.cuadrante.mensual tfoot td:first-child {
   .ficha-meses,
   .ficha-contadores {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media print {
+  .cabecera,
+  .pie,
+  nav.vistas,
+  .mi-horario,
+  .ficha-imprimir,
+  .cuadrante-imprimir,
+  .cuadrante-exportar,
+  .ficha-anio-campo,
+  dialog {
+    display: none !important;
+  }
+
+  body,
+  #app,
+  main {
+    background: #fff;
+    color: #111;
+  }
+
+  main {
+    max-width: none;
+    padding: 0;
+  }
+
+  .ficha-impresion {
+    display: flex;
+    justify-content: space-between;
+    margin: 0 0 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #111;
+  }
+
+  .ficha-anio-texto {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #111;
+  }
+
+  .ficha-cabecera {
+    flex-wrap: nowrap;
+  }
+
+  .ficha-cabecera h1,
+  .ficha-anual strong,
+  .ficha-mes-horas,
+  .tarjeta-nombre {
+    color: #111;
+  }
+
+  .ficha-meses {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ficha-contadores {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .ficha-mes-barra {
+    box-sizing: border-box;
+    background: #c8c8c8;
+    border: 1px solid #444;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .tarjeta,
+  .panel {
+    background: #fff;
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  body.imprimir-cuadrante .cabecera {
+    display: block !important;
+    position: static;
+    border: 0;
+    background: #fff;
+  }
+
+  body.imprimir-cuadrante .cabecera-interior,
+  body.imprimir-cuadrante .sesion {
+    display: block;
+    max-width: none;
+    padding: 0;
+  }
+
+  body.imprimir-cuadrante .marca,
+  body.imprimir-cuadrante .avatar,
+  body.imprimir-cuadrante .quien,
+  body.imprimir-cuadrante .sesion-sep,
+  body.imprimir-cuadrante .cabecera button,
+  body.imprimir-cuadrante .modo-vista,
+  body.imprimir-cuadrante .semana-nav button,
+  body.imprimir-cuadrante .aviso-lectura {
+    display: none !important;
+  }
+
+  body.imprimir-cuadrante .donde {
+    display: inline-block;
+    margin: 0 0 8px;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #111;
+  }
+
+  body.imprimir-cuadrante .rango {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111;
+  }
+
+  body.imprimir-cuadrante .cuadrante-scroll {
+    overflow: visible;
+  }
+
+  body.imprimir-cuadrante table.cuadrante.mensual thead th:first-child,
+  body.imprimir-cuadrante table.cuadrante.mensual tbody th,
+  body.imprimir-cuadrante table.cuadrante.mensual tfoot td:first-child {
+    position: static;
+  }
+
+  .pagina-horizontal table.cuadrante.mensual {
+    width: 100% !important;
+    min-width: 0;
+    table-layout: fixed;
+    font-size: 8px;
+  }
+
+  .pagina-horizontal table.cuadrante.mensual th,
+  .pagina-horizontal table.cuadrante.mensual td,
+  .pagina-horizontal table.cuadrante.mensual tbody th {
+    min-width: 0;
+    padding: 2px;
+  }
+
+  .pagina-horizontal table.cuadrante.mensual thead th:first-child {
+    width: 58px;
+    font-size: 0;
+  }
+
+  .pagina-horizontal table.cuadrante.mensual thead th:first-child::after {
+    content: "Trab.";
+    font-size: 8px;
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody th {
+    overflow: visible;
+    white-space: nowrap;
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td {
+    padding: 0;
+    color: #111;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-manana {
+    background: var(--manana-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-tarde {
+    background: var(--tarde-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-noche {
+    background: var(--noche-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-libranza,
+  .pagina-horizontal table.cuadrante.mensual tbody td.fin:not([class*="turno-"]) {
+    background: var(--libranza-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-domingo {
+    background: var(--domingo-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-vacaciones {
+    background: var(--vacaciones-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-baja {
+    background: var(--baja-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-festivo {
+    background: var(--festivo-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td.turno-permiso {
+    background: var(--permiso-bg);
+  }
+
+  .pagina-horizontal table.cuadrante.mensual tbody td .celda {
+    min-height: 0;
+    padding: 0;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    color: #111 !important;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: visible;
+  }
+
+  body.imprimir-cuadrante table.cuadrante tbody td .celda,
+  body.imprimir-cuadrante .muestra {
+    border: 1px solid #333 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+@page cuadrante-mensual {
+  size: landscape;
+  margin: 10mm;
+}
+
+.pagina-horizontal {
+  page: cuadrante-mensual;
+}
+
+@media print {
+  body:has(.pagina-horizontal):not(:has(.ficha)):not(:has(section.equipo)):not(:has(section.analisis)) {
+    page: cuadrante-mensual;
   }
 }
 
