@@ -40,6 +40,10 @@ export function crearAjuste(token, datos) {
   return pedir("/ajustes", { method: "POST", token, cuerpo: datos });
 }
 
+export function editarAjuste(token, id, datos) {
+  return pedir(`/ajustes/${encodeURIComponent(id)}`, { method: "PUT", token, cuerpo: datos });
+}
+
 export function borrarAjuste(token, id) {
   return pedir(`/ajustes/${encodeURIComponent(id)}`, { method: "DELETE", token });
 }

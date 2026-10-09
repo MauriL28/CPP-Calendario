@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { fichaTrabajador } from "../api/usuarios.js";
 import { fechaVisible } from "../fechas.js";
 
@@ -26,6 +26,27 @@ const MESES = [
 const anio = ref(new Date().getFullYear());
 const ficha = ref(null);
 const error = ref("");
+
+const DIAS_CORTOS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
+const AUSENCIAS = {
+  L: "libranza",
+  D: "domingo",
+  V: "vacaciones",
+  B: "baja",
+  F: "festivo",
+  P: "permiso",
+};
+const leyenda = [
+  { id: "manana", nombre: "Mañana" },
+  { id: "tarde", nombre: "Tarde" },
+  { id: "noche", nombre: "Noche" },
+  { id: "libranza", nombre: "Libranza" },
+  { id: "domingo", nombre: "Domingo" },
+  { id: "vacaciones", nombre: "Vacaciones" },
+  { id: "baja", nombre: "Baja" },
+  { id: "festivo", nombre: "Festivo" },
+  { id: "permiso", nombre: "Permiso" },
+];
 
 const contadores = [
   { clave: "vacaciones", texto: "Vacaciones" },
@@ -76,7 +97,7 @@ function fechaImpresion() {
   return new Date().toLocaleDateString("es-ES", {
     day: "2-digit",
     month: "2-digit",
-    year: "numeric",
+    year: "2-digit",
   });
 }
 
@@ -103,6 +124,75 @@ function numeroDe(clave) {
   }
   return datos.sabados_trabajados;
 }
+
+function isoLocal(fecha) {
+  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+  const dia = String(fecha.getDate()).padStart(2, "0");
+  return `${fecha.getFullYear()}-${mes}-${dia}`;
+}
+
+function familiaTexto(texto) {
+  if (!texto) {
+    return "";
+  }
+  if (AUSENCIAS[texto]) {
+    return AUSENCIAS[texto];
+  }
+  const [horaTexto, minutoTexto = "0"] = texto.split("-")[0].split(":");
+  const inicio = Number(horaTexto) * 60 + Number(minutoTexto);
+  if (Number.isNaN(inicio)) {
+    return "";
+  }
+  if (inicio >= 22 * 60 || inicio < 6 * 60) {
+    return "noche";
+  }
+  if (inicio < 14 * 60) {
+    return "manana";
+  }
+  return "tarde";
+}
+
+const mesesCalendario = computed(() => {
+  const lista = ficha.value?.dias;
+  if (!lista?.length) {
+    return [];
+  }
+  const porFecha = new Map(lista.map((dia) => [dia.fecha, dia]));
+  const anioPedido = Number(anio.value);
+  return MESES.map((nombre, indice) => {
+    const primero = new Date(anioPedido, indice, 1);
+    const ultimo = new Date(anioPedido, indice + 1, 0);
+    const cursor = new Date(primero);
+    cursor.setDate(primero.getDate() - ((primero.getDay() + 6) % 7));
+    const fin = new Date(ultimo);
+    fin.setDate(ultimo.getDate() + ((7 - ultimo.getDay()) % 7));
+    const semanas = [];
+    while (cursor <= fin) {
+      const dias = [];
+      let semana = null;
+      for (let columna = 0; columna < 7; columna += 1) {
+        const fecha = isoLocal(cursor);
+        const dato = porFecha.get(fecha);
+        if (dato) {
+          semana = dato.semana;
+        }
+        const enMes = cursor.getMonth() === indice;
+        dias.push(
+          enMes
+            ? {
+                fecha,
+                numero: cursor.getDate(),
+                texto: dato?.texto || "",
+              }
+            : null,
+        );
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      semanas.push({ numero: semana ?? "", dias });
+    }
+    return { nombre, semanas };
+  });
+});
 
 async function cargar() {
   const pedido = Number(anio.value);
@@ -185,6 +275,53 @@ onMounted(cargar);
           </li>
         </ul>
       </section>
+      <div class="ficha-calendario">
+        <h2 class="ficha-calendario-titulo">Calendario anual</h2>
+        <header class="ficha-calendario-cabecera">
+          <div>
+            <p class="ficha-calendario-fecha">{{ fechaImpresion() }}</p>
+            <h1>{{ ficha.nombre }}</h1>
+          </div>
+          <div class="ficha-firma">
+            <strong>RECIBÍ FIRMA Y FECHA:</strong>
+            <span aria-hidden="true"></span>
+          </div>
+        </header>
+        <div class="ficha-calendario-meses">
+          <article v-for="mes in mesesCalendario" :key="mes.nombre">
+            <h2>{{ mes.nombre }}</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th v-for="dia in DIAS_CORTOS" :key="dia">{{ dia }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(semana, indice) in mes.semanas" :key="`${mes.nombre}-${indice}`">
+                  <th>{{ semana.numero }}</th>
+                  <td
+                    v-for="(dia, columna) in semana.dias"
+                    :key="`${mes.nombre}-${indice}-${columna}`"
+                    :class="dia && familiaTexto(dia.texto) ? `turno-${familiaTexto(dia.texto)}` : ''"
+                  >
+                    <template v-if="dia">
+                      <span class="ficha-dia-num">{{ dia.numero }}</span>
+                      <span v-if="dia.texto" class="ficha-dia-texto">{{ dia.texto }}</span>
+                    </template>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </article>
+        </div>
+        <ul class="leyenda">
+          <li v-for="item in leyenda" :key="item.id">
+            <span class="muestra" :class="`turno-${item.id}`"></span>
+            {{ item.nombre }}
+          </li>
+        </ul>
+      </div>
     </template>
   </section>
 </template>

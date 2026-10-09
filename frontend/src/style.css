@@ -1303,6 +1303,11 @@ table.cuadrante.mensual tfoot td:first-child {
   display: none;
 }
 
+.ficha-calendario-cabecera,
+.ficha-calendario-titulo {
+  display: none;
+}
+
 .ficha-cabecera h1 {
   margin: 0;
   font-size: 22px;
@@ -1369,6 +1374,140 @@ table.cuadrante.mensual tfoot td:first-child {
   gap: 14px;
 }
 
+@media screen {
+  .ficha-calendario {
+    display: grid;
+    gap: 14px;
+  }
+
+  .ficha-calendario-titulo {
+    display: block;
+    margin: 0;
+    font-size: 20px;
+  }
+
+  .ficha-calendario-meses {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .ficha-calendario article {
+    padding: 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .ficha-calendario article h2 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    text-align: center;
+  }
+
+  .ficha-calendario table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .ficha-calendario th,
+  .ficha-calendario td {
+    height: 42px;
+    padding: 4px 2px;
+    border: 1px solid var(--border);
+    text-align: center;
+    vertical-align: top;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .ficha-calendario thead th {
+    height: auto;
+    color: var(--text-2);
+    font-size: 11px;
+  }
+
+  .ficha-calendario tbody th {
+    width: 24px;
+    color: var(--text-3);
+    font-size: 10px;
+  }
+
+  .ficha-dia-num,
+  .ficha-dia-texto {
+    display: block;
+  }
+
+  .ficha-dia-texto {
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .ficha-calendario td.turno-manana {
+    background: var(--manana-bg);
+    color: var(--manana);
+  }
+
+  .ficha-calendario td.turno-tarde {
+    background: var(--tarde-bg);
+    color: var(--tarde);
+  }
+
+  .ficha-calendario td.turno-noche {
+    background: var(--noche-bg);
+    color: var(--noche);
+  }
+
+  .ficha-calendario td.turno-libranza {
+    background: var(--libranza-bg);
+    color: var(--text-2);
+  }
+
+  .ficha-calendario td.turno-domingo {
+    background: var(--domingo-bg);
+    color: var(--domingo-tx);
+  }
+
+  .ficha-calendario td.turno-vacaciones {
+    background: var(--vacaciones-bg);
+    color: var(--vacaciones-tx);
+  }
+
+  .ficha-calendario td.turno-baja {
+    background: var(--baja-bg);
+    color: var(--baja-tx);
+  }
+
+  .ficha-calendario td.turno-festivo {
+    background: var(--festivo-bg);
+    color: var(--festivo-tx);
+  }
+
+  .ficha-calendario td.turno-permiso {
+    background: var(--permiso-bg);
+    color: var(--permiso-tx);
+  }
+
+  .ficha-calendario .leyenda {
+    margin: 0;
+  }
+}
+
+@media screen and (max-width: 1000px) {
+  .ficha-calendario-meses {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 620px) {
+  .ficha-calendario-meses {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .ficha-meses {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1411,13 +1550,171 @@ table.cuadrante.mensual tfoot td:first-child {
     padding: 0;
   }
 
-  .ficha-impresion {
-    display: flex;
-    justify-content: space-between;
-    margin: 0 0 16px;
-    font-size: 13px;
-    font-weight: 700;
+  .ficha-impresion,
+  .ficha-cabecera,
+  .ficha-anual,
+  .ficha-meses,
+  .ficha-contadores,
+  .ficha > .panel {
+    display: none !important;
+  }
+
+  .ficha-calendario {
+    display: block;
     color: #111;
+  }
+
+  .ficha-calendario-cabecera {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 8px;
+  }
+
+  .ficha-calendario-fecha {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .ficha-calendario h1 {
+    margin: 2px 0 0;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .ficha-firma {
+    box-sizing: border-box;
+    width: 230px;
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .ficha-firma strong {
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  .ficha-firma span {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 52px;
+    border: 1px solid #111;
+  }
+
+  .ficha-calendario-meses {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px 8px;
+  }
+
+  .ficha-calendario article {
+    break-inside: avoid;
+  }
+
+  .ficha-calendario h2 {
+    margin: 0 0 2px;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .ficha-calendario table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .ficha-calendario th,
+  .ficha-calendario td {
+    border: 1px solid #bbb;
+    padding: 1px 1px;
+    text-align: center;
+    vertical-align: top;
+    font-size: 8.5px;
+    font-weight: 600;
+    line-height: 1.1;
+    color: #111;
+  }
+
+  .ficha-calendario thead th {
+    font-weight: 700;
+  }
+
+  .ficha-calendario tbody th,
+  .ficha-calendario tbody td {
+    box-sizing: border-box;
+    height: 24px;
+  }
+
+  .ficha-calendario tbody th {
+    width: 18px;
+  }
+
+  .ficha-dia-num,
+  .ficha-dia-texto {
+    display: block;
+  }
+
+  .ficha-dia-texto {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ficha-calendario td {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .ficha-calendario td.turno-manana {
+    background: var(--manana-bg);
+  }
+
+  .ficha-calendario td.turno-tarde {
+    background: var(--tarde-bg);
+  }
+
+  .ficha-calendario td.turno-noche {
+    background: var(--noche-bg);
+  }
+
+  .ficha-calendario td.turno-libranza {
+    background: var(--libranza-bg);
+  }
+
+  .ficha-calendario td.turno-domingo {
+    background: var(--domingo-bg);
+  }
+
+  .ficha-calendario td.turno-vacaciones {
+    background: var(--vacaciones-bg);
+  }
+
+  .ficha-calendario td.turno-baja {
+    background: var(--baja-bg);
+  }
+
+  .ficha-calendario td.turno-festivo {
+    background: var(--festivo-bg);
+  }
+
+  .ficha-calendario td.turno-permiso {
+    background: var(--permiso-bg);
+  }
+
+  .ficha-calendario .leyenda {
+    margin: 8px 0 0;
+  }
+
+  .ficha-calendario .muestra {
+    border: 1px solid #333;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   .ficha-anio-texto {
@@ -1609,6 +1906,15 @@ table.cuadrante.mensual tfoot td:first-child {
 @page cuadrante-mensual {
   size: landscape;
   margin: 10mm;
+}
+
+@page calendario-anual {
+  size: portrait;
+  margin: 8mm;
+}
+
+.ficha {
+  page: calendario-anual;
 }
 
 .pagina-horizontal {

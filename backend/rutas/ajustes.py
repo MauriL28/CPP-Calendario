@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 import psycopg
@@ -9,6 +9,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from db import SinBaseDeDatos, cursor
 
 bp = Blueprint("ajustes", __name__)
+BLOQUE_HORAS = Decimal("0.25")
 
 
 @bp.post("/ajustes")
@@ -120,6 +121,59 @@ def listar():
     return jsonify(filas)
 
 
+@bp.put("/ajustes/<ajuste_id>")
+@jwt_required()
+def editar(ajuste_id):
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+    try:
+        identificador = UUID(ajuste_id)
+    except ValueError:
+        return jsonify(error="No se ha encontrado el ajuste"), 404
+
+    cuerpo = request.get_json(silent=True) or {}
+    fecha, error = _fecha(cuerpo.get("fecha"))
+    if error:
+        return error
+    horas, error = _horas(cuerpo.get("horas"))
+    if error:
+        return error
+    motivo, error = _motivo(cuerpo.get("motivo"))
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            mando = _mando(cur)
+            if mando is None:
+                return jsonify(error="No autorizado"), 403
+            cur.execute(
+                """
+                UPDATE ajuste AS a
+                SET fecha = %s, horas = %s, motivo = %s
+                FROM usuario AS afectado, usuario AS registra
+                WHERE a.id = %s
+                  AND a.usuario_afectado_id = afectado.id
+                  AND a.usuario_registra_id = registra.id
+                  AND afectado.rol = 'trabajador'
+                  AND afectado.departamento_id = %s
+                RETURNING a.id, a.fecha, a.horas, a.motivo,
+                          afectado.login AS usuario_afectado,
+                          registra.nombre AS registra
+                """,
+                (fecha, horas, motivo, identificador, mando["departamento_id"]),
+            )
+            fila = cur.fetchone()
+            if fila is None:
+                return jsonify(error="No se ha encontrado el ajuste"), 404
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(_fila_bd(fila))
+
+
 @bp.delete("/ajustes/<ajuste_id>")
 @jwt_required()
 def borrar(ajuste_id):
@@ -227,11 +281,18 @@ def _horas(valor):
     if isinstance(valor, bool) or not isinstance(valor, (int, float)):
         return None, (jsonify(error="Faltan datos"), 400)
     try:
-        horas = Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        horas = Decimal(str(valor))
     except InvalidOperation:
+        return None, (jsonify(error="Faltan datos"), 400)
+    if not horas.is_finite():
         return None, (jsonify(error="Faltan datos"), 400)
     if horas == 0:
         return None, (jsonify(error="Las horas no pueden ser 0"), 400)
+    if horas % BLOQUE_HORAS != 0:
+        return None, (
+            jsonify(error="Las horas deben ser múltiplos de 15 minutos (0,25 h)"),
+            400,
+        )
     if abs(horas) >= Decimal("1000000"):
         return None, (jsonify(error="Faltan datos"), 400)
     return horas, None

@@ -1,11 +1,12 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
 import {
   borrarAjuste,
   cambiarHorario,
   cambiarNumeroSap,
   crearAjuste,
+  editarAjuste,
   crearTrabajador,
   darDeBaja as pedirBaja,
   listarAjustes,
@@ -50,9 +51,14 @@ const dialogoAjustes = ref(null);
 const trabajadorAjuste = ref(null);
 const ajustes = ref([]);
 const fechaAjuste = ref("");
-const horasAjuste = ref("");
+const operacionAjuste = ref("sumar");
+const horasAjuste = ref(0);
+const minutosAjuste = ref(0);
 const motivoAjuste = ref("");
 const errorAjuste = ref("");
+const formularioAjusteAbierto = ref(false);
+const ajusteEnEdicion = ref(null);
+const fechaAjusteInput = ref(null);
 const trabajadorSap = ref(null);
 const numeroSapEdit = ref("");
 const errorSap = ref("");
@@ -495,9 +501,13 @@ function horasConSigno(valor) {
 async function abrirAjustes(trabajador) {
   trabajadorAjuste.value = trabajador;
   fechaAjuste.value = "";
-  horasAjuste.value = "";
+  operacionAjuste.value = "sumar";
+  horasAjuste.value = 0;
+  minutosAjuste.value = 0;
   motivoAjuste.value = "";
   errorAjuste.value = "";
+  formularioAjusteAbierto.value = false;
+  ajusteEnEdicion.value = null;
   ajustes.value = [];
   dialogoAjustes.value?.showModal();
   try {
@@ -515,6 +525,8 @@ function alCerrarAjustes() {
   trabajadorAjuste.value = null;
   ajustes.value = [];
   errorAjuste.value = "";
+  formularioAjusteAbierto.value = false;
+  ajusteEnEdicion.value = null;
 }
 
 function alFondoAjustes(evento) {
@@ -523,33 +535,93 @@ function alFondoAjustes(evento) {
   }
 }
 
+function vaciarFormularioAjuste() {
+  fechaAjuste.value = "";
+  operacionAjuste.value = "sumar";
+  horasAjuste.value = 0;
+  minutosAjuste.value = 0;
+  motivoAjuste.value = "";
+}
+
+function rellenarFormularioAjuste(ajuste) {
+  const totalMinutos = Math.round(Math.abs(Number(ajuste.horas)) * 60);
+  fechaAjuste.value = ajuste.fecha;
+  operacionAjuste.value = Number(ajuste.horas) < 0 ? "restar" : "sumar";
+  horasAjuste.value = Math.floor(totalMinutos / 60);
+  minutosAjuste.value = totalMinutos % 60;
+  motivoAjuste.value = ajuste.motivo;
+}
+
+async function abrirFormularioAjuste() {
+  ajusteEnEdicion.value = null;
+  vaciarFormularioAjuste();
+  errorAjuste.value = "";
+  formularioAjusteAbierto.value = true;
+  await nextTick();
+  fechaAjusteInput.value?.focus();
+}
+
+async function editarFormularioAjuste(ajuste) {
+  ajusteEnEdicion.value = ajuste.id;
+  rellenarFormularioAjuste(ajuste);
+  errorAjuste.value = "";
+  formularioAjusteAbierto.value = true;
+  await nextTick();
+  fechaAjusteInput.value?.focus();
+}
+
+function cancelarFormularioAjuste() {
+  vaciarFormularioAjuste();
+  errorAjuste.value = "";
+  formularioAjusteAbierto.value = false;
+  ajusteEnEdicion.value = null;
+}
+
 async function guardarAjuste() {
   const persona = trabajadorAjuste.value;
   if (!persona) {
     return;
   }
-  const textoHoras = String(horasAjuste.value ?? "").trim();
-  const numeroHoras = Number(textoHoras);
-  if (textoHoras === "" || Number.isNaN(numeroHoras) || !fechaAjuste.value || !motivoAjuste.value.trim()) {
+  const horasEnteras = Number(horasAjuste.value);
+  const minutos = Number(minutosAjuste.value);
+  if (
+    !Number.isInteger(horasEnteras)
+    || horasEnteras < 0
+    || ![0, 15, 30, 45].includes(minutos)
+    || !fechaAjuste.value
+    || !motivoAjuste.value.trim()
+  ) {
     errorAjuste.value = "Faltan datos";
     return;
   }
-  if (numeroHoras === 0) {
-    errorAjuste.value = "Las horas no pueden ser 0";
+  if (horasEnteras === 0 && minutos === 0) {
+    errorAjuste.value = "Indica al menos 15 minutos";
     return;
   }
+  const valorHoras = horasEnteras + minutos / 60;
+  const numeroHoras = operacionAjuste.value === "restar" ? -valorHoras : valorHoras;
   errorAjuste.value = "";
+  const datos = {
+    fecha: fechaAjuste.value,
+    horas: numeroHoras,
+    motivo: motivoAjuste.value.trim(),
+  };
   try {
-    const creado = await crearAjuste(props.token, {
-      usuario_afectado: persona.login,
-      fecha: fechaAjuste.value,
-      horas: numeroHoras,
-      motivo: motivoAjuste.value.trim(),
-    });
-    ajustes.value = [...ajustes.value, creado].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
-    fechaAjuste.value = "";
-    horasAjuste.value = "";
-    motivoAjuste.value = "";
+    if (ajusteEnEdicion.value) {
+      const actualizado = await editarAjuste(props.token, ajusteEnEdicion.value, datos);
+      ajustes.value = ajustes.value
+        .map((item) => (item.id === actualizado.id ? actualizado : item))
+        .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
+    } else {
+      const creado = await crearAjuste(props.token, {
+        usuario_afectado: persona.login,
+        ...datos,
+      });
+      ajustes.value = [...ajustes.value, creado].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
+    }
+    vaciarFormularioAjuste();
+    formularioAjusteAbierto.value = false;
+    ajusteEnEdicion.value = null;
   } catch (causa) {
     errorAjuste.value = causa instanceof Error ? causa.message : "No se pudo guardar el ajuste";
   }
@@ -564,6 +636,9 @@ async function eliminarAjuste(ajuste) {
   try {
     await borrarAjuste(props.token, ajuste.id);
     ajustes.value = ajustes.value.filter((item) => item.id !== ajuste.id);
+    if (ajusteEnEdicion.value === ajuste.id) {
+      cancelarFormularioAjuste();
+    }
   } catch (causa) {
     errorAjuste.value = causa instanceof Error ? causa.message : "No se pudo eliminar el ajuste";
   }
@@ -841,7 +916,13 @@ onMounted(cargarDepartamentos);
       </footer>
     </form>
   </dialog>
-  <dialog ref="dialogoAjustes" class="alta-dialogo" @close="alCerrarAjustes" @click="alFondoAjustes">
+  <dialog
+    ref="dialogoAjustes"
+    class="alta-dialogo ajustes-dialogo"
+    :class="{ 'con-formulario': formularioAjusteAbierto }"
+    @close="alCerrarAjustes"
+    @click="alFondoAjustes"
+  >
     <header class="alta-dialogo-cabecera">
       <div>
         <h2>Ajustes</h2>
@@ -849,40 +930,245 @@ onMounted(cargarDepartamentos);
       </div>
       <button type="button" class="dialogo-cerrar" @click="cerrarAjustes">✕</button>
     </header>
-    <div class="alta-dialogo-cuerpo">
-      <p v-if="!ajustes.length" class="panel-vacio ancho">Sin ajustes registrados.</p>
-      <ul v-else class="panel-filas ancho">
-        <li v-for="ajuste in ajustes" :key="ajuste.id">
-          <span class="persona-datos">
-            <strong>{{ fechaVisible(ajuste.fecha) }} · {{ horasConSigno(ajuste.horas) }}</strong>
-            <span>{{ ajuste.motivo }}</span>
-            <span>{{ ajuste.registra }}</span>
-          </span>
-          <button type="button" @click="eliminarAjuste(ajuste)">Eliminar</button>
-        </li>
-      </ul>
-    </div>
-    <form @submit.prevent="guardarAjuste">
-      <div class="alta-dialogo-cuerpo">
-        <label>
-          Fecha
-          <input v-model="fechaAjuste" name="fecha-ajuste" type="date" />
-        </label>
-        <label>
-          Horas
-          <input v-model="horasAjuste" name="horas-ajuste" type="number" step="0.01" />
-        </label>
-        <label class="ancho">
-          Motivo
-          <input v-model="motivoAjuste" name="motivo-ajuste" />
-        </label>
+    <div class="ajustes-disposicion">
+      <div class="ajustes-listado">
+        <div class="ajustes-contenido">
+          <p v-if="!ajustes.length" class="panel-vacio">Sin ajustes registrados.</p>
+          <div v-else class="ajustes-tabla-scroll">
+            <table class="ajustes-tabla">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Horas</th>
+                  <th>Motivo</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="ajuste in ajustes" :key="ajuste.id">
+                  <td>{{ fechaVisible(ajuste.fecha) }}</td>
+                  <td class="ajustes-horas">{{ horasConSigno(ajuste.horas) }}</td>
+                  <td>
+                    {{ ajuste.motivo }}
+                    <small>{{ ajuste.registra }}</small>
+                  </td>
+                  <td class="ajustes-acciones">
+                    <button type="button" @click="editarFormularioAjuste(ajuste)">Editar</button>
+                    <button type="button" @click="eliminarAjuste(ajuste)">Eliminar</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p v-if="errorAjuste && !formularioAjusteAbierto" class="error" role="alert">{{ errorAjuste }}</p>
+        <div v-if="!formularioAjusteAbierto" class="ajustes-anadir">
+          <button type="button" @click="abrirFormularioAjuste">+ Añadir ajuste</button>
+        </div>
       </div>
-      <p v-if="errorAjuste" class="error" role="alert">{{ errorAjuste }}</p>
-      <footer class="alta-dialogo-pie">
-        <button type="button" @click="cerrarAjustes">Cerrar</button>
-        <button class="primario" type="submit">Añadir ajuste</button>
-      </footer>
-    </form>
+      <form v-if="formularioAjusteAbierto" novalidate class="ajustes-formulario" @submit.prevent="guardarAjuste">
+        <div class="alta-dialogo-cuerpo">
+          <label class="ancho">
+            Fecha
+            <input ref="fechaAjusteInput" v-model="fechaAjuste" name="fecha-ajuste" type="date" />
+          </label>
+          <fieldset class="ajustes-operacion ancho">
+            <legend>Operación</legend>
+            <label>
+              <input v-model="operacionAjuste" type="radio" name="operacion-ajuste" value="sumar" />
+              <span>Sumar</span>
+            </label>
+            <label>
+              <input v-model="operacionAjuste" type="radio" name="operacion-ajuste" value="restar" />
+              <span>Restar</span>
+            </label>
+          </fieldset>
+          <label>
+            Horas
+            <input v-model="horasAjuste" name="horas-ajuste" type="number" min="0" step="1" />
+          </label>
+          <label>
+            Minutos
+            <select v-model.number="minutosAjuste" name="minutos-ajuste">
+              <option :value="0">0</option>
+              <option :value="15">15</option>
+              <option :value="30">30</option>
+              <option :value="45">45</option>
+            </select>
+          </label>
+          <label class="ancho">
+            Motivo
+            <input v-model="motivoAjuste" name="motivo-ajuste" />
+          </label>
+        </div>
+        <p v-if="errorAjuste" class="error" role="alert">{{ errorAjuste }}</p>
+        <footer class="alta-dialogo-pie">
+          <button type="button" @click="cancelarFormularioAjuste">Cancelar</button>
+          <button class="primario" type="submit">
+            {{ ajusteEnEdicion ? "Guardar cambios" : "Añadir ajuste" }}
+          </button>
+        </footer>
+      </form>
+    </div>
   </dialog>
   <p v-if="aviso" class="aviso-ok" role="status">Trabajador creado</p>
 </template>
+
+<style scoped>
+.ajustes-dialogo {
+  max-width: 680px;
+}
+
+.ajustes-dialogo.con-formulario {
+  max-width: 1040px;
+}
+
+.ajustes-dialogo.con-formulario .ajustes-disposicion {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.85fr);
+  align-items: start;
+}
+
+.ajustes-contenido {
+  padding: 16px 20px 0;
+}
+
+.ajustes-contenido .panel-vacio {
+  padding: 12px 0;
+}
+
+.ajustes-tabla-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.ajustes-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ajustes-tabla th,
+.ajustes-tabla td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ajustes-tabla th {
+  background: var(--bg);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ajustes-tabla tr:last-child td {
+  border-bottom: 0;
+}
+
+.ajustes-tabla small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.ajustes-horas {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.ajustes-acciones {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right !important;
+}
+
+.ajustes-acciones button + button {
+  margin-left: 6px;
+}
+
+.ajustes-anadir {
+  padding: 14px 20px 20px;
+}
+
+.ajustes-formulario {
+  min-width: 0;
+  border-left: 1px solid var(--border);
+}
+
+.ajustes-operacion {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ajustes-operacion legend {
+  margin-bottom: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ajustes-operacion label {
+  position: relative;
+}
+
+.ajustes-operacion input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ajustes-operacion span {
+  display: block;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  text-align: center;
+  color: var(--text-2);
+  background: var(--panel);
+}
+
+.ajustes-operacion label:first-of-type span {
+  border-radius: 8px 0 0 8px;
+}
+
+.ajustes-operacion label:last-of-type span {
+  margin-left: -1px;
+  border-radius: 0 8px 8px 0;
+}
+
+.ajustes-operacion input:checked + span {
+  position: relative;
+  z-index: 1;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--manana-bg);
+}
+
+.ajustes-operacion input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 699px) {
+  .ajustes-dialogo.con-formulario .ajustes-disposicion {
+    display: block;
+  }
+
+  .ajustes-formulario {
+    margin-top: 14px;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+</style>

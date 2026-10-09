@@ -6,7 +6,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
 from horas import hora_texto, parse_hora
-from rutas.turnos import _agrupar_versiones, _franja, resolver_turno
+from rutas.turnos import _agrupar_versiones, _franja, _texto_celda, resolver_turno
 
 bp = Blueprint("trabajadores", __name__)
 
@@ -448,10 +448,18 @@ def ficha(login_nombre):
     ausencias = {"V": 0, "B": 0, "P": 0, "F": 0}
     festivos_trabajados = 0
     sabados_trabajados = 0
+    dias = []
     dia = inicio
     while dia <= fin:
         turno, _origen = resolver_turno(
             dia, turnos.get(dia), versiones, noche_inicio, noche_fin
+        )
+        dias.append(
+            {
+                "fecha": dia.isoformat(),
+                "semana": dia.isocalendar().week,
+                "texto": _texto_celda(turno),
+            }
         )
         if turno is not None and turno["ausencia"]:
             if turno["ausencia"] in ausencias:
@@ -473,6 +481,7 @@ def ficha(login_nombre):
         festivos_trabajados=festivos_trabajados,
         sabados_trabajados=sabados_trabajados,
         ajustes=ajustes,
+        dias=dias,
     )
 
 
