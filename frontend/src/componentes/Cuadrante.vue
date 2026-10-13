@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
-import { borrarTurno, copiarSemana, exportarCuadrante, guardarTurno, mes, semana } from "../api/turnos.js";
+import { borrarTurno, copiarSemana, exportarCuadrante, guardarTurno, mes, semana, semanaActual } from "../api/turnos.js";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -38,6 +38,7 @@ const familias = {
   D: "domingo",
   V: "vacaciones",
   B: "baja",
+  A: "ausente",
   F: "festivo",
   P: "permiso",
 };
@@ -76,9 +77,31 @@ const gruposCuadrante = [
   { id: "STEF", titulo: "Personal STEF" },
   { id: "ETT", titulo: "ETT" },
 ];
+function claveTrabajador(trabajador) {
+  return trabajador.login || trabajador.id;
+}
+
+const muestraEquipo = computed(
+  () => props.propia && modo.value === "semana" && cuadrante.value?.desde === semanaActual(),
+);
+
+const leyendaVisible = computed(() => {
+  if (!muestraEquipo.value) {
+    return leyenda;
+  }
+  const items = [];
+  for (const item of leyenda) {
+    items.push(item);
+    if (item.id === "baja") {
+      items.push({ id: "ausente", nombre: "Ausente" });
+    }
+  }
+  return items;
+});
+
 const filasCuadrante = computed(() => {
   const lista = cuadrante.value?.trabajadores || [];
-  if (props.propia) {
+  if (props.propia && modo.value !== "semana") {
     return lista.map((trabajador) => ({ tipo: "persona", trabajador }));
   }
   const filas = [];
@@ -90,12 +113,12 @@ const filasCuadrante = computed(() => {
     }
     filas.push({ tipo: "grupo", id: grupo.id, titulo: grupo.titulo });
     for (const trabajador of personas) {
-      vistos.add(trabajador.login);
+      vistos.add(claveTrabajador(trabajador));
       filas.push({ tipo: "persona", trabajador });
     }
   }
   for (const trabajador of lista) {
-    if (!vistos.has(trabajador.login)) {
+    if (!vistos.has(claveTrabajador(trabajador))) {
       filas.push({ tipo: "persona", trabajador });
     }
   }
@@ -188,6 +211,45 @@ function totalFranja(franja, indice) {
     (trabajador) => familia(trabajador.dias[indice]?.turno) === franja,
   ).length;
 }
+
+function horasNocturnas(indice) {
+  const suma = (cuadrante.value?.trabajadores || []).reduce(
+    (total, trabajador) => total + (Number(trabajador.dias[indice]?.turno?.horas_nocturnas) || 0),
+    0,
+  );
+  return Number(suma.toFixed(2)).toLocaleString("es-ES");
+}
+
+function horasPeriodo(trabajador, campo) {
+  return (trabajador.dias || []).reduce(
+    (total, dia) => total + (Number(dia.turno?.[campo]) || 0),
+    0,
+  );
+}
+
+function horasVisibles(valor) {
+  return `${Number(valor.toFixed(2)).toLocaleString("es-ES")} h`;
+}
+
+const resumenHoras = computed(() => {
+  const lista = cuadrante.value?.trabajadores || [];
+  const stef = lista
+    .filter((trabajador) => trabajador.grupo === "STEF")
+    .reduce((total, trabajador) => total + horasPeriodo(trabajador, "horas_planificadas"), 0);
+  const ett = lista
+    .filter((trabajador) => trabajador.grupo === "ETT")
+    .reduce((total, trabajador) => total + horasPeriodo(trabajador, "horas_planificadas"), 0);
+  const nocturnas = lista.reduce(
+    (total, trabajador) => total + horasPeriodo(trabajador, "horas_nocturnas"),
+    0,
+  );
+  return [
+    { id: "stef", nombre: "Horas STEF", valor: horasVisibles(stef) },
+    { id: "ett", nombre: "Horas ETT", valor: horasVisibles(ett) },
+    { id: "noche", nombre: "Horas nocturnas", valor: horasVisibles(nocturnas) },
+    { id: "total", nombre: "Total horas", valor: horasVisibles(stef + ett) },
+  ];
+});
 
 function familia(turno) {
   if (!turno) {
@@ -382,7 +444,14 @@ cargar(lunesDe(new Date()));
       <button v-if="editable" type="button" class="cuadrante-exportar" @click="exportar">Exportar</button>
     </div>
     <p v-if="!editable" class="aviso-lectura">Solo lectura</p>
+    <p v-if="muestraEquipo" class="equipo-semana">Equipo de esta semana</p>
     <p v-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
+    <div v-if="!propia" class="cuadrante-horas">
+      <article v-for="tarjeta in resumenHoras" :key="tarjeta.id" :class="tarjeta.id">
+        <p class="lb">{{ tarjeta.nombre }}</p>
+        <p class="vl">{{ tarjeta.valor }}</p>
+      </article>
+    </div>
     <div class="cuadrante-scroll" :class="{ mensual: modo === 'mes' }">
     <table class="cuadrante" :class="{ mensual: modo === 'mes' }">
       <thead>
@@ -401,7 +470,7 @@ cargar(lunesDe(new Date()));
         </tr>
       </thead>
       <tbody>
-        <template v-for="fila in filasCuadrante" :key="fila.tipo === 'grupo' ? fila.id : fila.trabajador.login">
+        <template v-for="fila in filasCuadrante" :key="fila.tipo === 'grupo' ? fila.id : claveTrabajador(fila.trabajador)">
           <tr v-if="fila.tipo === 'grupo'" class="grupo-fila">
             <th :colspan="cuadrante.dias.length + 1">{{ fila.titulo }}</th>
           </tr>
@@ -430,11 +499,15 @@ cargar(lunesDe(new Date()));
           <td>{{ franja.nombre }}</td>
           <td v-for="(dia, indice) in cuadrante.dias" :key="dia">{{ totalFranja(franja.id, indice) }}</td>
         </tr>
+        <tr>
+          <td>Horas nocturnas</td>
+          <td v-for="(dia, indice) in cuadrante.dias" :key="`noche-${dia}`">{{ horasNocturnas(indice) }}</td>
+        </tr>
       </tfoot>
     </table>
     </div>
     <ul class="leyenda">
-      <li v-for="item in leyenda" :key="item.id">
+      <li v-for="item in leyendaVisible" :key="item.id">
         <span class="muestra" :class="`turno-${item.id}`"></span>
         {{ item.nombre }}
       </li>

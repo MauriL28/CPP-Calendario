@@ -1,7 +1,26 @@
 import { pedir } from "./cliente.js";
 
+export function semanaActual() {
+  const texto = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const [anio, mes, dia] = texto.split("-").map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  const ordinal = fecha.getUTCDay() || 7;
+  fecha.setUTCDate(fecha.getUTCDate() - (ordinal - 1));
+  const mesLunes = String(fecha.getUTCMonth() + 1).padStart(2, "0");
+  const diaLunes = String(fecha.getUTCDate()).padStart(2, "0");
+  return `${fecha.getUTCFullYear()}-${mesLunes}-${diaLunes}`;
+}
+
 export function semana(token, desde, propia) {
-  const ruta = propia ? "/turnos/mios" : "/turnos";
+  let ruta = "/turnos";
+  if (propia) {
+    ruta = desde === semanaActual() ? "/turnos/departamento" : "/turnos/mios";
+  }
   return pedir(`${ruta}?desde=${desde}`, { token });
 }
 

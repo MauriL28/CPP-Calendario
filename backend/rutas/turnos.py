@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from calendar import monthrange
 from io import BytesIO
 
@@ -378,6 +379,113 @@ def listar_turnos_mios():
         desde=desde.isoformat(),
         dias=[dia.isoformat() for dia in dias],
         trabajadores=personas,
+    )
+
+
+def _turno_visible(turno, propio):
+    if turno is None:
+        return None
+    ausencia = turno["ausencia"]
+    if ausencia:
+        if ausencia == "B" and not propio:
+            ausencia = "A"
+        return {"ausencia": ausencia}
+    return {
+        "hora_inicio": turno["hora_inicio"],
+        "hora_fin": turno["hora_fin"],
+    }
+
+
+def _dias_departamento(usuario_id, dias, turnos, versiones, noche_inicio, noche_fin, propio):
+    suyas = versiones.get(usuario_id, [])
+    resultado = []
+    for dia in dias:
+        turno, _origen = resolver_turno(
+            dia,
+            turnos.get((usuario_id, dia)),
+            suyas,
+            noche_inicio,
+            noche_fin,
+        )
+        resultado.append(
+            {
+                "fecha": dia.isoformat(),
+                "turno": _turno_visible(turno, propio),
+            }
+        )
+    return resultado
+
+
+@bp.get("/turnos/departamento")
+@jwt_required()
+def listar_turnos_departamento():
+    if get_jwt().get("rol") != "trabajador":
+        return jsonify(error="No autorizado"), 403
+    desde, error = _lunes(request.args.get("desde", ""), False)
+    if error:
+        return error
+    hoy = datetime.now(ZoneInfo("Europe/Madrid")).date()
+    lunes_actual = hoy - timedelta(days=hoy.weekday())
+    if desde != lunes_actual:
+        return jsonify(error="Solo puedes consultar la semana actual"), 403
+    dias = _semana(desde)
+    yo = get_jwt_identity()
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT departamento_id
+                FROM usuario
+                WHERE id = %s AND rol = 'trabajador'
+                """,
+                (yo,),
+            )
+            propio = cur.fetchone()
+            if propio is None or propio["departamento_id"] is None:
+                return jsonify(error="No autorizado"), 403
+            cur.execute(
+                """
+                SELECT u.id, u.nombre, u.grupo, s.nombre AS seccion
+                FROM usuario u
+                LEFT JOIN seccion s ON s.id = u.seccion_id
+                WHERE u.rol = 'trabajador'
+                  AND u.activo
+                  AND u.departamento_id = %s
+                ORDER BY u.nombre
+                """,
+                (propio["departamento_id"],),
+            )
+            trabajadores = cur.fetchall()
+            turnos, versiones, noche_inicio, noche_fin = _material_semana(
+                cur, [trabajador["id"] for trabajador in trabajadores], dias
+            )
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(
+        desde=desde.isoformat(),
+        dias=[dia.isoformat() for dia in dias],
+        trabajadores=[
+            {
+                "id": str(trabajador["id"]),
+                "nombre": trabajador["nombre"],
+                "grupo": trabajador["grupo"],
+                "seccion": trabajador["seccion"],
+                "dias": _dias_departamento(
+                    trabajador["id"],
+                    dias,
+                    turnos,
+                    versiones,
+                    noche_inicio,
+                    noche_fin,
+                    str(trabajador["id"]) == yo,
+                ),
+            }
+            for trabajador in trabajadores
+        ],
     )
 
 

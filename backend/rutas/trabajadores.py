@@ -234,6 +234,51 @@ def cambiar_numero_sap(login_nombre):
     return jsonify(login=login_nombre, numero_sap=numero_sap)
 
 
+@bp.put("/trabajadores/<login_nombre>/clave")
+@jwt_required()
+def cambiar_clave(login_nombre):
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+
+    cuerpo = request.get_json(silent=True) or {}
+    clave = cuerpo.get("clave")
+    if not isinstance(clave, str) or not clave.strip():
+        return jsonify(error="Faltan datos"), 400
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT departamento_id
+                FROM usuario
+                WHERE id = %s AND rol = 'mando'
+                """,
+                (get_jwt_identity(),),
+            )
+            mando = cur.fetchone()
+            if mando is None or mando["departamento_id"] is None:
+                return jsonify(error="No autorizado"), 403
+            cur.execute(
+                """
+                UPDATE usuario
+                SET clave = crypt(%s, gen_salt('bf'))
+                WHERE login = %s
+                  AND rol = 'trabajador'
+                  AND departamento_id = %s
+                RETURNING login
+                """,
+                (clave, login_nombre, mando["departamento_id"]),
+            )
+            if cur.fetchone() is None:
+                return jsonify(error="Ese trabajador no es de tu departamento"), 404
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(login=login_nombre)
+
+
 @bp.put("/trabajadores/<login_nombre>/horario")
 @jwt_required()
 def cambiar_horario(login_nombre):

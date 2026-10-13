@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cuadrante Muelle</title>
+<style>
+  :root{
+    --bg:#f4f5f7;--panel:#fff;--border:#e1e4e9;--bstrong:#c7ccd4;
+    --text:#20242c;--t2:#5b6270;--t3:#8b91a0;
+    --man:#2e78c9;--man-bg:#e5f0fb;
+    --tar:#c9542e;--tar-bg:#fbe9e2;
+    --noc:#5b4fc9;--noc-bg:#eae7fb;
+    --lib-bg:#f0f2f5;--dom-bg:#fdf1c9;--dom-t:#8a6a08;
+    --vac-bg:#dcf0dc;--vac-t:#2a6b2a;--baj-bg:#f7dcc4;--baj-t:#8a5313;
+    --fes-bg:#f4b6b0;--fes-t:#7a1d10;--per-bg:#dbe9fa;--per-t:#1d4f8a;
+    --err:#c0392b;--err-bg:#fdecea;--ok:#2a6b2a;--ok-bg:#e8f4e8;--acc:#2e78c9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+  header{background:var(--panel);border-bottom:1px solid var(--border);padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:60}
+  h1{font-size:16px;margin:0;font-weight:700}
+  .row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  button,select,input{font-family:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--bstrong);border-radius:7px;background:#fff;color:var(--text)}
+  button{cursor:pointer} button:hover{background:#f7f8fa}
+  .primary{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+  .primary:hover{background:#2569b0}
+  .primary:disabled{background:#b9c4d0;border-color:#b9c4d0;cursor:default}
+  .ghost{border:none;background:none;color:var(--t3);padding:3px 5px}
+  .ghost:hover{color:var(--err);background:none}
+  .btnlike{font-size:13px;padding:7px 10px;border:1px solid var(--bstrong);border-radius:7px;background:#fff;cursor:pointer;display:inline-block}
+  .btnlike:hover{background:#f7f8fa}
+  .seg{display:flex;border:1px solid var(--bstrong);border-radius:7px;overflow:hidden}
+  .seg button{border:none;border-radius:0;padding:7px 13px;background:#fff;color:var(--t2)}
+  .seg button.on{background:var(--acc);color:#fff}
+  .dirty,.saved{font-size:12px;font-weight:600;display:none}
+  .dirty{color:var(--err)} .saved{color:var(--ok)}
+  .dirty.on,.saved.on{display:inline}
+  main{max-width:1500px;margin:0 auto;padding:16px 18px 80px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px}
+  .panel h3{font-size:14px;margin:0 0 10px}
+  .view{display:none} .view.on{display:block}
+
+  table{width:100%;border-collapse:collapse}
+  th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--t3);font-weight:600;padding:7px 3px;border-bottom:1px solid var(--border);text-align:center}
+  th.l{text-align:left;padding-left:6px}
+  td{padding:3px;text-align:center}
+  td.nm{text-align:left;padding-left:6px}
+  tr.grp td{padding:14px 6px 4px;font-size:10.5px;font-weight:700;color:var(--t3);letter-spacing:.05em;text-align:left}
+  .empname{font-weight:500;cursor:pointer;color:var(--acc);border:none;background:none;padding:0;font-size:13.5px;text-align:left}
+  .empname:hover{text-decoration:underline;background:none}
+  .pencil{border:none;background:none;color:var(--t3);cursor:pointer;padding:1px 3px;font-size:12px}
+  .pencil:hover{color:var(--acc);background:none}
+  .hcell{font-weight:600;color:var(--t2);border-bottom:1px solid var(--border);font-size:12.5px}
+  .hcell.over{color:var(--err)} .hcell.under{color:var(--dom-t)}
+  .hcell.noc{color:var(--noc);background:var(--noc-bg);border-radius:5px;font-weight:700}
+  input.day{width:100%;text-align:center;font-size:11.5px;font-weight:600;padding:6px 2px;border:1px solid transparent;border-radius:5px;background:var(--lib-bg);color:var(--t2)}
+  input.day:focus{outline:2px solid var(--acc);outline-offset:-1px;background:#fff}
+  .man{background:var(--man-bg)!important;color:var(--man)!important}
+  .tar{background:var(--tar-bg)!important;color:var(--tar)!important}
+  .noc{background:var(--noc-bg)!important;color:var(--noc)!important}
+  .lib{background:var(--lib-bg)!important;color:var(--t2)!important}
+  .dom{background:var(--dom-bg)!important;color:var(--dom-t)!important}
+  .vac{background:var(--vac-bg)!important;color:var(--vac-t)!important}
+  .baj{background:var(--baj-bg)!important;color:var(--baj-t)!important}
+  .fes{background:var(--fes-bg)!important;color:var(--fes-t)!important}
+  .per{background:var(--per-bg)!important;color:var(--per-t)!important}
+  .bad{background:var(--err-bg)!important;color:var(--err)!important;border-color:var(--err)!important}
+  tfoot td{font-weight:700;background:#fafbfc;padding:7px 3px;border-top:1px solid var(--border)}
+  tfoot td.lbl{text-align:left;padding-left:6px;font-size:12px}
+  tfoot tr.nightrow td{background:var(--noc-bg);color:var(--noc)}
+  tfoot tr.costrow td{background:#f3ecdd;color:#7a5a10}
+  tfoot tr.prodrow td{background:#e7f1ea;color:#1f5c3d}
+  tfoot tr.ratiorow td{background:#dcebe3;color:#14513a;font-weight:700}
+  input.prod{width:100%;text-align:center;font-size:11px;font-weight:700;padding:5px 2px;
+    border:1px solid var(--bstrong);border-radius:5px;background:#fff;color:#1f5c3d}
+  input.prod:focus{outline:2px solid #2a7a55;outline-offset:-1px}
+  table.month input.prod{font-size:9.5px;padding:4px 1px}
+  .kpi.prod{background:#e7f1ea} .kpi.prod .vl{color:#1f5c3d}
+  .kpi.ratio{background:#dcebe3} .kpi.ratio .vl{color:#14513a}
+  .deptcard{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:border-color .15s}
+  .deptcard:hover{border-color:var(--acc)}
+  .depticon{width:36px;height:36px;border-radius:9px;background:var(--man-bg);color:var(--man);
+    display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;margin-bottom:12px}
+  .deptcard h3{font-size:15px;margin:0 0 4px} .deptcard p{font-size:12.5px;color:var(--t3);margin:0}
+
+  /* Vista MES con scroll horizontal */
+  .scroller{overflow-x:auto;border:1px solid var(--border);border-radius:9px}
+  table.month{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+  table.month th,table.month td{padding:2px}
+  table.month .stick{position:sticky;left:0;background:#fff;z-index:5;min-width:160px;max-width:160px;
+    box-shadow:1px 0 0 var(--border);text-align:left;padding-left:8px}
+  table.month thead .stick{background:#fafbfc;z-index:6}
+  table.month tfoot .stick{background:#fafbfc;z-index:6}
+  table.month .dcol{min-width:54px;max-width:54px}
+  table.month th.dcol{font-size:9.5px;line-height:1.25;padding:5px 1px}
+  table.month th.we{background:#fdf6e3;color:var(--dom-t)}
+  table.month td.sun{border-right:2px solid var(--bstrong)}
+  table.month th.sun{border-right:2px solid var(--bstrong)}
+  table.month input.day{font-size:9.5px;padding:5px 1px}
+  table.month .tot{min-width:52px;max-width:52px;font-size:11.5px}
+
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:14px}
+  .kpi{background:#fafbfc;border:1px solid var(--border);border-radius:9px;padding:11px 13px}
+  .kpi .lb{font-size:10.5px;color:var(--t3);margin:0 0 3px}
+  .kpi .vl{font-size:19px;font-weight:700;margin:0}
+  .kpi.tot{background:var(--man-bg)} .kpi.tot .vl{color:var(--man)}
+  .kpi.noche{background:var(--noc-bg)} .kpi.noche .vl{color:var(--noc)}
+  .kpi.cost{background:#f3ecdd} .kpi.cost .vl{color:#7a5a10}
+  .kpi.vac{background:var(--vac-bg)} .kpi.vac .vl{color:var(--vac-t)}
+  .kpi.conv{background:#e8eaf2} .kpi.conv .vl{color:#3d4a6b}
+  .kpi.over{background:var(--err-bg)} .kpi.over .vl{color:var(--err)}
+  .kpi.under{background:var(--dom-bg)} .kpi.under .vl{color:var(--dom-t)}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:11.5px;color:var(--t2)}
+  .legend span{display:flex;align-items:center;gap:5px}
+  .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .help{font-size:11.5px;color:var(--t3);background:#fafbfc;border:1px solid var(--border);border-left:3px solid var(--acc);border-radius:6px;padding:10px 12px;line-height:1.55;margin-top:12px}
+  code{background:#eceef1;padding:1px 4px;border-radius:3px;font-size:11px}
+
+  /* Ranking */
+  .rk{display:flex;align-items:center;gap:8px}
+  .medal{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none;background:#eceef1;color:var(--t2)}
+  .m1{background:#f5e6b8;color:#8a6a08} .m2{background:#e4e6ea;color:#5b6270} .m3{background:#eddac6;color:#8a5313}
+  .bar{height:7px;border-radius:4px;background:var(--man);min-width:2px}
+  .barwrap{background:#eceef1;border-radius:4px;flex:1;min-width:60px}
+
+  /* Ficha empleado */
+  .empbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .empid{display:flex;align-items:center;gap:11px}
+  .avatar{width:38px;height:38px;border-radius:50%;background:var(--man-bg);color:var(--man);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+  .sheet{background:#fff;border:1px solid var(--border);border-radius:10px;padding:22px}
+  .sheethead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+  .sheethead .fch{font-size:11px;color:var(--t2);font-family:monospace}
+  .sheethead h2{font-size:25px;margin:6px 0 0;font-weight:700}
+  .firmalbl{font-size:10px;font-weight:700;letter-spacing:.04em;margin-bottom:4px;text-align:center}
+  .firmabox{border:1px solid var(--text);width:230px;height:76px}
+  .ygrid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}
+  .mth h4{font-size:11px;text-align:center;margin:0 0 4px;font-weight:700;letter-spacing:.05em}
+  .mth table{font-size:8.5px;border-collapse:collapse;width:100%}
+  .mth th{font-size:8px;padding:2px 0;border:1px solid var(--bstrong);background:#f2f3f5;color:var(--text);text-transform:none;letter-spacing:0}
+  .mth td{padding:3px 0;border:1px solid var(--bstrong);font-weight:600;font-size:8px;text-align:center}
+  .mth td.wk{background:#f2f3f5;color:var(--t3);font-weight:500;width:15px}
+  .mth td.vacio{background:#eceef1}
+  .adj th{text-align:left;font-size:11px;color:var(--t3);border-bottom:1px solid var(--border);padding:6px}
+  .adj td{padding:7px 6px;border-bottom:1px solid var(--border);text-align:left}
+
+  .modal{display:none;position:fixed;inset:0;background:rgba(20,24,32,.45);z-index:100;align-items:center;justify-content:center;padding:20px}
+  .modal.on{display:flex}
+  .box{background:#fff;border-radius:12px;padding:20px;width:100%;max-width:400px}
+  .box h3{margin:0 0 14px;font-size:16px}
+  .fld{margin-bottom:12px}
+  .fld label{display:block;font-size:12px;color:var(--t2);margin-bottom:4px;font-weight:500}
+  .fld input,.fld select{width:100%}
+  .msg{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:200}
+  .msg.on{opacity:1}
+  .lock{position:fixed;inset:0;background:linear-gradient(160deg,#eef1f5,#dde3ea);z-index:500;
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .lock.off{display:none}
+  .lockbox{background:#fff;border-radius:14px;padding:28px;width:100%;max-width:370px;
+    box-shadow:0 10px 40px rgba(20,24,32,.14)}
+  .lockbox h2{margin:0 0 4px;font-size:20px}
+  .lockbox p#lockMsg{margin:0 0 18px;font-size:13px;color:var(--t2)}
+  .lerr{color:var(--err);font-size:12.5px;margin:10px 0 0;min-height:16px;font-weight:600}
+  .rolechip{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--man-bg);color:var(--man)}
+  .rolechip.ro{background:var(--dom-bg);color:var(--dom-t)}
+  body.viewer .soloadmin{display:none!important}
+  body.viewer .costrow{display:none!important}
+  body.viewer .kpi.cost{display:none!important}
+  body.viewer .colcoste{display:none!important}
+  @media print{
+    header,.noprint{display:none!important}
+    body{background:#fff} main{padding:0;max-width:none}
+    .sheet{border:none;padding:0} .ygrid{gap:7px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ACCESO -->
+<div id="lock" class="lock">
+  <div class="lockbox">
+    <h2 id="lockTitle">Cuadrantes</h2>
+    <p id="lockMsg">Introduce tu contraseña para continuar.</p>
+
+    <div id="loginForm">
+      <div class="fld"><label>Perfil</label>
+        <select id="lRole"><option value="admin">Administrador (editar)</option>
+          <option value="viewer">Consulta (solo ver)</option></select></div>
+      <div class="fld"><label>Contraseña</label>
+        <input id="lPass" type="password" onkeydown="if(event.key==='Enter')entrar()"></div>
+      <button class="primary" style="width:100%" onclick="entrar()">Entrar</button>
+      <p id="lErr" class="lerr"></p>
+    </div>
+
+    <div id="setupForm" style="display:none">
+      <p style="font-size:12.5px;color:var(--t2);margin:0 0 14px">
+        Primera vez. Define las dos contraseñas. Podrás cambiarlas después desde el botón <strong>Usuarios</strong>.</p>
+      <div class="fld"><label>Contraseña de administrador (puede editar)</label>
+        <input id="sAdmin" type="password" placeholder="mínimo 4 caracteres"></div>
+      <div class="fld"><label>Contraseña de consulta (solo ver)</label>
+        <input id="sView" type="password" placeholder="mínimo 4 caracteres"></div>
+      <button class="primary" style="width:100%" onclick="crearClaves()">Guardar contraseñas</button>
+      <p id="sErr" class="lerr"></p>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="row">
+    <button id="btnHome" onclick="goHome()" style="display:none">‹ Departamentos</button>
+    <h1 id="titulo">Cuadrantes</h1>
+    <span class="dirty" id="dirty">● Sin guardar</span>
+    <span class="saved" id="saved">✓ Guardado</span>
+    <span class="rolechip" id="rolChip"></span>
+  </div>
+  <div class="row" id="navBar" style="display:none">
+    <div class="seg">
+      <button id="mSemana" onclick="setMode('semana')">Semana</button>
+      <button id="mMes"    onclick="setMode('mes')">Mes</button>
+      <button id="mAnalisis" onclick="setMode('analisis')">Análisis</button>
+    </div>
+    <select id="yearSel" onchange="changeYear()" style="font-weight:700"></select>
+    <select id="subSel" onchange="changeSub()" style="display:none"></select>
+    <button onclick="stepPeriod(-1)">‹</button>
+    <select id="periodSel" onchange="changePeriod()" style="min-width:215px"></select>
+    <button onclick="stepPeriod(1)">›</button>
+    <button onclick="copyPrev()" id="btnCopy" class="soloadmin">Copiar anterior</button>
+    <button onclick="openAdd()" class="soloadmin">+ Empleado</button>
+    <button onclick="exportJSON()" class="soloadmin" title="Descargar copia de seguridad">↓</button>
+    <label class="btnlike soloadmin" title="Cargar copia de seguridad">↑<input type="file" accept="application/json" onchange="importJSON(this)" hidden></label>
+    <button class="primary soloadmin" id="saveBtn" onclick="save()" disabled>Guardar</button>
+    <button class="soloadmin" onclick="abrirUsuarios()" title="Cambiar contraseñas">Usuarios</button>
+    <button onclick="salir()" title="Cerrar sesión">Salir</button>
+  </div>
+</header>
+
+<main>
+  <!-- INICIO: departamentos -->
+  <section class="view on" id="vHome">
+    <h1 style="font-size:22px;margin:0 0 4px">Cuadrantes <span id="homeYear"></span></h1>
+    <p style="color:var(--t2);font-size:14px;margin:0 0 20px">Elige un departamento para ver y editar su cuadrante.</p>
+    <div id="deptGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px"></div>
+  </section>
+
+  <!-- SEMANA -->
+  <section class="view" id="vSemana">
+    <div class="panel">
+      <div class="row" style="margin-bottom:10px;justify-content:flex-end">
+        <label style="font-size:12.5px;color:var(--t2);display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="hideETT" onchange="renderWeek()" style="width:auto;padding:0;margin:0">
+          Ocultar ETT sin turnos</label>
+      </div>
+      <div id="weekTable"></div>
+      <div class="kpis" id="weekKpis"></div>
+      <div class="kpis" id="weekKpis2"></div>
+      <div class="legend" id="legend"></div>
+      <div class="help">
+        <strong>Cómo rellenar.</strong> Escribe el horario (<code>06:30-14:00</code>) y las horas se calculan solas,
+        incluidos los turnos que cruzan medianoche (<code>23:00-06:30</code>). O usa un código:
+        <div id="codeRef" style="margin:10px 0 0"></div>
+        Pulsa el nombre de un empleado para ver su ficha anual.
+      </div>
+    </div>
+  </section>
+
+  <!-- MES -->
+  <section class="view" id="vMes">
+    <div class="panel">
+      <div class="scroller" id="monthTable"></div>
+      <div class="kpis" id="monthKpis"></div>
+      <div class="kpis" id="monthKpis2"></div>
+      <div id="monthProd" style="margin-top:18px"></div>
+      <div class="legend" id="legend2"></div>
+      <div class="help">Desplázate en horizontal para ver el mes completo. Las celdas se editan igual que en la vista semanal.
+        Los domingos llevan una línea más marcada para separar semanas.</div>
+    </div>
+  </section>
+
+  <!-- ANALISIS -->
+  <section class="view" id="vAnalisis">
+    <div class="kpis" id="anKpis" style="margin-top:0;margin-bottom:16px"></div>
+    <div class="panel">
+      <h3>Ranking de horas trabajadas del mes</h3>
+      <div id="anRanking"></div>
+    </div>
+    <div class="panel">
+      <h3>Desglose por empleado</h3>
+      <div style="overflow-x:auto"><div id="anTabla"></div></div>
+    </div>
+    <div class="panel soloadmin">
+      <h3>Coste ETT del mes por persona</h3>
+      <div style="overflow-x:auto"><div id="anCoste"></div></div>
+    </div>
+    <div class="panel" id="panelSecc" style="display:none">
+      <h3>Desglose por secciones</h3>
+      <div id="anSecc"></div>
+    </div>
+    <div class="panel" id="panelProd">
+      <h3>Productividad: pallets y toneladas</h3>
+      <div id="anProd"></div>
+    </div>
+    <div class="panel">
+      <h3>Totales por código</h3>
+      <div id="anCodigos"></div>
+    </div>
+  </section>
+
+  <!-- FICHA EMPLEADO -->
+  <section class="view" id="vEmp">
+    <div class="empbar noprint">
+      <div class="empid">
+        <button onclick="closeEmployee()">‹ Volver</button>
+        <div class="avatar" id="eIni">—</div>
+        <div>
+          <p style="font-weight:600;font-size:15px;margin:0" id="eName">—</p>
+          <p style="font-size:12px;color:var(--t2);margin:0" id="eMeta">—</p>
+        </div>
+      </div>
+      <div class="row">
+        <button class="soloadmin" onclick="editEmp(currentEmpId)">✎ Editar datos</button>
+        <button onclick="window.print()">Imprimir hoja anual</button>
+      </div>
+    </div>
+    <div class="kpis noprint" id="eKpis" style="margin-bottom:10px"></div>
+    <div class="kpis noprint" id="eKpis2" style="margin:0 0 16px"></div>
+
+    <div class="sheet" id="eSheet">
+      <div class="sheethead">
+        <div><div class="fch" id="eDate"></div><h2 id="eSheetName">—</h2></div>
+        <div><div class="firmalbl">RECIBÍ FIRMA Y FECHA:</div><div class="firmabox"></div></div>
+      </div>
+      <div class="ygrid" id="eYear"></div>
+      <div class="legend" id="eLegend"></div>
+    </div>
+
+    <div class="panel noprint" style="margin-top:16px">
+      <h3>Festivos y sábados trabajados</h3><div id="eFestivos"></div></div>
+    <div class="panel noprint">
+      <h3>Ajuste manual de horas</h3>
+      <p style="font-size:12px;color:var(--t3);margin:0 0 10px">Para cuando alguien sale antes o se queda más. Negativo resta (−1,5), positivo suma (+2).</p>
+      <div id="eAjustes"></div></div>
+    <div class="panel noprint">
+      <h3>Resumen de códigos del año</h3><div id="eResumen"></div></div>
+  </section>
+</main>
+
+<div class="modal" id="modal"><div class="box">
+  <h3 id="modalTitle">Añadir empleado</h3>
+  <div class="fld"><label>Nombre y apellidos</label><input id="fName" placeholder="Ej: Mikel Gonzalez"></div>
+  <div class="fld"><label>Grupo</label><select id="fGroup"><option>Personal STEF</option><option>ETT</option></select></div>
+  <div class="fld" id="fSubWrap" style="display:none"><label>Sección</label><select id="fSub"></select></div>
+  <div class="fld"><label>Horas de contrato por semana</label><input id="fHours" type="number" step="0.5" value="37.5"></div>
+  <div class="fld"><label>Horas de convenio al año <span style="color:var(--t3);font-weight:400">(vacío = automático)</span></label><input id="fConv" type="number" step="0.5" placeholder="Auto"></div>
+  <div class="fld"><label>Tarifas por hora (€) — solo ETT</label>
+    <div class="row" style="gap:6px">
+      <div style="flex:1"><input id="fCostDia" type="number" step="0.01" placeholder="Diurna" style="width:100%">
+        <span style="font-size:10.5px;color:var(--t3)">Diurna</span></div>
+      <div style="flex:1"><input id="fCostNoche" type="number" step="0.01" placeholder="Nocturna" style="width:100%">
+        <span style="font-size:10.5px;color:var(--t3)">Nocturna</span></div>
+      <div style="flex:1"><input id="fCostFest" type="number" step="0.01" placeholder="Festiva" style="width:100%">
+        <span style="font-size:10.5px;color:var(--t3)">Festiva</span></div>
+    </div></div>
+  <div class="row" style="justify-content:flex-end;margin-top:16px">
+    <button onclick="closeModal()">Cancelar</button>
+    <button class="primary" onclick="saveEmp()">Guardar empleado</button></div>
+</div></div>
+
+<div class="modal" id="userModal"><div class="box">
+  <h3>Contraseñas de acceso</h3>
+  <p style="font-size:12.5px;color:var(--t2);margin:0 0 14px">
+    Deja en blanco la que no quieras cambiar.</p>
+  <div class="fld"><label>Nueva contraseña de administrador</label><input id="uAdmin" type="password"></div>
+  <div class="fld"><label>Nueva contraseña de consulta</label><input id="uView" type="password"></div>
+  <p style="font-size:11.5px;color:var(--t3);line-height:1.5;background:#fafbfc;border:1px solid var(--border);
+     border-left:3px solid var(--dom-t);border-radius:6px;padding:9px 11px">
+    Esta protección evita ediciones accidentales, pero no es seguridad real: quien sepa mirar el código puede saltarla.
+    La protección de verdad llegará cuando esté en el servidor de la empresa.</p>
+  <div class="row" style="justify-content:flex-end;margin-top:16px">
+    <button onclick="userModal.classList.remove('on')">Cancelar</button>
+    <button class="primary" onclick="guardarClaves()">Guardar</button></div>
+</div></div>
+
+<div class="msg" id="msg"></div>
+
+<script>
+/* ============================================================
+   CUADRANTE MUELLE
+   Persistencia aislada en loadData() / saveData() al final.
+   Para el servidor, sustituir esas dos funciones por fetch().
+   Modelo: DATA = {employees:[], assignments:{"empId|YYYY-MM-DD":texto}, adjustments:{}}
+   ============================================================ */
+
+/* ---------- Parámetros configurables ---------- */
+const JORNADA_DIA          = 7.5;    // horas que computa un día completo
+const VACACIONES_ANO       = 27;     // días de vacaciones al año
+const HORAS_CONVENIO_ANO   = 1770;   // horas/año a jornada completa
+const JORNADA_COMPLETA_SEM = 37.5;   // horas/semana de jornada completa
+const NIGHT_START = 23*60, NIGHT_END = 6*60;   // franja nocturna
+const YEAR_MIN = 2024, YEAR_MAX = 2040;
+const GROUPS = ["Personal STEF","ETT"];
+
+/* Departamentos. 'subs' solo lo usa Tráfico; 'produccion' solo Muelle. */
+const DEPTS = {
+  trafico      :{name:'Tráfico',              subs:['Administración','Nacional','Exportación','Agrupaciones'], produccion:false},
+  sac          :{name:'SAC',                  subs:null, produccion:false},
+  muelle       :{name:'Muelle',               subs:null, produccion:true },
+  choferes     :{name:'Chóferes',             subs:null, produccion:false},
+  mandos       :{name:'Mandos + Funcionales', subs:null, produccion:false},
+  mantenimiento:{name:'Mantenimiento',        subs:null, produccion:false}
+};
+const DEPT_ORDER=['trafico','sac','muelle','choferes','mandos','mantenimiento'];
+
+const CODES = {
+  L   :{cls:'lib', label:'Libranza',                    computa:0},
+  D   :{cls:'dom', label:'Domingo',                     computa:0},
+  V   :{cls:'vac', label:'Vacaciones',                  computa:0},
+  F   :{cls:'fes', label:'Festivo',                     computa:0},
+  SR  :{cls:'vac', label:'Sábado recuperado',           computa:0},
+  FR  :{cls:'vac', label:'Festivo recuperado',          computa:0},
+  P   :{cls:'per', label:'Permiso retribuido',          computa:0},
+  B   :{cls:'baj', label:'Baja',                        computa:JORNADA_DIA},
+  HS  :{cls:'per', label:'Horas sindicales',            computa:JORNADA_DIA},
+  PEND:{cls:'per', label:'Pendientes año anterior',     computa:JORNADA_DIA},
+  ST  :{cls:'fes', label:'Sábado trabajado',            computa:JORNADA_DIA, usaHorario:true},
+  FT  :{cls:'fes', label:'Festivo trabajado',           computa:JORNADA_DIA, usaHorario:true}
+};
+
+/* ---------- Estado ---------- */
+let DATA = {employees:[], assignments:{}, adjustments:{}, produccion:{}};
+let currentYear = new Date().getFullYear();
+let currentWeek = 1, currentMonth = new Date().getMonth();
+let mode = 'semana', currentEmpId = null, dirty = false;
+let currentDept = null, currentSub = 'all';
+
+/* Empleados del departamento actual, y con el filtro de sección aplicado */
+const EMPS  = ()=>DATA.employees.filter(e=>e.dept===currentDept);
+const EMPSF = ()=>{
+  const l=EMPS(), d=DEPTS[currentDept];
+  return (d&&d.subs&&currentSub!=='all') ? l.filter(e=>e.sub===currentSub) : l;
+};
+const DEP = ()=>DEPTS[currentDept]||{name:'',subs:null,produccion:false};
+
+/* ---------- Utilidades de fecha ---------- */
+const DIAS=['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
+const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MESC=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const addDays=(d,n)=>{const x=new Date(d); x.setDate(d.getDate()+n); return x;};
+
+function mondayOfWeek(year,week){
+  const jan4=new Date(year,0,4), dow=(jan4.getDay()+6)%7;
+  const w1=new Date(jan4); w1.setDate(jan4.getDate()-dow);
+  return addDays(w1,(week-1)*7);
+}
+function weeksInYear(year){
+  const d=new Date(year,11,28), dow=(d.getDay()+6)%7;
+  d.setDate(d.getDate()-dow+3);
+  const jan4=new Date(year,0,4), j=(jan4.getDay()+6)%7;
+  const w1=new Date(jan4); w1.setDate(jan4.getDate()-j+3);
+  return Math.round((d-w1)/(7*86400000))+1;
+}
+function isoWeekOf(date){
+  const d=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+  const dow=(d.getDay()+6)%7, th=addDays(d,3-dow);
+  const jan4=new Date(th.getFullYear(),0,4), j=(jan4.getDay()+6)%7;
+  const w1=new Date(jan4); w1.setDate(jan4.getDate()-j+3);
+  return {week:Math.round((th-w1)/(7*86400000))+1, year:th.getFullYear(), day:dow};
+}
+const weekDates=(y,w)=>{const m=mondayOfWeek(y,w); return [0,1,2,3,4,5,6].map(i=>addDays(m,i));};
+const monthDates=(y,m)=>{const n=new Date(y,m+1,0).getDate(); return Array.from({length:n},(_,i)=>new Date(y,m,i+1));};
+const yearDates=y=>{const out=[]; for(let m=0;m<12;m++) out.push(...monthDates(y,m)); return out;};
+
+/* ---------- Cálculo de horas ---------- */
+function franja(ini){const h=ini/60; return h>=5&&h<14?'man':(h>=14&&h<22?'tar':'noc');}
+function esNoct(m){const t=((m%1440)+1440)%1440;
+  return NIGHT_START>NIGHT_END ? (t>=NIGHT_START||t<NIGHT_END) : (t>=NIGHT_START&&t<NIGHT_END);}
+function calcNoche(ini,horas){
+  if(ini==null||!horas) return 0;
+  let n=0, fin=ini+Math.round(horas*60);
+  for(let m=ini;m<fin;m++) if(esNoct(m)) n++;
+  return n/60;
+}
+function parseRange(txt){
+  const m=txt.replace(/\s/g,'').match(/^(\d{1,2})(?::(\d{2}))?[-–](\d{1,2})(?::(\d{2}))?$/);
+  if(!m) return null;
+  const h1=+m[1],m1=+(m[2]||0),h2=+m[3],m2=+(m[4]||0);
+  if(h1>23||h2>24||m1>59||m2>59) return null;
+  const ini=h1*60+m1; let fin=h2*60+m2;
+  if(fin<=ini) fin+=1440;
+  const horas=(fin-ini)/60;
+  return horas>16?null:{horas,ini};
+}
+function parseCell(raw){
+  const txt=(raw||'').trim();
+  if(!txt) return {tipo:'vacio',horas:0,hnoche:0,cls:''};
+  const up=txt.toUpperCase(), mc=up.match(/^([A-Z]{1,4}\d{0,2})(?:\s+(.*))?$/);
+  if(mc&&CODES[mc[1]]){
+    const cd=CODES[mc[1]], resto=mc[2];
+    if(resto){
+      if(!cd.usaHorario) return {tipo:'error',horas:0,hnoche:0,cls:'bad'};
+      const h=parseRange(resto);
+      if(!h) return {tipo:'error',horas:0,hnoche:0,cls:'bad'};
+      return {tipo:'codigo+horario',codigo:mc[1],horas:h.horas,hnoche:calcNoche(h.ini,h.horas),ini:h.ini,cls:franja(h.ini)};
+    }
+    return {tipo:'codigo',codigo:mc[1],horas:cd.computa||0,hnoche:0,cls:cd.cls};
+  }
+  const h=parseRange(txt);
+  if(h) return {tipo:'horario',horas:h.horas,hnoche:calcNoche(h.ini,h.horas),ini:h.ini,cls:franja(h.ini)};
+  return {tipo:'error',horas:0,hnoche:0,cls:'bad'};
+}
+
+/* ---------- Acceso a datos ---------- */
+const K=(id,date)=>`${id}|${ymd(date)}`;
+const get=(id,date)=>DATA.assignments[K(id,date)]||'';
+const cellOf=(id,date)=>parseCell(get(id,date));
+
+function statsRango(id,dates){
+  const s={horas:0,noche:0,jornadas:0,festivas:0,sindicales:0,baja:0,vac:0,codigos:{}};
+  dates.forEach(d=>{
+    const p=cellOf(id,d);
+    s.horas+=p.horas; s.noche+=p.hnoche;
+    if(p.horas>0) s.jornadas++;
+    if(p.codigo){
+      s.codigos[p.codigo]=(s.codigos[p.codigo]||0)+1;
+      if(p.codigo==='FT'||p.codigo==='ST') s.festivas+=p.horas;
+      if(p.codigo==='HS') s.sindicales+=p.horas;
+      if(p.codigo==='B')  s.baja+=p.horas;
+      if(p.codigo==='V')  s.vac++;
+    }
+  });
+  return s;
+}
+/* ---------- Coste ETT con tarifas separadas ----------
+   Cada empleado puede tener tres precios distintos por hora:
+   diurna, nocturna y festiva. Si un día es festivo o sábado trabajado
+   (FT / ST), todas sus horas se cobran a tarifa festiva. En el resto de
+   días se separan las horas nocturnas (franja 23:00-06:00) de las diurnas. */
+function tarifas(e){
+  return {
+    dia:   e.costDia   != null ? e.costDia   : (e.cost||0),
+    noche: e.costNoche != null ? e.costNoche : (e.cost||0),
+    fest:  e.costFest  != null ? e.costFest  : (e.cost||0)
+  };
+}
+function costeDe(e,dates){
+  const t=tarifas(e);
+  let hDia=0,hNoche=0,hFest=0;
+  dates.forEach(d=>{
+    const p=cellOf(e.id,d);
+    if(!p.horas) return;
+    if(p.codigo==='FT'||p.codigo==='ST') hFest+=p.horas;
+    else { hNoche+=p.hnoche; hDia+=p.horas-p.hnoche; }
+  });
+  return {hDia,hNoche,hFest,
+          cDia:hDia*t.dia, cNoche:hNoche*t.noche, cFest:hFest*t.fest,
+          total:hDia*t.dia+hNoche*t.noche+hFest*t.fest, t};
+}
+const tieneTarifa=e=>{const t=tarifas(e); return t.dia||t.noche||t.fest;};
+
+/* ---------- Producción semanal (pallets y toneladas) ---------- */
+const weekKey=(y,w)=>`${currentDept}|${y}-W${w}`;
+const prodSemana=(y,w)=>DATA.produccion[weekKey(y,w)]||{pallets:0,toneladas:0};
+const horasDia=date=>EMPSF().reduce((a,e)=>a+cellOf(e.id,date).horas,0);
+const horasSemana=(y,w)=>weekDates(y,w).reduce((a,d)=>a+horasDia(d),0);
+
+function onProdSem(inp){
+  if(!esAdmin()) return;
+  const y=+inp.dataset.y, w=+inp.dataset.w, campo=inp.dataset.campo, v=parseFloat(inp.value)||0;
+  const k=weekKey(y,w);
+  if(!DATA.produccion[k]) DATA.produccion[k]={pallets:0,toneladas:0};
+  DATA.produccion[k][campo]=v;
+  if(!DATA.produccion[k].pallets && !DATA.produccion[k].toneladas) delete DATA.produccion[k];
+  setDirty(true);
+  if(mode==='semana') renderWeek(); else if(mode==='mes') renderMonth(); else renderAnalisis();
+}
+
+/* Semanas que pertenecen a un mes (según su jueves, criterio ISO) */
+function semanasDelMes(y,m){
+  const vistas=new Set(), out=[];
+  monthDates(y,m).forEach(d=>{
+    const iso=isoWeekOf(d), k=weekKey(iso.year,iso.week);
+    if(vistas.has(k)) return; vistas.add(k);
+    const ju=addDays(mondayOfWeek(iso.year,iso.week),3);
+    if(ju.getMonth()===m && ju.getFullYear()===y) out.push({y:iso.year,w:iso.week});
+  });
+  return out.sort((a,b)=>a.w-b.w);
+}
+function prodRangoSemanas(sems){
+  let pallets=0,toneladas=0,horas=0;
+  sems.forEach(s=>{
+    const p=prodSemana(s.y,s.w);
+    pallets+=p.pallets||0; toneladas+=p.toneladas||0; horas+=horasSemana(s.y,s.w);
+  });
+  return {pallets,toneladas,horas,
+          palletsHora:horas?pallets/horas:0, tonHora:horas?toneladas/horas:0};
+}
+
+const convenioDe=e=>e.convenio||HORAS_CONVENIO_ANO*(e.contract/JORNADA_COMPLETA_SEM);
+const fmt=n=>Number(n).toLocaleString('es-ES',{maximumFractionDigits:2});
+const eur=n=>Number(n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+const hhmm=m=>`${pad(Math.floor(m/60))}:${pad(m%60)}`;
+
+/* ---------- Navegación ---------- */
+/* ============================================================
+   ACCESO Y PERMISOS
+   Las contraseñas se guardan cifradas (SHA-256 con sal aleatoria),
+   nunca en texto plano.
+   AVISO PARA EL PROGRAMADOR: esto es una barrera de uso, NO seguridad
+   real: al ejecutarse en el navegador, cualquiera con conocimientos
+   puede saltársela. En el servidor debe sustituirse por autenticación
+   real (sesión en servidor, usuarios en base de datos y permisos
+   comprobados en cada llamada a la API).
+   ============================================================ */
+let rol = null;                       // 'admin' | 'viewer'
+const esAdmin = ()=>rol==='admin';
+
+async function hashear(pass,sal){
+  const buf=new TextEncoder().encode(sal+'::'+pass);
+  const dig=await crypto.subtle.digest('SHA-256',buf);
+  return [...new Uint8Array(dig)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+const salAleatoria=()=>[...crypto.getRandomValues(new Uint8Array(16))]
+  .map(b=>b.toString(16).padStart(2,'0')).join('');
+
+async function crearClaves(){
+  const a=sAdmin.value, v=sView.value;
+  if(a.length<4||v.length<4){ sErr.textContent='Ambas contraseñas necesitan al menos 4 caracteres.'; return; }
+  if(a===v){ sErr.textContent='Las dos contraseñas deben ser distintas.'; return; }
+  DATA.auth={};
+  for(const [k,p] of [['admin',a],['viewer',v]]){
+    const sal=salAleatoria();
+    DATA.auth[k]={sal, hash:await hashear(p,sal)};
+  }
+  rol='admin';
+  await saveData();
+  abrirApp();
+  toast('Contraseñas creadas. Has entrado como administrador.');
+}
+async function entrar(){
+  const r=lRole.value, p=lPass.value;
+  const cfg=DATA.auth&&DATA.auth[r];
+  if(!cfg){ lErr.textContent='Ese perfil no está configurado.'; return; }
+  if(await hashear(p,cfg.sal)!==cfg.hash){
+    lErr.textContent='Contraseña incorrecta.'; lPass.value=''; lPass.focus(); return;
+  }
+  rol=r; lPass.value=''; lErr.textContent='';
+  abrirApp();
+}
+function abrirApp(){
+  document.getElementById('lock').classList.add('off');
+  document.body.classList.toggle('viewer',!esAdmin());
+  document.getElementById('rolChip').textContent = esAdmin()?'Administrador':'Solo consulta';
+  document.getElementById('rolChip').className = 'rolechip'+(esAdmin()?'':' ro');
+  goHome();
+}
+function salir(){
+  if(dirty && !confirm('Tienes cambios sin guardar. ¿Salir igualmente?')) return;
+  rol=null; dirty=false;
+  document.getElementById('lock').classList.remove('off');
+  lPass.value=''; lErr.textContent='';
+}
+function abrirUsuarios(){
+  if(!esAdmin()) return;
+  uAdmin.value=''; uView.value='';
+  userModal.classList.add('on');
+}
+async function guardarClaves(){
+  const a=uAdmin.value, v=uView.value;
+  if(!a&&!v){ toast('No has escrito ninguna contraseña nueva.'); return; }
+  if((a&&a.length<4)||(v&&v.length<4)){ toast('Mínimo 4 caracteres.'); return; }
+  if(a){ const sal=salAleatoria(); DATA.auth.admin ={sal,hash:await hashear(a,sal)}; }
+  if(v){ const sal=salAleatoria(); DATA.auth.viewer={sal,hash:await hashear(v,sal)}; }
+  await saveData();
+  userModal.classList.remove('on');
+  toast('Contraseñas actualizadas.');
+}
+
+/* Bloquea la edición cuando el perfil es de solo consulta */
+function aplicarPermisos(){
+  if(esAdmin()) return;
+  document.querySelectorAll('main input, main select, main textarea')
+    .forEach(el=>{ el.disabled=true; el.style.cursor='default'; });
+}
+
+function renderHome(){
+  document.getElementById('homeYear').textContent=currentYear;
+  document.getElementById('deptGrid').innerHTML=DEPT_ORDER.map(id=>{
+    const d=DEPTS[id], n=DATA.employees.filter(e=>e.dept===id).length;
+    const ini=d.name.split(/[\s+]+/).filter(Boolean).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    const extra=[];
+    if(d.subs) extra.push(d.subs.length+' secciones');
+    if(d.produccion) extra.push('con producción');
+    return `<div class="deptcard" onclick="openDept('${id}')">
+      <div class="depticon">${ini}</div>
+      <h3>${d.name}</h3>
+      <p>${n} ${n===1?'empleado':'empleados'}${extra.length?' · '+extra.join(' · '):''}</p></div>`;
+  }).join('');
+}
+function goHome(){
+  if(!confirmLeave()) return;
+  currentDept=null; currentEmpId=null; currentSub='all';
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.getElementById('vHome').classList.add('on');
+  document.getElementById('navBar').style.display='none';
+  document.getElementById('btnHome').style.display='none';
+  document.getElementById('titulo').textContent='Cuadrantes';
+  renderHome();
+}
+function openDept(id){
+  currentDept=id; currentSub='all'; currentEmpId=null;
+  const d=DEPTS[id];
+  document.getElementById('navBar').style.display='';
+  document.getElementById('btnHome').style.display='';
+  document.getElementById('titulo').textContent=d.name;
+  const ss=document.getElementById('subSel');
+  if(d.subs){
+    ss.style.display='';
+    ss.innerHTML='<option value="all">Todas las secciones</option>'+d.subs.map(x=>`<option>${x}</option>`).join('');
+    ss.value='all';
+  } else ss.style.display='none';
+  setMode('semana');
+}
+function changeSub(){
+  currentSub=document.getElementById('subSel').value;
+  render();
+}
+
+function setMode(m){
+  if(!confirmLeave()) return;
+  mode=m; currentEmpId=null;
+  ['Semana','Mes','Analisis'].forEach(x=>{
+    document.getElementById('m'+x).classList.toggle('on',x.toLowerCase()===m);
+    document.getElementById('v'+x).classList.toggle('on',x.toLowerCase()===m);
+  });
+  document.getElementById('vEmp').classList.remove('on');
+  document.getElementById('vHome').classList.remove('on');
+  document.getElementById('btnCopy').style.display = m==='semana'?'':'none';
+  render();
+}
+function fillPeriod(){
+  const s=document.getElementById('periodSel'); s.innerHTML='';
+  if(mode==='semana'){
+    const n=weeksInYear(currentYear);
+    for(let w=1;w<=n;w++){
+      const d=weekDates(currentYear,w);
+      s.innerHTML+=`<option value="${w}">Semana ${w} · ${d[0].getDate()} ${MESC[d[0].getMonth()]} – ${d[6].getDate()} ${MESC[d[6].getMonth()]}</option>`;
+    }
+    if(currentWeek>n) currentWeek=n;
+    s.value=currentWeek;
+  } else {
+    MESES.forEach((m,i)=>s.innerHTML+=`<option value="${i}">${m} ${currentYear}</option>`);
+    s.value=currentMonth;
+  }
+}
+function changePeriod(){
+  if(!confirmLeave()){fillPeriod();return;}
+  const v=+document.getElementById('periodSel').value;
+  if(mode==='semana') currentWeek=v; else currentMonth=v;
+  render();
+}
+function stepPeriod(n){
+  if(!confirmLeave()) return;
+  if(mode==='semana'){
+    const t=currentWeek+n;
+    if(t<1||t>weeksInYear(currentYear)) return;
+    currentWeek=t;
+  } else {
+    const t=currentMonth+n;
+    if(t<0||t>11) return;
+    currentMonth=t;
+  }
+  render();
+}
+function changeYear(){
+  if(!confirmLeave()){document.getElementById('yearSel').value=currentYear;return;}
+  currentYear=+document.getElementById('yearSel').value;
+  if(currentEmpId) openEmployee(currentEmpId); else render();
+  toast(`Mostrando ${currentYear}.`);
+}
+function confirmLeave(){
+  return !dirty || confirm('Tienes cambios sin guardar. ¿Continuar? Se perderán.');
+}
+
+/* ---------- Render principal ---------- */
+function render(){
+  const ys=document.getElementById('yearSel');
+  if(!ys.options.length) for(let y=YEAR_MIN;y<=YEAR_MAX;y++) ys.innerHTML+=`<option>${y}</option>`;
+  ys.value=currentYear;
+  fillPeriod();
+  if(mode==='semana') renderWeek();
+  else if(mode==='mes') renderMonth();
+  else renderAnalisis();
+  const lg=legendHTML();
+  ['legend','legend2'].forEach(i=>{const el=document.getElementById(i); if(el) el.innerHTML=lg;});
+  renderCodeRef();
+  aplicarPermisos();
+}
+function legendHTML(){
+  return '<span>Leyenda:</span>'+[['man','Mañana'],['tar','Tarde'],['noc','Noche'],['lib','Libranza'],
+    ['dom','Domingo'],['vac','Vacaciones'],['baj','Baja'],['fes','Festivo'],['per','Permiso / HS']]
+    .map(([c,l])=>`<span><i class="sw" style="background:var(--${c}-bg)"></i>${l}</span>`).join('');
+}
+function renderCodeRef(){
+  const el=document.getElementById('codeRef'); if(!el) return;
+  el.innerHTML=`<table style="width:auto;font-size:11.5px">
+    <tr style="color:var(--t3)"><td style="padding:2px 10px 4px 0;text-align:left">Código</td>
+    <td style="padding:2px 10px 4px 0;text-align:left">Significado</td>
+    <td style="padding:2px 0 4px;text-align:left">Computa</td></tr>
+    ${Object.entries(CODES).map(([c,d])=>`<tr>
+      <td style="padding:2px 10px 2px 0;text-align:left"><span class="sw ${d.cls}" style="vertical-align:middle"></span>
+        <code style="font-weight:700">${c}</code></td>
+      <td style="padding:2px 10px 2px 0;text-align:left;color:var(--t2)">${d.label}</td>
+      <td style="padding:2px 0;text-align:left;color:${d.computa?'var(--man)':'var(--t3)'};font-weight:${d.computa?700:400}">
+        ${d.usaHorario?`el horario que escribas detrás`:(d.computa?fmt(d.computa)+' h':'0 h')}</td></tr>`).join('')}</table>`;
+}
+
+/* ---------- Vista SEMANA ---------- */
+function visibles(g){
+  let emps=EMPSF().filter(e=>e.group===g);
+  const hide=document.getElementById('hideETT');
+  if(g==='ETT'&&hide&&hide.checked&&mode==='semana')
+    emps=emps.filter(e=>weekDates(currentYear,currentWeek).some(d=>get(e.id,d)));
+  return emps;
+}
+function renderWeek(){
+  const dates=weekDates(currentYear,currentWeek);
+  let html=`<table><thead><tr><th class="l">Empleado</th><th>Contrato</th><th>Tot. H</th><th>H. noche</th>
+    ${dates.map((d,i)=>`<th>${DIAS[i]} ${pad(d.getDate())}/${pad(d.getMonth()+1)}</th>`).join('')}<th></th></tr></thead><tbody>`;
+  if(!EMPSF().length)
+    html+=`<tr><td colspan="12" style="padding:32px;color:var(--t3)">No hay empleados en ${DEP().name}${currentSub!=='all'?' · '+currentSub:''}. Pulsa <strong>+ Empleado</strong>.</td></tr>`;
+
+  GROUPS.forEach(g=>{
+    const emps=visibles(g); if(!emps.length) return;
+    html+=`<tr class="grp"><td colspan="12">${g}${g==='ETT'?'':' · presente todas las semanas'}</td></tr>`;
+    emps.forEach(e=>{
+      let tot=0,noc=0;
+      const cells=dates.map(d=>{
+        const v=get(e.id,d), p=parseCell(v); tot+=p.horas; noc+=p.hnoche;
+        return `<td><input class="day ${p.cls}" value="${v}" data-emp="${e.id}" data-date="${ymd(d)}"
+          onchange="onCell(this)" oninput="liveClass(this)" placeholder="—"></td>`;
+      }).join('');
+      const cl=tot>e.contract?'over':(tot<e.contract&&tot>0?'under':'');
+      html+=`<tr>
+        <td class="nm"><button class="empname" onclick="openEmployee('${e.id}')">${e.name}</button>${
+          e.sub?` <span style="color:var(--t3);font-size:11px">· ${e.sub}</span>`:''}
+          <button class="pencil soloadmin" onclick="editEmp('${e.id}')" title="Editar">✎</button></td>
+        <td class="hcell">${fmt(e.contract)}</td>
+        <td class="hcell ${cl}" id="tot-${e.id}">${fmt(tot)}</td>
+        <td class="hcell noc" id="noc-${e.id}">${noc?fmt(noc):'—'}</td>
+        ${cells}
+        <td><button class="ghost soloadmin" onclick="delEmp('${e.id}')" title="Eliminar">✕</button></td></tr>`;
+    });
+  });
+  html+=`</tbody><tfoot>${weekFoot(dates)}</tfoot></table>`;
+  document.getElementById('weekTable').innerHTML=html;
+  weekKpis(dates);
+}
+function weekFoot(dates){
+  const f={man:[],tar:[],noc:[]}, hn=[];
+  dates.forEach((d,i)=>{
+    f.man[i]=f.tar[i]=f.noc[i]=0; hn[i]=0;
+    EMPSF().forEach(e=>{
+      const p=cellOf(e.id,d);
+      if(f[p.cls]!==undefined) f[p.cls][i]++;
+      hn[i]+=p.hnoche;
+    });
+  });
+  const nm={noc:'Personas de noche',man:'Personas de mañana',tar:'Personas de tarde'};
+  let out=['noc','man','tar'].map(k=>
+    `<tr><td class="lbl" colspan="4">${nm[k]}</td>${f[k].map(n=>`<td>${n}</td>`).join('')}<td></td></tr>`).join('');
+  const tn=hn.reduce((a,b)=>a+b,0);
+  out+=`<tr class="nightrow"><td class="lbl" colspan="3">Horas nocturnas (${hhmm(NIGHT_START)}–${hhmm(NIGHT_END)})</td>
+    <td>${tn?fmt(tn):'—'}</td>${hn.map(n=>`<td>${n?fmt(n):'—'}</td>`).join('')}<td></td></tr>`;
+
+  /* Coste ETT de la semana, con tarifas diurna / nocturna / festiva */
+  const ce=EMPSF().filter(e=>e.group==='ETT'&&tieneTarifa(e))
+    .reduce((a,e)=>a+costeDe(e,dates).total,0);
+  out+=`<tr class="costrow"><td class="lbl" colspan="3">Coste ETT de la semana</td>
+    <td colspan="8" style="text-align:left;padding-left:8px">${ce?eur(ce):'—'}
+      <span style="font-weight:400;font-size:11px;opacity:.8">· desglose por persona en Análisis</span></td></tr>`;
+
+  /* Producción de la semana (solo en departamentos que la registran) */
+  if(!DEP().produccion) return out;
+  const p=prodSemana(currentYear,currentWeek), th=dates.reduce((a,d)=>a+horasDia(d),0);
+  const ph=th&&p.pallets?p.pallets/th:0, tt=th&&p.toneladas?p.toneladas/th:0;
+  out+=`<tr class="prodrow"><td class="lbl" colspan="3">Pallets transportados (semana)</td>
+    <td colspan="8" style="text-align:left;padding-left:8px">
+      <input class="prod" type="number" min="0" step="1" style="width:110px" value="${p.pallets||''}"
+        data-y="${currentYear}" data-w="${currentWeek}" data-campo="pallets"
+        onchange="onProdSem(this)" placeholder="—"></td></tr>`;
+  out+=`<tr class="prodrow"><td class="lbl" colspan="3">Toneladas transportadas (semana)</td>
+    <td colspan="8" style="text-align:left;padding-left:8px">
+      <input class="prod" type="number" min="0" step="0.1" style="width:110px" value="${p.toneladas||''}"
+        data-y="${currentYear}" data-w="${currentWeek}" data-campo="toneladas"
+        onchange="onProdSem(this)" placeholder="—"></td></tr>`;
+  out+=`<tr class="ratiorow"><td class="lbl" colspan="3">Pallets / hora · Toneladas / hora</td>
+    <td colspan="8" style="text-align:left;padding-left:8px">
+      ${th?`${fmt(Math.round(ph*100)/100)} pallets/h &nbsp;·&nbsp; ${fmt(Math.round(tt*100)/100)} t/h
+      <span style="font-weight:400;font-size:11px;opacity:.8">sobre ${fmt(th)} h trabajadas</span>`:'—'}</td></tr>`;
+  return out;
+}
+function weekKpis(dates){
+  const sum=(g,f)=>EMPSF().filter(e=>!g||e.group===g)
+    .reduce((a,e)=>a+dates.reduce((s,d)=>s+cellOf(e.id,d)[f],0),0);
+  const stef=sum('Personal STEF','horas'), ett=sum('ETT','horas');
+  const coste=EMPSF().filter(e=>e.group==='ETT'&&tieneTarifa(e))
+    .reduce((a,e)=>a+costeDe(e,dates).total,0);
+  document.getElementById('weekKpis').innerHTML=`
+    <div class="kpi"><p class="lb">Horas STEF</p><p class="vl">${fmt(stef)} h</p></div>
+    <div class="kpi"><p class="lb">Horas ETT</p><p class="vl">${fmt(ett)} h</p></div>
+    <div class="kpi noche"><p class="lb">Horas nocturnas</p><p class="vl">${fmt(sum(null,'hnoche'))} h</p></div>
+    <div class="kpi cost"><p class="lb">Coste ETT semana</p><p class="vl">${eur(coste)}</p></div>
+    <div class="kpi tot"><p class="lb">Total horas</p><p class="vl">${fmt(stef+ett)} h</p></div>`;
+  if(DEP().produccion) prodKpis('weekKpis2',[{y:currentYear,w:currentWeek}]);
+  else document.getElementById('weekKpis2').innerHTML='';
+}
+
+/* Tarjetas de producción, reutilizables en semana y mes */
+function prodKpis(destino,sems){
+  const p=prodRangoSemanas(sems), el=document.getElementById(destino);
+  if(!el) return;
+  el.innerHTML=`
+    <div class="kpi prod"><p class="lb">Pallets transportados</p><p class="vl">${fmt(p.pallets)}</p></div>
+    <div class="kpi prod"><p class="lb">Toneladas transportadas</p><p class="vl">${fmt(p.toneladas)}</p></div>
+    <div class="kpi ratio"><p class="lb">Pallets / hora</p><p class="vl">${p.horas?fmt(Math.round(p.palletsHora*100)/100):'—'}</p></div>
+    <div class="kpi ratio"><p class="lb">Toneladas / hora</p><p class="vl">${p.horas?fmt(Math.round(p.tonHora*100)/100):'—'}</p></div>
+    <div class="kpi"><p class="lb">Horas trabajadas</p><p class="vl">${fmt(p.horas)} h</p>
+      <p style="font-size:10.5px;color:var(--t3);margin:3px 0 0">base del cálculo de productividad</p></div>`;
+}
+
+/* ---------- Vista MES ---------- */
+function renderMonth(){
+  const dates=monthDates(currentYear,currentMonth);
+  const th=dates.map(d=>{
+    const dw=(d.getDay()+6)%7, we=dw>=5;
+    return `<th class="dcol${we?' we':''}${dw===6?' sun':''}">${DIAS[dw]}<br>${pad(d.getDate())}</th>`;
+  }).join('');
+  let html=`<table class="month"><thead><tr>
+    <th class="stick l">Empleado</th><th class="tot">Tot.H</th><th class="tot">Noche</th>${th}</tr></thead><tbody>`;
+
+  GROUPS.forEach(g=>{
+    const emps=EMPSF().filter(e=>e.group===g); if(!emps.length) return;
+    html+=`<tr class="grp"><td class="stick" colspan="1">${g}</td><td colspan="${dates.length+2}"></td></tr>`;
+    emps.forEach(e=>{
+      let tot=0,noc=0;
+      const cells=dates.map(d=>{
+        const v=get(e.id,d), p=parseCell(v); tot+=p.horas; noc+=p.hnoche;
+        const dw=(d.getDay()+6)%7;
+        return `<td class="dcol${dw===6?' sun':''}"><input class="day ${p.cls}" value="${v}"
+          data-emp="${e.id}" data-date="${ymd(d)}" onchange="onCell(this)" oninput="liveClass(this)" placeholder="—"></td>`;
+      }).join('');
+      html+=`<tr>
+        <td class="stick nm"><button class="empname" onclick="openEmployee('${e.id}')">${e.name}</button></td>
+        <td class="hcell tot">${fmt(tot)}</td>
+        <td class="hcell noc tot">${noc?fmt(noc):'—'}</td>${cells}</tr>`;
+    });
+  });
+
+  // Totales por franja
+  const rows={noc:'Noche',man:'Mañana',tar:'Tarde'};
+  let foot='';
+  Object.entries(rows).forEach(([k,lb])=>{
+    const c=dates.map(d=>EMPSF().filter(e=>cellOf(e.id,d).cls===k).length);
+    foot+=`<tr><td class="stick lbl">Personas ${lb.toLowerCase()}</td><td></td><td></td>
+      ${c.map((n,i)=>`<td class="dcol${(dates[i].getDay()+6)%7===6?' sun':''}">${n||''}</td>`).join('')}</tr>`;
+  });
+  const hn=dates.map(d=>EMPSF().reduce((a,e)=>a+cellOf(e.id,d).hnoche,0));
+  foot+=`<tr class="nightrow"><td class="stick lbl">Horas nocturnas</td>
+    <td></td><td>${fmt(hn.reduce((a,b)=>a+b,0))}</td>
+    ${hn.map((n,i)=>`<td class="dcol${(dates[i].getDay()+6)%7===6?' sun':''}">${n?fmt(n):''}</td>`).join('')}</tr>`;
+
+  html+=`</tbody><tfoot>${foot}</tfoot></table>`;
+  document.getElementById('monthTable').innerHTML=html;
+
+  /* Producción por semanas del mes */
+  const sems=semanasDelMes(currentYear,currentMonth);
+  document.getElementById('monthProd').innerHTML=!DEP().produccion?'':`
+    <h3>Producción por semana</h3>
+    <table><thead><tr><th class="l">Semana</th><th class="l">Del</th><th>Horas</th>
+      <th>Pallets</th><th>Toneladas</th><th>Pallets/h</th><th>Ton/h</th></tr></thead><tbody>
+    ${sems.map(s=>{
+      const d=weekDates(s.y,s.w), pr=prodSemana(s.y,s.w), h=horasSemana(s.y,s.w);
+      return `<tr><td class="nm"><strong>${s.w}</strong></td>
+        <td class="nm" style="color:var(--t3);font-size:12px">${pad(d[0].getDate())} ${MESC[d[0].getMonth()]} – ${pad(d[6].getDate())} ${MESC[d[6].getMonth()]}</td>
+        <td class="hcell">${fmt(h)}</td>
+        <td><input class="prod" type="number" min="0" step="1" style="width:95px" value="${pr.pallets||''}"
+          data-y="${s.y}" data-w="${s.w}" data-campo="pallets" onchange="onProdSem(this)" placeholder="—"></td>
+        <td><input class="prod" type="number" min="0" step="0.1" style="width:95px" value="${pr.toneladas||''}"
+          data-y="${s.y}" data-w="${s.w}" data-campo="toneladas" onchange="onProdSem(this)" placeholder="—"></td>
+        <td class="hcell" style="color:var(--man)">${h&&pr.pallets?fmt(Math.round(pr.pallets/h*100)/100):'—'}</td>
+        <td class="hcell" style="color:var(--man)">${h&&pr.toneladas?fmt(Math.round(pr.toneladas/h*100)/100):'—'}</td></tr>`;
+    }).join('')}</tbody></table>`;
+
+  const tot=g=>EMPSF().filter(e=>!g||e.group===g).reduce((a,e)=>a+dates.reduce((s,d)=>s+cellOf(e.id,d).horas,0),0);
+  const coste=EMPSF().filter(e=>e.group==='ETT'&&tieneTarifa(e))
+    .reduce((a,e)=>a+costeDe(e,dates).total,0);
+  document.getElementById('monthKpis').innerHTML=`
+    <div class="kpi"><p class="lb">Horas STEF</p><p class="vl">${fmt(tot('Personal STEF'))} h</p></div>
+    <div class="kpi"><p class="lb">Horas ETT</p><p class="vl">${fmt(tot('ETT'))} h</p></div>
+    <div class="kpi noche"><p class="lb">Horas nocturnas</p><p class="vl">${fmt(hn.reduce((a,b)=>a+b,0))} h</p></div>
+    <div class="kpi cost"><p class="lb">Coste ETT del mes</p><p class="vl">${eur(coste)}</p></div>
+    <div class="kpi tot"><p class="lb">Total ${MESES[currentMonth]}</p><p class="vl">${fmt(tot())} h</p></div>`;
+  if(DEP().produccion){
+    prodKpis('monthKpis2',semanasDelMes(currentYear,currentMonth));
+  } else {
+    document.getElementById('monthKpis2').innerHTML='';
+    document.getElementById('monthProd').innerHTML='';
+  }
+}
+
+/* ---------- Vista ANÁLISIS ---------- */
+/* Desglose de productividad por semanas dentro del mes */
+function semanasHTML(sems){
+  const filas=sems.map(s=>{
+    const ds=weekDates(s.y,s.w), pr=prodSemana(s.y,s.w), horas=horasSemana(s.y,s.w);
+    return {w:s.w, ds, horas, pallets:pr.pallets||0, toneladas:pr.toneladas||0,
+            palletsHora:horas?(pr.pallets||0)/horas:0, tonHora:horas?(pr.toneladas||0)/horas:0};
+  });
+  if(!filas.some(f=>f.pallets||f.toneladas))
+    return `<p style="color:var(--t3);font-size:13px;margin:0">Todavía no hay producción registrada este mes.
+      Introdúcela en la vista <strong>Semana</strong> (abajo de la tabla) o en <strong>Mes</strong>.</p>`;
+  const maxP=Math.max(...filas.map(f=>f.palletsHora),0.01);
+  return `<table><thead><tr><th class="l">Semana</th><th class="l">Días</th><th>Horas</th>
+    <th>Pallets</th><th>Toneladas</th><th>Pallets/h</th><th>Ton/h</th><th class="l">Rendimiento</th></tr></thead><tbody>
+    ${filas.map(f=>`<tr>
+      <td class="nm"><strong>${f.w}</strong></td>
+      <td class="nm" style="color:var(--t3);font-size:12px">${pad(f.ds[0].getDate())}–${pad(f.ds[f.ds.length-1].getDate())}</td>
+      <td class="hcell">${fmt(f.horas)}</td>
+      <td class="hcell">${f.pallets?fmt(f.pallets):'—'}</td>
+      <td class="hcell">${f.toneladas?fmt(f.toneladas):'—'}</td>
+      <td class="hcell" style="color:var(--man)">${f.horas?fmt(Math.round(f.palletsHora*100)/100):'—'}</td>
+      <td class="hcell" style="color:var(--man)">${f.horas?fmt(Math.round(f.tonHora*100)/100):'—'}</td>
+      <td><div class="barwrap"><div class="bar" style="width:${f.palletsHora/maxP*100}%"></div></div></td></tr>`).join('')}
+    </tbody></table>
+    <p style="font-size:11.5px;color:var(--t3);margin:10px 0 0">La barra compara los pallets por hora de cada semana.</p>`;
+}
+
+function renderAnalisis(){
+  const dates=monthDates(currentYear,currentMonth);
+  const filas=EMPSF().map(e=>{
+    const s=statsRango(e.id,dates);
+    const esperado=convenioDe(e)/12;
+    return {e, ...s, esperado, dif:s.horas-esperado, coste:costeDe(e,dates).total};
+  }).sort((a,b)=>b.horas-a.horas);
+
+  const T=f=>filas.reduce((a,r)=>a+r[f],0);
+  const costeETT=EMPSF().filter(e=>e.group==='ETT')
+    .reduce((a,e)=>a+costeDe(e,dates).total,0);
+  document.getElementById('anKpis').innerHTML=`
+    <div class="kpi tot"><p class="lb">Horas totales ${MESES[currentMonth]}</p><p class="vl">${fmt(T('horas'))} h</p></div>
+    <div class="kpi noche"><p class="lb">Horas nocturnas</p><p class="vl">${fmt(T('noche'))} h</p></div>
+    <div class="kpi"><p class="lb">Horas festivas (FT/ST)</p><p class="vl">${fmt(T('festivas'))} h</p></div>
+    <div class="kpi"><p class="lb">Horas sindicales (HS)</p><p class="vl">${fmt(T('sindicales'))} h</p></div>
+    <div class="kpi cost"><p class="lb">Coste ETT del mes</p><p class="vl">${eur(costeETT)}</p></div>`;
+
+  // Ranking
+  const max=filas.length?Math.max(...filas.map(r=>r.horas),1):1;
+  document.getElementById('anRanking').innerHTML = filas.length
+    ? `<table>${filas.map((r,i)=>`<tr>
+        <td class="nm" style="width:230px"><div class="rk">
+          <span class="medal ${i<3?'m'+(i+1):''}">${i+1}</span>
+          <button class="empname" onclick="openEmployee('${r.e.id}')">${r.e.name}</button></div></td>
+        <td><div class="barwrap"><div class="bar" style="width:${r.horas/max*100}%"></div></div></td>
+        <td class="hcell" style="width:80px">${fmt(r.horas)} h</td>
+        <td class="hcell" style="width:110px;color:${r.dif>0?'var(--err)':'var(--t3)'}">
+          ${r.dif>0?'+':''}${fmt(Math.round(r.dif*10)/10)} h</td></tr>`).join('')}</table>
+       <p style="font-size:11.5px;color:var(--t3);margin:10px 0 0">La última columna compara con las horas de convenio que le tocarían ese mes.</p>`
+    : `<p style="color:var(--t3);font-size:13px;margin:0">Sin empleados.</p>`;
+
+  // Tabla detallada
+  document.getElementById('anTabla').innerHTML=`<table style="min-width:900px">
+    <thead><tr><th class="l">Empleado</th><th class="l">Grupo</th><th>Horas</th><th>Nocturnas</th>
+      <th>Festivas</th><th>Sindicales</th><th>Baja</th><th>Vacac.</th><th>Jornadas</th>
+      <th>Convenio mes</th><th>Diferencia</th><th class="colcoste">Coste</th></tr></thead><tbody>
+    ${filas.map(r=>`<tr>
+      <td class="nm"><button class="empname" onclick="openEmployee('${r.e.id}')">${r.e.name}</button></td>
+      <td class="nm" style="color:var(--t3);font-size:12px">${r.e.group}</td>
+      <td class="hcell">${fmt(r.horas)}</td>
+      <td class="hcell noc">${r.noche?fmt(r.noche):'—'}</td>
+      <td class="hcell">${r.festivas?fmt(r.festivas):'—'}</td>
+      <td class="hcell">${r.sindicales?fmt(r.sindicales):'—'}</td>
+      <td class="hcell">${r.baja?fmt(r.baja):'—'}</td>
+      <td class="hcell">${r.vac||'—'}</td>
+      <td class="hcell">${r.jornadas}</td>
+      <td class="hcell">${fmt(Math.round(r.esperado*10)/10)}</td>
+      <td class="hcell ${r.dif>0?'over':'under'}">${r.dif>0?'+':''}${fmt(Math.round(r.dif*10)/10)}</td>
+      <td class="hcell colcoste">${r.coste?eur(r.coste):'—'}</td></tr>`).join('')}
+    </tbody><tfoot><tr>
+      <td class="lbl" colspan="2">TOTAL</td>
+      <td>${fmt(T('horas'))}</td><td>${fmt(T('noche'))}</td><td>${fmt(T('festivas'))}</td>
+      <td>${fmt(T('sindicales'))}</td><td>${fmt(T('baja'))}</td><td>${T('vac')}</td>
+      <td>${T('jornadas')}</td><td>—</td><td>—</td><td class="colcoste">${eur(filas.reduce((a,r)=>a+r.coste,0))}</td>
+    </tr></tfoot></table>`;
+
+  // Coste ETT del mes, por persona y total
+  const ett=EMPSF().filter(e=>e.group==='ETT');
+  const cf=ett.map(e=>({e, ...costeDe(e,dates)})).sort((a,b)=>b.total-a.total);
+  const TT=k=>cf.reduce((a,r)=>a+r[k],0);
+  document.getElementById('anCoste').innerHTML = cf.length
+    ? `<table style="min-width:820px"><thead><tr>
+        <th class="l">Empleado</th>
+        <th>€/h diurna</th><th>€/h nocturna</th><th>€/h festiva</th>
+        <th>H. diurnas</th><th>H. nocturnas</th><th>H. festivas</th>
+        <th>Coste diurno</th><th>Coste nocturno</th><th>Coste festivo</th><th>Coste total</th></tr></thead><tbody>
+      ${cf.map(r=>`<tr>
+        <td class="nm"><button class="empname" onclick="openEmployee('${r.e.id}')">${r.e.name}</button>
+          <button class="pencil soloadmin" onclick="editEmp('${r.e.id}')" title="Cambiar tarifas">✎</button></td>
+        <td class="hcell">${r.t.dia?fmt(r.t.dia)+' €':'—'}</td>
+        <td class="hcell">${r.t.noche?fmt(r.t.noche)+' €':'—'}</td>
+        <td class="hcell">${r.t.fest?fmt(r.t.fest)+' €':'—'}</td>
+        <td class="hcell">${r.hDia?fmt(r.hDia):'—'}</td>
+        <td class="hcell noc">${r.hNoche?fmt(r.hNoche):'—'}</td>
+        <td class="hcell">${r.hFest?fmt(r.hFest):'—'}</td>
+        <td class="hcell">${r.cDia?eur(r.cDia):'—'}</td>
+        <td class="hcell">${r.cNoche?eur(r.cNoche):'—'}</td>
+        <td class="hcell">${r.cFest?eur(r.cFest):'—'}</td>
+        <td class="hcell" style="font-weight:700;color:#7a5a10">${r.total?eur(r.total):'—'}</td></tr>`).join('')}
+      </tbody><tfoot><tr>
+        <td class="lbl">TOTAL ETT · ${MESES[currentMonth]}</td><td></td><td></td><td></td>
+        <td>${fmt(TT('hDia'))}</td><td>${fmt(TT('hNoche'))}</td><td>${fmt(TT('hFest'))}</td>
+        <td>${eur(TT('cDia'))}</td><td>${eur(TT('cNoche'))}</td><td>${eur(TT('cFest'))}</td>
+        <td style="color:#7a5a10">${eur(TT('total'))}</td></tr></tfoot></table>
+      <p style="font-size:11.5px;color:var(--t3);margin:10px 0 0">
+        Los días marcados como <code>FT</code> o <code>ST</code> se cobran íntegros a tarifa festiva.
+        En el resto, las horas dentro de la franja ${hhmm(NIGHT_START)}–${hhmm(NIGHT_END)} van a tarifa nocturna.
+        Pulsa el lápiz para cambiar las tarifas de una persona.</p>`
+    : `<p style="color:var(--t3);font-size:13px;margin:0">No hay personal ETT dado de alta.</p>`;
+
+  // Desglose por secciones (departamentos con subdivisiones)
+  const ps=document.getElementById('panelSecc');
+  if(DEP().subs){
+    ps.style.display='';
+    const fil=DEP().subs.map(sub=>{
+      const lista=EMPS().filter(e=>e.sub===sub);
+      const ac={sub,n:lista.length,horas:0,noche:0,festivas:0,sindicales:0,coste:0};
+      lista.forEach(e=>{const st=statsRango(e.id,dates);
+        ac.horas+=st.horas; ac.noche+=st.noche; ac.festivas+=st.festivas;
+        ac.sindicales+=st.sindicales; ac.coste+=costeDe(e,dates).total;});
+      return ac;
+    });
+    const mx=Math.max(...fil.map(f=>f.horas),1);
+    document.getElementById('anSecc').innerHTML=`
+      <table><thead><tr><th class="l">Sección</th><th>Personas</th><th>Horas</th><th>Nocturnas</th>
+        <th>Festivas</th><th>Sindicales</th><th>Coste ETT</th><th class="l">Peso</th></tr></thead><tbody>
+      ${fil.map(f=>`<tr>
+        <td class="nm"><strong>${f.sub}</strong></td>
+        <td class="hcell">${f.n}</td>
+        <td class="hcell">${fmt(f.horas)}</td>
+        <td class="hcell noc">${f.noche?fmt(f.noche):'—'}</td>
+        <td class="hcell">${f.festivas?fmt(f.festivas):'—'}</td>
+        <td class="hcell">${f.sindicales?fmt(f.sindicales):'—'}</td>
+        <td class="hcell">${f.coste?eur(f.coste):'—'}</td>
+        <td><div class="barwrap"><div class="bar" style="width:${f.horas/mx*100}%"></div></div></td></tr>`).join('')}
+      </tbody><tfoot><tr><td class="lbl">TOTAL</td>
+        <td>${fil.reduce((a,f)=>a+f.n,0)}</td><td>${fmt(fil.reduce((a,f)=>a+f.horas,0))}</td>
+        <td>${fmt(fil.reduce((a,f)=>a+f.noche,0))}</td><td>${fmt(fil.reduce((a,f)=>a+f.festivas,0))}</td>
+        <td>${fmt(fil.reduce((a,f)=>a+f.sindicales,0))}</td>
+        <td>${eur(fil.reduce((a,f)=>a+f.coste,0))}</td><td></td></tr></tfoot></table>`;
+  } else ps.style.display='none';
+
+  // Productividad del mes y por semanas
+  const sems=semanasDelMes(currentYear,currentMonth);
+  const pm=prodRangoSemanas(sems);
+  document.getElementById('panelProd').style.display=DEP().produccion?'':'none';
+  document.getElementById('anProd').innerHTML=!DEP().produccion?'':`
+    <div class="kpis" style="margin:0 0 14px">
+      <div class="kpi prod"><p class="lb">Pallets del mes</p><p class="vl">${fmt(pm.pallets)}</p></div>
+      <div class="kpi prod"><p class="lb">Toneladas del mes</p><p class="vl">${fmt(pm.toneladas)}</p></div>
+      <div class="kpi ratio"><p class="lb">Pallets / hora</p><p class="vl">${pm.horas?fmt(Math.round(pm.palletsHora*100)/100):'—'}</p></div>
+      <div class="kpi ratio"><p class="lb">Toneladas / hora</p><p class="vl">${pm.horas?fmt(Math.round(pm.tonHora*100)/100):'—'}</p></div>
+      <div class="kpi"><p class="lb">Horas trabajadas</p><p class="vl">${fmt(pm.horas)} h</p></div>
+    </div>` + semanasHTML(sems);
+
+  // Totales por código
+  const tot={};
+  EMPSF().forEach(e=>dates.forEach(d=>{
+    const p=cellOf(e.id,d);
+    if(p.codigo) tot[p.codigo]=(tot[p.codigo]||0)+1;
+  }));
+  const ent=Object.entries(tot).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('anCodigos').innerHTML = ent.length
+    ? `<table><thead><tr><th class="l">Código</th><th class="l">Significado</th><th>Veces</th><th>Horas que computan</th></tr></thead><tbody>
+       ${ent.map(([c,n])=>`<tr><td class="nm"><span class="sw ${CODES[c].cls}"></span> <code style="font-weight:700">${c}</code></td>
+         <td class="nm" style="color:var(--t2)">${CODES[c].label}</td>
+         <td class="hcell">${n}</td>
+         <td class="hcell">${CODES[c].computa?fmt(CODES[c].computa*n)+' h':'—'}</td></tr>`).join('')}</tbody></table>`
+    : `<p style="color:var(--t3);font-size:13px;margin:0">Sin códigos este mes.</p>`;
+}
+
+/* ---------- Edición de celdas ---------- */
+function liveClass(inp){ inp.className='day '+parseCell(inp.value).cls; }
+function onCell(inp){
+  if(!esAdmin()) return;
+  const k=`${inp.dataset.emp}|${inp.dataset.date}`, v=inp.value.trim();
+  if(v) DATA.assignments[k]=v; else delete DATA.assignments[k];
+  liveClass(inp);
+  setDirty(true);
+  if(mode==='semana') renderWeek(); else renderMonth();
+}
+function copyPrev(){
+  if(!esAdmin()) return;
+  if(mode!=='semana') return;
+  if(currentWeek<=1){toast('No hay semana anterior en este año.');return;}
+  const prev=weekDates(currentYear,currentWeek-1), cur=weekDates(currentYear,currentWeek);
+  let n=0;
+  EMPS().forEach(e=>prev.forEach((d,i)=>{
+    const v=get(e.id,d); if(v){DATA.assignments[K(e.id,cur[i])]=v; n++;}
+  }));
+  render(); setDirty(true);
+  toast(n?`Copiadas ${n} asignaciones.`:'La semana anterior está vacía.');
+}
+
+/* ---------- Empleados ---------- */
+let editingId=null;
+function openAdd(){
+  if(!esAdmin()) return;
+  editingId=null;
+  modalTitle.textContent='Añadir empleado';
+  fName.value=''; fGroup.value='Personal STEF'; fHours.value='37.5'; fConv.value='';
+  fCostDia.value=''; fCostNoche.value=''; fCostFest.value='';
+  pintarSub('');
+  modal.classList.add('on'); fName.focus();
+}
+function editEmp(id){
+  const e=DATA.employees.find(x=>x.id===id); if(!e)return;
+  editingId=id;
+  modalTitle.textContent='Editar empleado';
+  fName.value=e.name; fGroup.value=e.group; fHours.value=e.contract;
+  pintarSub(e.sub||'');
+  fConv.value=e.convenio||'';
+  const t=tarifas(e);
+  fCostDia.value=t.dia||''; fCostNoche.value=t.noche||''; fCostFest.value=t.fest||'';
+  modal.classList.add('on');
+}
+function pintarSub(val){
+  const d=DEP(), w=document.getElementById('fSubWrap'), sel=document.getElementById('fSub');
+  if(d.subs){
+    w.style.display=''; sel.innerHTML=d.subs.map(x=>`<option>${x}</option>`).join('');
+    sel.value=val||d.subs[0];
+  } else w.style.display='none';
+}
+function closeModal(){ modal.classList.remove('on'); }
+function saveEmp(){
+  if(!esAdmin()) return;
+  const name=fName.value.trim();
+  if(!name){toast('Escribe un nombre.');return;}
+  const o={name, dept:currentDept,
+           sub: DEP().subs ? document.getElementById('fSub').value : null,
+           group:fGroup.value, contract:parseFloat(fHours.value)||0,
+           convenio:parseFloat(fConv.value)||0,
+           costDia:parseFloat(fCostDia.value)||0,
+           costNoche:parseFloat(fCostNoche.value)||0,
+           costFest:parseFloat(fCostFest.value)||0};
+  if(editingId) Object.assign(DATA.employees.find(x=>x.id===editingId),o);
+  else DATA.employees.push({id:'e'+Date.now()+Math.floor(Math.random()*99),...o});
+  closeModal(); setDirty(true);
+  if(currentEmpId) openEmployee(currentEmpId); else render();
+}
+function delEmp(id){
+  if(!esAdmin()) return;
+  const e=DATA.employees.find(x=>x.id===id);
+  if(!confirm(`¿Eliminar a ${e.name}? Se borrarán todas sus asignaciones de todos los años.`))return;
+  DATA.employees=DATA.employees.filter(x=>x.id!==id);
+  Object.keys(DATA.assignments).forEach(k=>{if(k.startsWith(id+'|'))delete DATA.assignments[k];});
+  delete DATA.adjustments[id];
+  render(); setDirty(true);
+}
+
+/* ---------- Ficha del empleado ---------- */
+function openEmployee(id){
+  const e=DATA.employees.find(x=>x.id===id); if(!e)return;
+  currentEmpId=id;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.getElementById('vEmp').classList.add('on');
+
+  eName.textContent=e.name; eSheetName.textContent=e.name;
+  eIni.textContent=e.name.split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase();
+  eMeta.textContent=`${e.group} · Contrato ${fmt(e.contract)} h/sem · Año ${currentYear}`;
+  eDate.textContent=new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'2-digit'});
+
+  const s=statsRango(id,yearDates(currentYear));
+  const festivos=[];
+  let grid='';
+  for(let m=0;m<12;m++){
+    const ds=monthDates(currentYear,m), start=(ds[0].getDay()+6)%7;
+    let cells='', rows='';
+    for(let i=0;i<start;i++) cells+='<td class="vacio"></td>';
+    ds.forEach((d,idx)=>{
+      const v=get(id,d), p=parseCell(v), dw=(d.getDay()+6)%7;
+      if(p.codigo&&['FT','ST','F'].includes(p.codigo))
+        festivos.push({fecha:`${pad(d.getDate())}/${pad(m+1)}`,codigo:p.codigo,horas:p.horas,val:v});
+      cells+=`<td class="${p.cls||'vacio'}" title="${d.getDate()} ${MESES[m].toLowerCase()}${v?': '+v:''}">${shortLabel(v,p)}</td>`;
+      if(dw===6||idx===ds.length-1){
+        while((cells.match(/<td/g)||[]).length<7) cells+='<td class="vacio"></td>';
+        rows+=`<tr><td class="wk">${isoWeekOf(d).week}</td>${cells}</tr>`; cells='';
+      }
+    });
+    grid+=`<div class="mth"><h4>${MESES[m].toUpperCase()}</h4><table>
+      <tr><th></th>${DIAS.map(x=>`<th>${x}</th>`).join('')}</tr>${rows}</table></div>`;
+  }
+  eYear.innerHTML=grid;
+  eLegend.innerHTML=legendHTML();
+
+  const todos=(DATA.adjustments[id]||[]), aj=todos.filter(a=>!a.anio||a.anio===currentYear);
+  const sumaAj=aj.reduce((a,x)=>a+x.horas,0);
+  const real=s.horas+sumaAj, conv=convenioDe(e), dif=real-conv;
+  const vacPend=VACACIONES_ANO-s.vac;
+  const muelle=EMPS().reduce((acc,x)=>{
+    const h=statsRango(x.id,yearDates(currentYear)).horas;
+    x.group==='ETT'?acc.ett+=h:acc.stef+=h; acc.total+=h; return acc;
+  },{stef:0,ett:0,total:0});
+
+  eKpis.innerHTML=`
+    <div class="kpi"><p class="lb">Horas asignadas ${currentYear}</p><p class="vl">${fmt(s.horas)} h</p></div>
+    <div class="kpi"><p class="lb">Ajustes manuales</p><p class="vl">${sumaAj>0?'+':''}${fmt(sumaAj)} h</p></div>
+    <div class="kpi tot"><p class="lb">Horas realizadas</p><p class="vl">${fmt(real)} h</p></div>
+    <div class="kpi conv"><p class="lb">Horas convenio</p><p class="vl">${fmt(Math.round(conv*10)/10)} h</p></div>
+    <div class="kpi ${dif>0?'over':'under'}"><p class="lb">${dif>=0?'Exceso sobre convenio':'Pendiente de convenio'}</p>
+      <p class="vl">${dif>0?'+':''}${fmt(Math.round(dif*10)/10)} h</p></div>`;
+  eKpis2.innerHTML=`
+    <div class="kpi noche"><p class="lb">Horas nocturnas</p><p class="vl">${fmt(s.noche)} h</p></div>
+    <div class="kpi"><p class="lb">Festivos trabajados</p><p class="vl">${festivos.filter(f=>f.codigo!=='F').length}</p></div>
+    <div class="kpi vac"><p class="lb">Vacaciones cogidas</p><p class="vl">${s.vac} <span style="font-size:13px;font-weight:500;color:var(--t3)">de ${VACACIONES_ANO}</span></p></div>
+    <div class="kpi ${vacPend<0?'over':'vac'}"><p class="lb">Vacaciones pendientes</p><p class="vl">${vacPend} días</p></div>
+    <div class="kpi"><p class="lb">Horas totales ${DEP().name}</p><p class="vl">${fmt(muelle.total)} h</p>
+      <p style="font-size:10.5px;color:var(--t3);margin:3px 0 0">STEF ${fmt(muelle.stef)} · ETT ${fmt(muelle.ett)} · esta persona ${muelle.total?(real/muelle.total*100).toFixed(1):0}%</p></div>`;
+
+  eFestivos.innerHTML = festivos.length
+    ? `<table><thead><tr><th class="l">Fecha</th><th class="l">Código</th><th class="l">Horario</th><th>Horas</th></tr></thead><tbody>
+       ${festivos.map(f=>`<tr><td class="nm">${f.fecha}</td>
+         <td class="nm"><strong>${f.codigo}</strong> <span style="color:var(--t2)">${CODES[f.codigo].label}</span></td>
+         <td class="nm" style="color:var(--t2)">${f.val}</td>
+         <td class="hcell">${f.horas?fmt(f.horas):'—'}</td></tr>`).join('')}</tbody></table>`
+    : `<p style="color:var(--t3);font-size:13px;margin:0">Sin festivos. Usa <code>FT</code> o <code>ST</code> con el horario detrás: <code>FT 06:30-14:00</code>.</p>`;
+
+  eAjustes.innerHTML=`<table class="adj"><thead><tr><th>Fecha</th><th>Horas</th><th>Observación</th><th></th></tr></thead><tbody>
+    ${aj.length?aj.map(a=>`<tr><td>${a.fecha}</td>
+      <td style="font-weight:700;color:${a.horas<0?'var(--err)':'var(--ok)'}">${a.horas>0?'+':''}${fmt(a.horas)}</td>
+      <td style="color:var(--t2)">${a.obs||'—'}</td>
+      <td><button class="ghost soloadmin" onclick="delAjuste('${id}',${todos.indexOf(a)})">✕</button></td></tr>`).join('')
+     :`<tr><td colspan="4" style="color:var(--t3)">Sin ajustes en ${currentYear}.</td></tr>`}
+    </tbody><tfoot><tr><td style="font-weight:700">Total</td>
+      <td style="font-weight:700">${sumaAj>0?'+':''}${fmt(sumaAj)} h</td><td colspan="2"></td></tr></tfoot></table>
+    <div class="row soloadmin" style="margin-top:12px;align-items:flex-end">
+      <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px">Fecha</label>
+        <input id="ajFecha" type="date" min="${currentYear}-01-01" max="${currentYear}-12-31" style="width:150px"></div>
+      <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px">Horas (+ o −)</label>
+        <input id="ajHoras" type="number" step="0.25" placeholder="-1.5" style="width:110px"></div>
+      <div style="flex:1;min-width:180px"><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px">Observación</label>
+        <input id="ajObs" placeholder="Ej: salió 1,5 h antes" style="width:100%"></div>
+      <button class="primary" onclick="addAjuste('${id}')">Añadir</button></div>`;
+
+  const cods=Object.entries(s.codigos).sort((a,b)=>b[1]-a[1]);
+  eResumen.innerHTML = cods.length
+    ? `<table><thead><tr><th class="l">Código</th><th class="l">Significado</th><th>Días</th></tr></thead><tbody>
+       ${cods.map(([c,n])=>`<tr><td class="nm"><span class="sw ${CODES[c].cls}"></span> <code style="font-weight:700">${c}</code></td>
+         <td class="nm" style="color:var(--t2)">${CODES[c].label}</td><td class="hcell">${n}</td></tr>`).join('')}</tbody></table>`
+    : `<p style="color:var(--t3);font-size:13px;margin:0">Sin códigos registrados en ${currentYear}.</p>`;
+  aplicarPermisos();
+}
+function shortLabel(v,p){
+  if(!v) return '';
+  if(p.codigo) return p.codigo;
+  if(p.ini!=null){const h=Math.floor(p.ini/60),m=p.ini%60; return m?`${h}:${pad(m)}`:`${h}h`;}
+  return '?';
+}
+function closeEmployee(){ currentEmpId=null; setMode(mode); }
+
+function addAjuste(id){
+  if(!esAdmin()) return;
+  const f=ajFecha.value, h=parseFloat(ajHoras.value), o=ajObs.value.trim();
+  if(!f){toast('Indica la fecha.');return;}
+  if(!h||isNaN(h)){toast('Indica las horas.');return;}
+  const [y,m,d]=f.split('-');
+  if(!DATA.adjustments[id]) DATA.adjustments[id]=[];
+  DATA.adjustments[id].push({fecha:`${d}/${m}/${y.slice(2)}`,anio:+y,horas:h,obs:o});
+  DATA.adjustments[id].sort((a,b)=>(a.anio||0)-(b.anio||0));
+  openEmployee(id); setDirty(true); toast('Ajuste añadido. Pulsa Guardar.');
+}
+function delAjuste(id,i){
+  if(!esAdmin()) return;
+  if(!confirm('¿Eliminar este ajuste?'))return;
+  DATA.adjustments[id].splice(i,1); openEmployee(id); setDirty(true);
+}
+
+/* ---------- Guardado ---------- */
+function setDirty(v){
+  dirty=v;
+  document.getElementById('dirty').classList.toggle('on',v);
+  document.getElementById('saved').classList.toggle('on',!v);
+  saveBtn.disabled=!v;
+}
+function toast(t){
+  const m=document.getElementById('msg'); m.textContent=t; m.classList.add('on');
+  clearTimeout(m._t); m._t=setTimeout(()=>m.classList.remove('on'),2600);
+}
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+
+const KEY='muelle:data';
+let backend='—';
+async function saveData(){
+  const json=JSON.stringify(DATA);
+  if(window.storage&&window.storage.set){
+    try{ await window.storage.set(KEY,json); backend='Claude'; return; }catch(e){}
+  }
+  try{ localStorage.setItem(KEY,json); backend='navegador'; return; }catch(e){}
+  throw new Error('sin almacenamiento');
+  /* SERVIDOR: await fetch('/api/cuadrante',{method:'PUT',headers:{'Content-Type':'application/json'},body:json}); */
+}
+async function loadData(){
+  if(window.storage&&window.storage.get){
+    try{const r=await window.storage.get(KEY); if(r&&r.value){DATA=JSON.parse(r.value);backend='Claude';return;}}catch(e){}
+  }
+  try{const raw=localStorage.getItem(KEY); if(raw){DATA=JSON.parse(raw);backend='navegador';}}catch(e){}
+  /* SERVIDOR: DATA = await (await fetch('/api/cuadrante')).json(); */
+}
+async function save(){
+  saveBtn.disabled=true; saveBtn.textContent='Guardando...';
+  try{ await saveData(); setDirty(false); toast(`Guardado (${backend}).`); }
+  catch(e){ toast('No se pudo guardar. Prueba a abrirlo en Chrome.'); saveBtn.disabled=false; }
+  saveBtn.textContent='Guardar';
+}
+function exportJSON(){
+  const b=new Blob([JSON.stringify(DATA,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+  a.download=`cuadrante_muelle_${currentYear}.json`; a.click(); URL.revokeObjectURL(a.href);
+  toast('Copia descargada.');
+}
+function importJSON(inp){
+  const f=inp.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{DATA=JSON.parse(r.result); migrar(); render(); setDirty(true); toast('Datos cargados. Pulsa Guardar.');}
+                catch(e){toast('Archivo no válido.');}};
+  r.readAsText(f); inp.value='';
+}
+
+/* ---------- Migración de formatos antiguos a clave por fecha ---------- */
+function migrar(){
+  let n=0;
+  // Empleados sin departamento -> Muelle (era el único que existía)
+  (DATA.employees||[]).forEach(e=>{ if(!e.dept) e.dept='muelle'; });
+  // Claves de producción sin departamento -> muelle
+  Object.keys(DATA.produccion||{}).forEach(k=>{
+    if(/^\d{4}-W\d+$/.test(k)){ DATA.produccion['muelle|'+k]=DATA.produccion[k]; delete DATA.produccion[k]; n++; }
+  });
+  // Coste único antiguo -> tres tarifas iguales
+  (DATA.employees||[]).forEach(e=>{
+    if(e.cost && e.costDia==null){ e.costDia=e.costNoche=e.costFest=e.cost; }
+  });
+  // Producción diaria antigua -> acumulada por semana
+  Object.keys(DATA.produccion||{}).forEach(k=>{
+    if(/^\d{4}-\d{2}-\d{2}$/.test(k)){
+      const d=new Date(k+'T00:00'), iso=isoWeekOf(d), wk=`muelle|${iso.year}-W${iso.week}`;
+      const v=DATA.produccion[k];
+      if(!DATA.produccion[wk]) DATA.produccion[wk]={pallets:0,toneladas:0};
+      DATA.produccion[wk].pallets   += v.pallets||0;
+      DATA.produccion[wk].toneladas += v.toneladas||0;
+      delete DATA.produccion[k]; n++;
+    }
+  });
+  Object.keys(DATA.assignments||{}).forEach(k=>{
+    const p=k.split('|');
+    if(p.length===4){                                  // emp|año|semana|día
+      const d=addDays(mondayOfWeek(+p[1],+p[2]),+p[3]);
+      DATA.assignments[`${p[0]}|${ymd(d)}`]=DATA.assignments[k]; delete DATA.assignments[k]; n++;
+    } else if(p.length===3 && !p[1].includes('-')){     // emp|semana|día (versión más antigua, año 2027)
+      const d=addDays(mondayOfWeek(2027,+p[1]),+p[2]);
+      DATA.assignments[`${p[0]}|${ymd(d)}`]=DATA.assignments[k]; delete DATA.assignments[k]; n++;
+    }
+  });
+  return n;
+}
+
+/* ---------- Arranque ---------- */
+(async function init(){
+  await loadData();
+  DATA.employees   = DATA.employees   || [];
+  DATA.assignments = DATA.assignments || {};
+  DATA.adjustments = DATA.adjustments || {};
+  DATA.produccion  = DATA.produccion  || {};
+  const mig=migrar();
+  const hoy=new Date();
+  currentYear=Math.min(YEAR_MAX,Math.max(YEAR_MIN,hoy.getFullYear()));
+  currentMonth=hoy.getMonth();
+  currentWeek=isoWeekOf(hoy).year===currentYear?isoWeekOf(hoy).week:1;
+  goHome();
+  setDirty(mig>0);
+  if(mig) toast(`${mig} asignaciones migradas al nuevo formato. Pulsa Guardar.`);
+
+  // Pantalla de acceso: configuración inicial si aún no hay contraseñas
+  const hayClaves = DATA.auth && DATA.auth.admin && DATA.auth.viewer;
+  document.getElementById('loginForm').style.display = hayClaves?'':'none';
+  document.getElementById('setupForm').style.display = hayClaves?'none':'';
+  document.getElementById('lockMsg').textContent = hayClaves
+    ? 'Introduce tu contraseña para continuar.'
+    : 'Vamos a configurar el acceso.';
+  if(hayClaves) setTimeout(()=>document.getElementById('lPass').focus(),100);
+})();
+</script>
+</body>
+</html>

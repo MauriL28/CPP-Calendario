@@ -1218,6 +1218,57 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
   margin-left: auto;
 }
 
+.cuadrante-horas {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 0.75rem;
+}
+
+.cuadrante-horas article {
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 13px;
+}
+
+.cuadrante-horas p {
+  margin: 0;
+}
+
+.cuadrante-horas .lb {
+  margin-bottom: 3px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.cuadrante-horas .vl {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.cuadrante-horas .noche {
+  background: var(--noche-bg);
+}
+
+.cuadrante-horas .noche .vl {
+  color: var(--noche);
+}
+
+.cuadrante-horas .total {
+  background: var(--manana-bg);
+}
+
+.cuadrante-horas .total .vl {
+  color: var(--manana);
+}
+
+@media (max-width: 720px) {
+  .cuadrante-horas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .cuadrante-scroll.mensual {
   overflow-x: auto;
   max-width: 100%;
@@ -1533,6 +1584,7 @@ table.cuadrante.mensual tfoot td:first-child {
   .ficha-imprimir,
   .cuadrante-imprimir,
   .cuadrante-exportar,
+  .cuadrante-horas,
   .ficha-anio-campo,
   dialog {
     display: none !important;
@@ -1946,6 +1998,12 @@ button.enlace:not(.tarjeta):not(.celda) {
   grid-column: 1 / -1;
 }
 
+.equipo-semana {
+  margin: 0 0 0.5rem;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
 .aviso-lectura {
   justify-self: end;
   margin: 0 0 0.75rem;
@@ -2143,6 +2201,17 @@ table.cuadrante td.turno-baja,
 table.cuadrante td.turno-baja .celda,
 .muestra.turno-baja {
   background: var(--baja-bg);
+}
+
+table.cuadrante td.turno-ausente,
+.muestra.turno-ausente {
+  color: #5c6370;
+  font-weight: 600;
+}
+
+table.cuadrante td.turno-ausente .celda,
+.muestra.turno-ausente {
+  background: #e4e6eb;
 }
 
 table.cuadrante td.turno-festivo,
