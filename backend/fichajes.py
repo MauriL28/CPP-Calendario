@@ -1,13 +1,13 @@
-"""Carga de fichajes: un evento por fila del Excel y las horas del día.
+"""Carga de fichajes: un evento por fila del Excel y las horas de la jornada.
 
-Al terminar, cruza cada día con el turno efectivo y rellena coincide.
-Horas en NUMERIC(8,2): segundos / 3600, redondeo half-up a 2 decimales,
-sin sumar 24 h.
+Al terminar, cruza cada jornada con el turno efectivo y rellena coincide.
+Horas en NUMERIC(8,2): segundos / 3600, redondeo half-up a 2 decimales.
+Un tramo que cruza medianoche usa las dos fechas; no se suman 24 h a ciegas.
 """
 
 import sys
 from collections import defaultdict
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 import openpyxl
@@ -16,6 +16,8 @@ from db import cursor
 from rutas.turnos import _agrupar_versiones, _franja, resolver_turno
 
 TIPOS = ("Llegada", "Salida", "Inicio Pausa", "Final Pausa")
+MAX_HUECO_JORNADA_H = 4
+MAX_JORNADA_H = 16
 MARGEN_DESCUADRE_MINUTOS = 20
 COLUMNAS = (
     "Nº pers.",
@@ -114,21 +116,38 @@ def _horas(segundos):
     return (segundos / Decimal(3600)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def _delta_marca(inicio, fin):
+    """Segundos entre dos eventos. Con fecha, la salida puede caer al día siguiente."""
+    if inicio.get("fecha") is not None and fin.get("fecha") is not None:
+        delta = datetime.combine(fin["fecha"], fin["hora"]) - datetime.combine(
+            inicio["fecha"], inicio["hora"]
+        )
+        return (
+            Decimal(delta.days) * Decimal(86400)
+            + Decimal(delta.seconds)
+            + Decimal(delta.microseconds) / Decimal(1000000)
+        )
+    return _segundos(inicio["hora"], fin["hora"])
+
+
 def _incidencia(motivo):
     return {
         "incidencia": True,
         "motivo": motivo,
         "horas_trabajadas": None,
         "horas_pausa": None,
+        "segundos_trabajo": None,
+        "segundos_pausa": None,
     }
 
 
 def calcular_dia(eventos):
     """Dos máquinas independientes. Empiezan cerradas. Eventos ya ordenados.
 
-    Abrir abierto, cerrar cerrado, seguir abierto al final del día, tipo
-    vacío o distinto de los cuatro, o un cierre con el reloj hacia atrás
-    (sin sumar 24 h): el día es incidencia y las horas quedan vacías.
+    Abrir abierto, cerrar cerrado, seguir abierto al final, tipo vacío o
+    distinto de los cuatro, o un cierre anterior a su apertura: incidencia
+    y las horas quedan vacías. Si los eventos traen fecha, el cierre del
+    día siguiente cuenta el tiempo real.
     """
     trabajo_desde = None
     pausa_desde = None
@@ -142,40 +161,40 @@ def calcular_dia(eventos):
         if tipo == "Llegada":
             if trabajo_desde is not None:
                 return _incidencia(
-                    f"Llegada a las {hora} con la jornada ya abierta desde {trabajo_desde}"
+                    f"Llegada a las {hora} con la jornada ya abierta desde {trabajo_desde['hora']}"
                 )
-            trabajo_desde = hora
+            trabajo_desde = ev
         elif tipo == "Salida":
             if trabajo_desde is None:
                 return _incidencia(f"Salida a las {hora} sin Llegada")
-            delta = _segundos(trabajo_desde, hora)
+            delta = _delta_marca(trabajo_desde, ev)
             if delta < 0:
                 return _incidencia(
-                    f"Salida a las {hora} anterior a la Llegada de las {trabajo_desde}"
+                    f"Salida a las {hora} anterior a la Llegada de las {trabajo_desde['hora']}"
                 )
             segundos_trabajo += delta
             trabajo_desde = None
         elif tipo == "Inicio Pausa":
             if pausa_desde is not None:
                 return _incidencia(
-                    f"Inicio Pausa a las {hora} con la pausa ya abierta desde {pausa_desde}"
+                    f"Inicio Pausa a las {hora} con la pausa ya abierta desde {pausa_desde['hora']}"
                 )
-            pausa_desde = hora
+            pausa_desde = ev
         else:
             if pausa_desde is None:
                 return _incidencia(f"Final Pausa a las {hora} sin Inicio Pausa")
-            delta = _segundos(pausa_desde, hora)
+            delta = _delta_marca(pausa_desde, ev)
             if delta < 0:
                 return _incidencia(
-                    f"Final Pausa a las {hora} anterior al Inicio Pausa de las {pausa_desde}"
+                    f"Final Pausa a las {hora} anterior al Inicio Pausa de las {pausa_desde['hora']}"
                 )
             segundos_pausa += delta
             pausa_desde = None
     abiertos = []
     if trabajo_desde is not None:
-        abiertos.append(f"Llegada a las {trabajo_desde} sin Salida")
+        abiertos.append(f"Llegada a las {trabajo_desde['hora']} sin Salida")
     if pausa_desde is not None:
-        abiertos.append(f"Inicio Pausa a las {pausa_desde} sin Final Pausa")
+        abiertos.append(f"Inicio Pausa a las {pausa_desde['hora']} sin Final Pausa")
     if abiertos:
         return _incidencia("; ".join(abiertos))
     return {
@@ -183,30 +202,282 @@ def calcular_dia(eventos):
         "motivo": None,
         "horas_trabajadas": _horas(segundos_trabajo),
         "horas_pausa": _horas(segundos_pausa),
+        "segundos_trabajo": segundos_trabajo,
+        "segundos_pausa": segundos_pausa,
     }
 
 
-def agrupar_dias(eventos):
-    """Persona: usuario_id si está, si no el numero_sap. Orden: hora, luego orden."""
-    grupos = defaultdict(list)
+def _desde_medianoche(hora):
+    entero = hora.hour * 3600 + hora.minute * 60 + hora.second
+    return Decimal(entero) + Decimal(hora.microsecond) / Decimal(1000000)
+
+
+def segundos_pausa_con_huecos(eventos):
+    """Pausas fichadas más huecos Salida→Llegada de la misma lista, sin solapar.
+
+    La lista es una jornada: un hueco que abre otra jornada no entra aquí.
+    """
+    if not eventos:
+        return None
+    ordenados = sorted(
+        eventos,
+        key=lambda item: (item.get("fecha") or date.min, item["hora"], item["orden"]),
+    )
+
+    def a_segundos(ev):
+        if ev.get("fecha") is None or ordenados[0].get("fecha") is None:
+            return _desde_medianoche(ev["hora"])
+        delta = datetime.combine(ev["fecha"], ev["hora"]) - datetime.combine(
+            ordenados[0]["fecha"], ordenados[0]["hora"]
+        )
+        return (
+            Decimal(delta.days) * Decimal(86400)
+            + Decimal(delta.seconds)
+            + Decimal(delta.microseconds) / Decimal(1000000)
+        )
+
+    pausas = []
+    huecos = []
+    pausa_desde = None
+    salida = None
+    for ev in ordenados:
+        tipo = ev["tipo"]
+        if tipo == "Inicio Pausa" and pausa_desde is None:
+            pausa_desde = ev
+        elif tipo == "Final Pausa" and pausa_desde is not None:
+            if a_segundos(ev) >= a_segundos(pausa_desde):
+                pausas.append((pausa_desde, ev))
+            pausa_desde = None
+        elif tipo == "Salida":
+            salida = ev
+        elif tipo == "Llegada" and salida is not None:
+            if a_segundos(ev) >= a_segundos(salida):
+                huecos.append((salida, ev))
+            salida = None
+    total = sum((a_segundos(fin) - a_segundos(inicio) for inicio, fin in pausas), Decimal(0))
+    for inicio, fin in huecos:
+        desde = a_segundos(inicio)
+        hasta = a_segundos(fin)
+        cubierto = Decimal(0)
+        for pausa_inicio, pausa_fin in pausas:
+            cubierto += max(
+                Decimal(0),
+                min(hasta, a_segundos(pausa_fin)) - max(desde, a_segundos(pausa_inicio)),
+            )
+        total += max(Decimal(0), (hasta - desde) - cubierto)
+    return total
+
+
+def _momento(ev):
+    return datetime.combine(ev["fecha"], ev["hora"])
+
+
+def _partir_jornadas(lista):
+    """Tramo = Llegada→Salida. Sigue en la jornada si el hueco es de 4 h o menos.
+
+    La Salida casa con la Llegada abierta solo dentro de MAX_JORNADA_H.
+    Una salida suelta, una pausa abierta o un tipo raro quedan en su propio grupo.
+    """
+    lista = sorted(lista, key=lambda ev: (ev["fecha"], ev["hora"], ev["orden"]))
+    jornadas = []
+    abierta = None
+    llegada_dt = None
+    salida_dt = None
+    actual = None
+    hueco = timedelta(hours=MAX_HUECO_JORNADA_H)
+    tope = timedelta(hours=MAX_JORNADA_H)
+    for ev in lista:
+        momento = _momento(ev)
+        tipo = ev["tipo"]
+        if tipo == "Llegada":
+            if abierta is not None:
+                jornadas[abierta].append(ev)
+                continue
+            if salida_dt is not None and timedelta(0) <= (momento - salida_dt) <= hueco:
+                jornadas[actual].append(ev)
+                abierta = actual
+                llegada_dt = momento
+                salida_dt = None
+                continue
+            jornadas.append([ev])
+            actual = len(jornadas) - 1
+            abierta = actual
+            llegada_dt = momento
+            salida_dt = None
+            continue
+        if tipo == "Salida":
+            if (
+                abierta is not None
+                and llegada_dt is not None
+                and timedelta(0) <= (momento - llegada_dt) <= tope
+            ):
+                jornadas[abierta].append(ev)
+                salida_dt = momento
+                abierta = None
+                llegada_dt = None
+                continue
+            if abierta is not None and llegada_dt is not None and (momento - llegada_dt) > tope:
+                abierta = None
+                llegada_dt = None
+                salida_dt = None
+                actual = None
+            jornadas.append([ev])
+            actual = None
+            salida_dt = None
+            continue
+        if abierta is not None:
+            jornadas[abierta].append(ev)
+        elif actual is not None and salida_dt is not None:
+            jornadas[actual].append(ev)
+        else:
+            jornadas.append([ev])
+            actual = None
+            salida_dt = None
+    return jornadas
+
+
+def _dia_de(persona, lista):
+    calculo = calcular_dia(lista)
+    llegada = next((ev for ev in lista if ev["tipo"] == "Llegada"), None)
+    ancla = llegada or lista[0]
+    return {
+        "persona": persona,
+        "usuario_id": ancla["usuario_id"],
+        "numero_sap": ancla["numero_sap"],
+        "fecha": ancla.get("fecha"),
+        "eventos": lista,
+        **calculo,
+    }
+
+
+def _rango_eventos(eventos):
+    """Primer y último evento con fecha. None si no hay ninguno."""
+    momentos = [_momento(ev) for ev in eventos if ev.get("fecha") is not None]
+    if not momentos:
+        return None
+    return min(momentos), max(momentos)
+
+
+def _llegadas_cerradas(dias):
+    """Llegadas ya emparejadas con una Salida, por numero_sap."""
+    cerradas = defaultdict(list)
+    for dia in dias:
+        trabajo = None
+        for ev in dia["eventos"]:
+            if ev["tipo"] == "Llegada":
+                if trabajo is not None:
+                    break
+                trabajo = ev
+            elif ev["tipo"] == "Salida":
+                if trabajo is None or _momento(ev) < _momento(trabajo):
+                    break
+                cerradas[dia["numero_sap"]].append(_momento(trabajo))
+                trabajo = None
+    return cerradas
+
+
+def _en_borde(dia, inicio, fin):
+    """Huérfano al principio del extracto, o llegada abierta al final."""
+    tope = timedelta(hours=MAX_JORNADA_H)
+    eventos = dia["eventos"]
+    llegadas = [ev for ev in eventos if ev["tipo"] == "Llegada"]
+    salidas = [ev for ev in eventos if ev["tipo"] == "Salida"]
+    if len(llegadas) == 1 and not salidas and _momento(llegadas[0]) >= fin - tope:
+        return True
+    if llegadas:
+        return False
+    if not eventos or not all(ev["tipo"] in ("Salida", "Inicio Pausa", "Final Pausa") for ev in eventos):
+        return False
+    return all(_momento(ev) <= inicio + tope for ev in eventos)
+
+
+def _llegada_reabierta(eventos):
+    """Hay una Llegada nueva mientras la anterior sigue sin Salida."""
+    abierta = False
+    for ev in eventos:
+        if ev["tipo"] == "Llegada":
+            if abierta:
+                return True
+            abierta = True
+        elif ev["tipo"] == "Salida":
+            abierta = False
+    return False
+
+
+def _motivo_incidencia(dia, cerradas):
+    tope = timedelta(hours=MAX_JORNADA_H)
+    eventos = dia["eventos"]
+    llegadas = [ev for ev in eventos if ev["tipo"] == "Llegada"]
+    salidas = [ev for ev in eventos if ev["tipo"] == "Salida"]
+    if (dia.get("motivo") or "").startswith("tipo no válido"):
+        return dia["motivo"]
+    if _llegada_reabierta(eventos) or (llegadas and not salidas):
+        return "Falta salida"
+    if salidas and not llegadas:
+        momento = _momento(salidas[0])
+        hay_cerrada = any(
+            timedelta(0) < momento - llegada <= tope
+            for llegada in cerradas.get(dia["numero_sap"], [])
+        )
+        if hay_cerrada:
+            return "Falta llegada tras salida"
+        return "Falta entrada"
+    return "Pausa sin cerrar"
+
+
+def _marcar_fuera_de_rango(dia):
+    dia.update(
+        {
+            "incidencia": False,
+            "motivo": "fuera de rango",
+            "horas_trabajadas": Decimal("0.00"),
+            "horas_pausa": Decimal("0.00"),
+            "segundos_trabajo": Decimal(0),
+            "segundos_pausa": Decimal(0),
+        }
+    )
+
+
+def _clasificar_motivos(dias, rango):
+    if rango is None:
+        return
+    inicio, fin = rango
+    cerradas = _llegadas_cerradas(dias)
+    for dia in dias:
+        if not dia["incidencia"]:
+            continue
+        if _en_borde(dia, inicio, fin):
+            _marcar_fuera_de_rango(dia)
+        else:
+            dia["motivo"] = _motivo_incidencia(dia, cerradas)
+
+
+def agrupar_dias(eventos, rango=None):
+    """Una jornada por persona, en orden (fecha, hora, orden).
+
+    La fecha de la jornada es la de su primera Llegada. Sin Llegada, la del
+    primer evento. Persona: usuario_id si está, si no el numero_sap.
+    rango es (primer evento, último evento) de fichaje_evento. Si no se pasa,
+    se calcula con estos eventos.
+    """
+    por_persona = defaultdict(list)
+    sin_fecha = defaultdict(list)
     for ev in eventos:
         persona = ev["usuario_id"] if ev["usuario_id"] else ev["numero_sap"]
-        grupos[(persona, ev["fecha"])].append(ev)
+        if ev.get("fecha") is None:
+            sin_fecha[persona].append(ev)
+        else:
+            por_persona[persona].append(ev)
     dias = []
-    for (persona, fecha), lista in grupos.items():
+    for persona, lista in por_persona.items():
+        for jornada in _partir_jornadas(lista):
+            dias.append(_dia_de(persona, jornada))
+    for persona, lista in sin_fecha.items():
         lista.sort(key=lambda ev: (ev["hora"], ev["orden"]))
-        calculo = calcular_dia(lista)
-        usuario_id = lista[0]["usuario_id"]
-        dias.append(
-            {
-                "persona": persona,
-                "usuario_id": usuario_id,
-                "numero_sap": lista[0]["numero_sap"],
-                "fecha": fecha,
-                "eventos": lista,
-                **calculo,
-            }
-        )
+        dias.append(_dia_de(persona, lista))
+    if rango is None:
+        rango = _rango_eventos(eventos)
+    _clasificar_motivos(dias, rango)
     return dias
 
 
@@ -383,6 +654,8 @@ def _horas_plan(turno):
 
 
 def _cruce(dia, turnos):
+    if dia.get("motivo") == "fuera de rango":
+        return None, None
     if dia["usuario_id"] is None:
         return "sin_emparejar", None
     if dia["incidencia"]:
@@ -392,32 +665,6 @@ def _cruce(dia, turnos):
 
 
 def _guardar_fichaje(cur, dia, coincide, planificadas):
-    if dia["usuario_id"] is not None:
-        cur.execute(
-            """
-            UPDATE fichaje
-            SET numero_sap = %s,
-                horas_trabajadas = %s,
-                horas_pausa = %s,
-                horas_planificadas = %s,
-                incidencia = %s,
-                coincide = %s
-            WHERE usuario_id = %s
-              AND fecha = %s
-            """,
-            (
-                dia["numero_sap"],
-                dia["horas_trabajadas"],
-                dia["horas_pausa"],
-                planificadas,
-                dia["incidencia"],
-                coincide,
-                dia["usuario_id"],
-                dia["fecha"],
-            ),
-        )
-        if cur.rowcount:
-            return False
     cur.execute(
         """
         INSERT INTO fichaje (
@@ -441,13 +688,9 @@ def _guardar_fichaje(cur, dia, coincide, planificadas):
 
 
 def _insertar_fichajes(cur, dias):
+    """Cada jornada es una fila. Se reescriben todas: la fecha ya no es el día natural."""
     turnos = _turnos_resueltos(cur, dias)
-    cur.execute(
-        """
-        DELETE FROM fichaje
-        WHERE usuario_id IS NULL AND coincide = 'sin_emparejar'
-        """
-    )
+    cur.execute("DELETE FROM fichaje")
     insertados = 0
     for dia in dias:
         if dia["fecha"] is None:
@@ -622,12 +865,57 @@ def comprobar_calcular_dia():
         raise AssertionError(normal)
     noche = calcular_dia(
         [
-            {"tipo": "Llegada", "hora": time(22, 0, 0)},
-            {"tipo": "Salida", "hora": time(0, 30, 0)},
+            {"tipo": "Llegada", "hora": time(22, 0, 0), "fecha": date(2026, 9, 7)},
+            {"tipo": "Salida", "hora": time(0, 30, 0), "fecha": date(2026, 9, 8)},
         ]
     )
-    if not noche["incidencia"] or noche["horas_trabajadas"] is not None:
+    if noche["incidencia"] or noche["horas_trabajadas"] != Decimal("2.50"):
         raise AssertionError(noche)
+    atras = calcular_dia(
+        [
+            {"tipo": "Llegada", "hora": time(22, 0, 0), "fecha": date(2026, 9, 7)},
+            {"tipo": "Salida", "hora": time(0, 30, 0), "fecha": date(2026, 9, 7)},
+        ]
+    )
+    if not atras["incidencia"] or atras["horas_trabajadas"] is not None:
+        raise AssertionError(atras)
+    cruzada = agrupar_dias(
+        [
+            {
+                "usuario_id": "u",
+                "numero_sap": "1",
+                "orden": 1,
+                "tipo": "Llegada",
+                "fecha": date(2026, 9, 7),
+                "hora": time(20, 21, 0),
+            },
+            {
+                "usuario_id": "u",
+                "numero_sap": "1",
+                "orden": 2,
+                "tipo": "Salida",
+                "fecha": date(2026, 9, 8),
+                "hora": time(4, 0, 0),
+            },
+            {
+                "usuario_id": "u",
+                "numero_sap": "1",
+                "orden": 3,
+                "tipo": "Llegada",
+                "fecha": date(2026, 9, 8),
+                "hora": time(20, 22, 0),
+            },
+        ]
+    )
+    if (
+        len(cruzada) != 2
+        or cruzada[0]["incidencia"]
+        or cruzada[0]["fecha"] != date(2026, 9, 7)
+        or cruzada[1]["incidencia"]
+        or cruzada[1]["motivo"] != "fuera de rango"
+        or cruzada[1]["fecha"] != date(2026, 9, 8)
+    ):
+        raise AssertionError(cruzada)
     abierta = calcular_dia([{"tipo": "Llegada", "hora": time(20, 21, 10)}])
     if not abierta["incidencia"] or "sin Salida" not in abierta["motivo"]:
         raise AssertionError(abierta)

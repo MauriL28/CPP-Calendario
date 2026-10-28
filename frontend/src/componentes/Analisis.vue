@@ -49,32 +49,91 @@ function fechaVisible(iso) {
   return `${dia}/${mes}/${anio}`;
 }
 
-function horasVisible(valor) {
-  if (valor === null || valor === undefined) {
-    return "—";
-  }
-  return Number(valor).toLocaleString("es-ES", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function diferenciaVisible(valor) {
+function textoMinutos(valor, conSigno) {
   if (valor === null || valor === undefined) {
     return "—";
   }
   const numero = Number(valor);
-  const texto = Math.abs(numero).toLocaleString("es-ES", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
-  if (numero > 0) {
-    return `+${texto}`;
+  const signo = conSigno && numero > 0 ? "+" : numero < 0 ? "-" : "";
+  const absoluto = Math.abs(numero);
+  const horas = Math.floor(absoluto / 60);
+  const minutos = absoluto % 60;
+  if (!horas) {
+    return `${signo}${minutos} min`;
   }
-  if (numero < 0) {
-    return `-${texto}`;
+  return `${signo}${horas} h ${String(minutos).padStart(2, "0")} min`;
+}
+
+function minutosReloj(hora) {
+  const [horas, minutos] = hora.split(":").map(Number);
+  return horas * 60 + minutos;
+}
+
+function diaSiguiente(valor) {
+  return Number(valor) === 1;
+}
+
+function minutosEnEscala(hora, dia) {
+  return minutosReloj(hora) + (diaSiguiente(dia) ? 24 * 60 : 0);
+}
+
+function cruzaMedianoche(entrada, salida) {
+  if (!entrada || !salida) {
+    return 0;
   }
-  return texto;
+  return minutosReloj(salida) < minutosReloj(entrada) ? 1 : 0;
+}
+
+function rango(inicio, fin, diaFin) {
+  if (!inicio || !fin) {
+    return "—";
+  }
+  const salida = diaSiguiente(diaFin) ? `${fin} (+1)` : fin;
+  return `${inicio}–${salida}`;
+}
+
+function desvio(previsto, fichado) {
+  if (!previsto || !fichado) {
+    return null;
+  }
+  return minutosReloj(fichado) - minutosReloj(previsto);
+}
+
+function desvioSalida(fila) {
+  if (!fila.salida_prevista || !fila.salida_fichada) {
+    return null;
+  }
+  const previsto = minutosEnEscala(
+    fila.salida_prevista,
+    cruzaMedianoche(fila.entrada_prevista, fila.salida_prevista),
+  );
+  const fichado = minutosEnEscala(fila.salida_fichada, fila.salida_dia_offset);
+  return fichado - previsto;
+}
+
+function textoDesvio(minutos, llegada) {
+  if (minutos === null) {
+    return "—";
+  }
+  const verbo = llegada ? "entró" : "salió";
+  if (minutos === 0) {
+    return `${verbo} a la hora`;
+  }
+  const cuanto = textoMinutos(Math.abs(minutos), false);
+  if (llegada) {
+    return `${verbo} ${cuanto} ${minutos > 0 ? "tarde" : "antes"}`;
+  }
+  return `${verbo} ${cuanto} ${minutos > 0 ? "después" : "antes"}`;
+}
+
+function hayPrevisto(fila) {
+  return Boolean(fila.entrada_prevista && fila.salida_prevista);
+}
+
+function desvioGrande(fila) {
+  const entrada = desvio(fila.entrada_prevista, fila.entrada_fichada);
+  const salida = desvioSalida(fila);
+  return (entrada !== null && Math.abs(entrada) > 20) || (salida !== null && Math.abs(salida) > 20);
 }
 
 function claseEstado(coincide) {
@@ -199,10 +258,23 @@ onMounted(async () => {
                 </span>
               </td>
               <td>{{ fechaVisible(fila.fecha) }}</td>
-              <td>{{ horasVisible(fila.horas_planificadas) }}</td>
-              <td>{{ horasVisible(fila.horas_trabajadas) }}</td>
-              <td>{{ horasVisible(fila.horas_pausa) }}</td>
-              <td>{{ diferenciaVisible(fila.diferencia) }}</td>
+              <td>
+                <span class="persona-datos">
+                  <strong>{{ textoMinutos(fila.previsto_min, false) }}</strong>
+                  <span v-if="hayPrevisto(fila)">{{ rango(fila.entrada_prevista, fila.salida_prevista, cruzaMedianoche(fila.entrada_prevista, fila.salida_prevista)) }}</span>
+                </span>
+              </td>
+              <td>
+                <span class="persona-datos">
+                  <strong>{{ textoMinutos(fila.fichado_min, false) }}</strong>
+                  <span>{{ rango(fila.entrada_fichada, fila.salida_fichada, fila.salida_dia_offset) }}</span>
+                  <span v-if="hayPrevisto(fila)" :class="{ 'analisis-tarde': desvioGrande(fila) }">
+                    {{ textoDesvio(desvio(fila.entrada_prevista, fila.entrada_fichada), true) }} · {{ textoDesvio(desvioSalida(fila), false) }}
+                  </span>
+                </span>
+              </td>
+              <td>{{ textoMinutos(fila.pausa_min, false) }}</td>
+              <td>{{ textoMinutos(fila.diferencia_min, true) }}</td>
               <td>
                 <span class="estado-pastilla" :class="claseEstado(fila.coincide)">
                   {{ etiquetas[fila.coincide] }}

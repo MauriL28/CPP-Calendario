@@ -1,7 +1,8 @@
 import os
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 from uuid import UUID
 
@@ -13,7 +14,9 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils.exceptions import InvalidFileException
 
 from db import SinBaseDeDatos, cursor
-from fichajes import cargar
+from fichajes import _segundos, agrupar_dias, cargar, segundos_pausa_con_huecos
+from horas import hora_texto
+from rutas.turnos import _agrupar_versiones, _franja, resolver_turno
 
 bp = Blueprint("fichajes", __name__)
 
@@ -176,7 +179,24 @@ def _alcance_analisis(cur, ctx):
         if cur.fetchone() is None:
             return None, None, (jsonify(error="No autorizado"), 403)
 
-    clausulas = ["f.coincide IS NOT NULL"]
+    clausulas = [
+        """(
+            f.coincide IS NOT NULL
+            OR (
+                f.incidencia
+                AND EXISTS (
+                    SELECT 1
+                    FROM fichaje AS otra
+                    WHERE otra.fecha = f.fecha
+                      AND otra.id <> f.id
+                      AND (
+                            (f.usuario_id IS NOT NULL AND otra.usuario_id = f.usuario_id)
+                         OR (f.usuario_id IS NULL AND otra.numero_sap = f.numero_sap)
+                      )
+                )
+            )
+        )"""
+    ]
     params = []
     if ctx["rol"] == "mando" or departamento:
         clausulas.append("u.departamento_id = %s")
@@ -196,10 +216,161 @@ def _alcance_analisis(cur, ctx):
     return " AND ".join(clausulas), params, None
 
 
+def _minutos(segundos):
+    if segundos is None:
+        return None
+    return int((Decimal(segundos) / Decimal(60)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _minutos_reloj(inicio, fin):
+    if inicio is None or fin is None:
+        return None
+    delta = _segundos(inicio, fin)
+    if delta < 0:
+        delta += Decimal(24 * 3600)
+    return _minutos(delta)
+
+
+def _hhmm(valor):
+    if valor is None:
+        return None
+    if isinstance(valor, str):
+        return valor[:5]
+    return hora_texto(valor)
+
+
+def _eventos_analisis(cur, filas):
+    """Jornadas cuya fecha cae en las filas. Incluye el día anterior y dos después."""
+    fechas = [fila["fecha"] for fila in filas]
+    if not fechas:
+        return {}
+    ids = list({fila["usuario_id"] for fila in filas if fila["usuario_id"] is not None})
+    saps = list({fila["numero_sap"] for fila in filas if fila["numero_sap"]})
+    cur.execute(
+        """
+        SELECT MIN(fecha + hora) AS inicio, MAX(fecha + hora) AS fin
+        FROM fichaje_evento
+        WHERE fecha IS NOT NULL
+        """
+    )
+    extremo = cur.fetchone()
+    rango = None
+    if extremo and extremo["inicio"] is not None and extremo["fin"] is not None:
+        rango = (extremo["inicio"], extremo["fin"])
+    cur.execute(
+        """
+        SELECT numero_sap, usuario_id, tipo, fecha, hora, orden
+        FROM fichaje_evento
+        WHERE fecha BETWEEN %s AND %s
+          AND (usuario_id = ANY(%s) OR numero_sap = ANY(%s))
+        ORDER BY fecha, hora, orden
+        """,
+        (min(fechas) - timedelta(days=1), max(fechas) + timedelta(days=2), ids, saps),
+    )
+    grupos = {}
+    for dia in agrupar_dias(cur.fetchall(), rango):
+        clave = (dia["usuario_id"] or dia["numero_sap"], dia["fecha"])
+        grupos.setdefault(clave, []).append(dia)
+    return grupos
+
+
+def _tomar_jornada(restantes, fila):
+    """Cada fila de fichaje se queda con su jornada, también si hay incidencia."""
+    if not restantes:
+        return None
+    mismas = [dia for dia in restantes if bool(dia["incidencia"]) == bool(fila["incidencia"])]
+    candidatas = mismas or list(restantes)
+    if not fila["incidencia"]:
+        reales = [dia for dia in candidatas if dia.get("motivo") != "fuera de rango"]
+        if reales:
+            candidatas = reales
+    elegido = candidatas[0]
+    restantes.remove(elegido)
+    return elegido
+
+
+def _planes_analisis(cur, filas):
+    utiles = [fila for fila in filas if fila["usuario_id"] is not None]
+    if not utiles:
+        return {}
+    ids = list({fila["usuario_id"] for fila in utiles})
+    fechas = [fila["fecha"] for fila in utiles]
+    cur.execute(
+        """
+        SELECT usuario_id, fecha, ausencia::text AS ausencia,
+               hora_inicio, hora_fin, horas_planificadas, horas_nocturnas
+        FROM turno
+        WHERE usuario_id = ANY(%s)
+          AND fecha = ANY(%s)
+        """,
+        (ids, fechas),
+    )
+    turnos = {(fila["usuario_id"], fila["fecha"]): fila for fila in cur.fetchall()}
+    cur.execute(
+        """
+        SELECT v.usuario_id, v.desde, d.dia_semana, d.horario_inicio, d.horario_fin
+        FROM horario_version v
+        LEFT JOIN horario_dia d
+          ON d.usuario_id = v.usuario_id AND d.desde = v.desde
+        WHERE v.usuario_id = ANY(%s)
+          AND v.desde <= %s
+        """,
+        (ids, max(fechas)),
+    )
+    versiones = _agrupar_versiones(cur.fetchall())
+    noche_inicio, noche_fin = _franja(cur)
+    planes = {}
+    for fila in utiles:
+        guardado = turnos.get((fila["usuario_id"], fila["fecha"]))
+        turno, _origen = resolver_turno(
+            fila["fecha"],
+            guardado,
+            versiones.get(fila["usuario_id"], []),
+            noche_inicio,
+            noche_fin,
+        )
+        planes[(fila["usuario_id"], fila["fecha"])] = turno
+    return planes
+
+
+def _detalle_fila(fila, dia, turno):
+    lista = dia["eventos"] if dia else []
+    llegadas = [evento for evento in lista if evento["tipo"] == "Llegada"]
+    salidas = [evento for evento in lista if evento["tipo"] == "Salida"]
+    entrada = _hhmm(llegadas[0]["hora"]) if llegadas else None
+    salida_ev = salidas[-1] if salidas else None
+    salida = _hhmm(salida_ev["hora"]) if salida_ev else None
+    offset = 0
+    if salida_ev is not None and salida_ev.get("fecha") is not None and fila["fecha"] is not None:
+        offset = 1 if (salida_ev["fecha"] - fila["fecha"]).days >= 1 else 0
+    fichado = _minutos(dia["segundos_trabajo"]) if dia else None
+    pausa = _minutos(segundos_pausa_con_huecos(lista)) if lista else None
+    inicio = turno.get("hora_inicio") if turno else None
+    fin = turno.get("hora_fin") if turno else None
+    previsto = _minutos_reloj(
+        datetime.strptime(inicio, "%H:%M").time() if isinstance(inicio, str) else inicio,
+        datetime.strptime(fin, "%H:%M").time() if isinstance(fin, str) else fin,
+    ) if inicio and fin else None
+    diferencia = None if previsto is None or fichado is None else fichado - previsto
+    return {
+        "previsto_min": previsto,
+        "fichado_min": fichado,
+        "pausa_min": pausa,
+        "diferencia_min": diferencia,
+        "entrada_fichada": entrada,
+        "salida_fichada": salida,
+        "salida_dia_offset": offset,
+        "entrada_prevista": _hhmm(inicio) if inicio else None,
+        "salida_prevista": _hhmm(fin) if fin else None,
+    }
+
+
 def _filas_analisis(cur, donde, params):
     cur.execute(
         f"""
         SELECT
+            f.usuario_id,
+            f.numero_sap,
             CASE
                 WHEN f.usuario_id IS NULL THEN f.numero_sap
                 ELSE u.nombre
@@ -209,6 +380,7 @@ def _filas_analisis(cur, donde, params):
                 ELSE d.nombre
             END AS departamento,
             f.fecha,
+            f.incidencia,
             f.horas_planificadas,
             f.horas_trabajadas,
             f.horas_pausa,
@@ -226,19 +398,32 @@ def _filas_analisis(cur, donde, params):
         """,
         params,
     )
-    return [
-        {
-            "nombre": fila["nombre"],
-            "departamento": fila["departamento"],
-            "fecha": fila["fecha"].isoformat(),
-            "horas_planificadas": _numero(fila["horas_planificadas"]),
-            "horas_trabajadas": _numero(fila["horas_trabajadas"]),
-            "horas_pausa": _numero(fila["horas_pausa"]),
-            "diferencia": _numero(fila["diferencia"]),
-            "coincide": fila["coincide"],
-        }
-        for fila in cur.fetchall()
-    ]
+    leidas = cur.fetchall()
+    eventos = _eventos_analisis(cur, leidas)
+    planes = _planes_analisis(cur, leidas)
+    pendientes = {clave: list(dias) for clave, dias in eventos.items()}
+    filas = []
+    for fila in leidas:
+        clave = (fila["usuario_id"] or fila["numero_sap"], fila["fecha"])
+        detalle = _detalle_fila(
+            fila,
+            _tomar_jornada(pendientes.setdefault(clave, []), fila),
+            planes.get((fila["usuario_id"], fila["fecha"])),
+        )
+        filas.append(
+            {
+                "nombre": fila["nombre"],
+                "departamento": fila["departamento"],
+                "fecha": fila["fecha"].isoformat(),
+                "horas_planificadas": _numero(fila["horas_planificadas"]),
+                "horas_trabajadas": _numero(fila["horas_trabajadas"]),
+                "horas_pausa": _numero(fila["horas_pausa"]),
+                "diferencia": _numero(fila["diferencia"]),
+                "coincide": fila["coincide"],
+                **detalle,
+            }
+        )
+    return filas
 
 
 def _horas_texto(valor):
@@ -292,6 +477,14 @@ def _libro_analisis(filas):
         "Fichado",
         "Pausa",
         "Diferencia",
+        "Entrada prevista",
+        "Salida prevista",
+        "Entrada fichada",
+        "Salida fichada",
+        "Previsto (min)",
+        "Fichado (min)",
+        "Pausa (min)",
+        "Diferencia (min)",
         "Estado",
     )
     for indice, titulo in enumerate(columnas, start=1):
@@ -309,7 +502,7 @@ def _libro_analisis(filas):
             (
                 _horas_texto(fila["horas_planificadas"]),
                 _horas_texto(fila["horas_trabajadas"]),
-                _horas_texto(fila["horas_pausa"]),
+                _horas_texto(None if fila["pausa_min"] is None else fila["pausa_min"] / 60),
                 _diferencia_texto(fila["diferencia"]),
             ),
             start=4,
@@ -317,8 +510,33 @@ def _libro_analisis(filas):
             celda = hoja.cell(fila_excel, columna, texto)
             celda.font = fuente
             celda.alignment = centro
-        hoja.cell(fila_excel, 8, ETIQUETAS.get(fila["coincide"], fila["coincide"])).font = fuente
-    anchos = (24, 22, 12, 12, 12, 12, 12, 16)
+        for columna, texto in enumerate(
+            (
+                fila["entrada_prevista"] or "—",
+                fila["salida_prevista"] or "—",
+                fila["entrada_fichada"] or "—",
+                fila["salida_fichada"] or "—",
+            ),
+            start=8,
+        ):
+            celda = hoja.cell(fila_excel, columna, texto)
+            celda.font = fuente
+            celda.alignment = centro
+        for columna, minutos in enumerate(
+            (
+                fila["previsto_min"],
+                fila["fichado_min"],
+                fila["pausa_min"],
+                fila["diferencia_min"],
+            ),
+            start=12,
+        ):
+            celda = hoja.cell(fila_excel, columna, minutos)
+            celda.font = fuente
+            celda.alignment = centro
+            celda.number_format = "0"
+        hoja.cell(fila_excel, 16, ETIQUETAS.get(fila["coincide"], fila["coincide"])).font = fuente
+    anchos = (24, 22, 12, 12, 12, 12, 12, 16, 16, 16, 16, 14, 14, 12, 16, 16)
     for indice, ancho in enumerate(anchos, start=1):
         hoja.column_dimensions[hoja.cell(1, indice).column_letter].width = ancho
     hoja.freeze_panes = "A2"
