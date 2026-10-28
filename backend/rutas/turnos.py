@@ -867,12 +867,13 @@ def copiar_semana():
                 """,
                 (mando["departamento_id"], anterior, desde),
             )
+            dias_copiados = cur.rowcount
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
         return jsonify(error=str(exc)), 503
 
-    return jsonify(desde=desde.isoformat())
+    return jsonify(desde=desde.isoformat(), dias_copiados=dias_copiados)
 
 
 @bp.put("/turnos")

@@ -65,6 +65,7 @@ const anioMes = ref(0);
 const numeroMes = ref(0);
 const cuadrante = ref(null);
 const errorSemana = ref("");
+const avisoCopia = ref("");
 const celda = ref(null);
 const dialogo = ref(null);
 const turnoModo = ref("horario");
@@ -158,6 +159,7 @@ const filasCuadrante = computed(() => {
 
 async function cargar(desde) {
   errorSemana.value = "";
+  avisoCopia.value = "";
   if (dialogo.value?.open) {
     dialogo.value.close();
   }
@@ -173,6 +175,7 @@ async function cargar(desde) {
 
 async function cargarMes(anio, mesNumero) {
   errorSemana.value = "";
+  avisoCopia.value = "";
   if (dialogo.value?.open) {
     dialogo.value.close();
   }
@@ -377,11 +380,40 @@ function alFondo(evento) {
   }
 }
 
+function tieneTurnosGuardados() {
+  return (cuadrante.value?.trabajadores || []).some((trabajador) =>
+    (trabajador.dias || []).some((dia) => dia.origen === "guardado"),
+  );
+}
+
+function diasCopiados(resultado) {
+  if (!resultado || typeof resultado !== "object") {
+    return null;
+  }
+  const valor = resultado.dias_copiados ?? resultado.copiados;
+  if (typeof valor === "number" && Number.isFinite(valor)) {
+    return valor;
+  }
+  return null;
+}
+
 async function copiar() {
   errorSemana.value = "";
+  avisoCopia.value = "";
+  if (
+    tieneTurnosGuardados()
+    && !window.confirm("Esta semana ya tiene turnos. Copiar la anterior los sustituirá. ¿Continuar?")
+  ) {
+    return;
+  }
   try {
-    await copiarSemana(props.token, semanaDesde.value);
+    const resultado = await copiarSemana(props.token, semanaDesde.value);
     await cargar(semanaDesde.value);
+    const copiados = diasCopiados(resultado);
+    if (copiados !== null) {
+      const dias = copiados === 1 ? "día" : "días";
+      avisoCopia.value = `Se han copiado ${copiados} ${dias}.`;
+    }
   } catch (causa) {
     errorSemana.value = causa instanceof Error ? causa.message : "No se pudo copiar la semana";
   }
@@ -511,6 +543,7 @@ cargar(lunesDe(new Date()));
     <p v-if="!editable" class="aviso-lectura">Solo lectura</p>
     <p v-if="muestraEquipo" class="equipo-semana">Equipo de esta semana</p>
     <p v-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
+    <p v-if="avisoCopia" class="aviso-ok" role="status">{{ avisoCopia }}</p>
     <div v-if="muestraSecciones" class="cuadrante-seccion">
       <button type="button" :class="{ activo: seccionElegida === '' }" @click="seccionElegida = ''">
         Todas
