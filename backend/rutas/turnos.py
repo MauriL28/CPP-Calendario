@@ -278,10 +278,11 @@ def listar_turnos():
                 return jsonify(error="No autorizado"), 403
             cur.execute(
                 """
-                SELECT id, nombre, login, grupo, activo
-                FROM usuario
-                WHERE rol = 'trabajador' AND departamento_id = %s
-                ORDER BY nombre
+                SELECT u.id, u.nombre, u.login, u.grupo, u.activo, s.nombre AS seccion
+                FROM usuario u
+                LEFT JOIN seccion s ON s.id = u.seccion_id
+                WHERE u.rol = 'trabajador' AND u.departamento_id = %s
+                ORDER BY u.nombre
                 """,
                 (mando["departamento_id"],),
             )
@@ -308,6 +309,7 @@ def listar_turnos():
                 "nombre": trabajador["nombre"],
                 "login": trabajador["login"],
                 "grupo": trabajador["grupo"],
+                "seccion": trabajador["seccion"],
                 "dias": _dias_resueltos(
                     trabajador["id"],
                     dias,
@@ -513,10 +515,11 @@ def listar_turnos_mes():
                 return jsonify(error="No autorizado"), 403
             cur.execute(
                 """
-                SELECT id, nombre, login, grupo, activo
-                FROM usuario
-                WHERE rol = 'trabajador' AND departamento_id = %s
-                ORDER BY nombre
+                SELECT u.id, u.nombre, u.login, u.grupo, u.activo, s.nombre AS seccion
+                FROM usuario u
+                LEFT JOIN seccion s ON s.id = u.seccion_id
+                WHERE u.rol = 'trabajador' AND u.departamento_id = %s
+                ORDER BY u.nombre
                 """,
                 (mando["departamento_id"],),
             )
@@ -535,12 +538,15 @@ def listar_turnos_mes():
     except psycopg.Error as exc:
         return jsonify(error=str(exc)), 503
 
+    personas = _trabajadores_resueltos(
+        trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos
+    )
+    for persona, trabajador in zip(personas, trabajadores):
+        persona["seccion"] = trabajador["seccion"]
     return jsonify(
         desde=dias[0].isoformat(),
         dias=[dia.isoformat() for dia in dias],
-        trabajadores=_trabajadores_resueltos(
-            trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos
-        ),
+        trabajadores=personas,
     )
 
 
@@ -587,6 +593,212 @@ def listar_turnos_mios_mes():
         dias=[dia.isoformat() for dia in dias],
         trabajadores=personas,
     )
+
+
+def _delegacion_mando(cur, usuario_id):
+    """Delegación del departamento al que pertenece el mando."""
+    cur.execute(
+        """
+        SELECT d.delegacion_id
+        FROM usuario u
+        JOIN departamento d ON d.id = u.departamento_id
+        WHERE u.id = %s AND u.rol = 'mando'
+        """,
+        (usuario_id,),
+    )
+    fila = cur.fetchone()
+    if fila is None or fila["delegacion_id"] is None:
+        return None
+    return fila["delegacion_id"]
+
+
+def _personas_mandos(cur, delegacion_id):
+    """Mandos activos de esa delegación y quien esté en su departamento mandos."""
+    cur.execute(
+        """
+        SELECT id
+        FROM departamento
+        WHERE codigo = 'mandos' AND delegacion_id = %s
+        """,
+        (delegacion_id,),
+    )
+    mandos = cur.fetchone()
+    depto_mandos = mandos["id"] if mandos else None
+    cur.execute(
+        """
+        SELECT u.id, u.nombre, u.grupo, s.nombre AS seccion
+        FROM usuario u
+        JOIN departamento d ON d.id = u.departamento_id
+        LEFT JOIN seccion s ON s.id = u.seccion_id
+        WHERE u.activo
+          AND d.delegacion_id = %s
+          AND (
+                u.rol = 'mando'
+             OR (%s IS NOT NULL AND u.departamento_id = %s)
+          )
+        ORDER BY u.nombre
+        """,
+        (delegacion_id, depto_mandos, depto_mandos),
+    )
+    return cur.fetchall()
+
+
+def _cuadrante_mandos(cur, yo, dias):
+    delegacion_id = _delegacion_mando(cur, yo)
+    if delegacion_id is None:
+        return None
+    personas = _personas_mandos(cur, delegacion_id)
+    turnos, versiones, noche_inicio, noche_fin = _material_rango(
+        cur, [persona["id"] for persona in personas], dias[0], dias[-1]
+    )
+    return [
+        {
+            "id": str(persona["id"]),
+            "nombre": persona["nombre"],
+            "grupo": persona["grupo"],
+            "seccion": persona["seccion"],
+            "dias": _dias_departamento(
+                persona["id"],
+                dias,
+                turnos,
+                versiones,
+                noche_inicio,
+                noche_fin,
+                str(persona["id"]) == str(yo),
+            ),
+        }
+        for persona in personas
+    ]
+
+
+@bp.get("/turnos/mandos")
+@jwt_required()
+def listar_turnos_mandos():
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+    desde, error = _lunes(request.args.get("desde", ""), False)
+    if error:
+        return error
+    dias = _semana(desde)
+    try:
+        with cursor() as cur:
+            trabajadores = _cuadrante_mandos(cur, get_jwt_identity(), dias)
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+    if trabajadores is None:
+        return jsonify(error="No autorizado"), 403
+    return jsonify(
+        desde=desde.isoformat(),
+        dias=[dia.isoformat() for dia in dias],
+        trabajadores=trabajadores,
+    )
+
+
+@bp.get("/turnos/mandos/mes")
+@jwt_required()
+def listar_turnos_mandos_mes():
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+    dias, error = _mes(request.args.get("anio"), request.args.get("mes"))
+    if error:
+        return error
+    try:
+        with cursor() as cur:
+            trabajadores = _cuadrante_mandos(cur, get_jwt_identity(), dias)
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+    if trabajadores is None:
+        return jsonify(error="No autorizado"), 403
+    return jsonify(
+        desde=dias[0].isoformat(),
+        dias=[dia.isoformat() for dia in dias],
+        trabajadores=trabajadores,
+    )
+
+
+@bp.put("/turnos/mandos/vacaciones")
+@jwt_required()
+def guardar_vacaciones_mando():
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+    cuerpo = request.get_json(silent=True) or {}
+    yo = get_jwt_identity()
+    for clave in ("usuario", "usuario_id", "id"):
+        valor = cuerpo.get(clave)
+        if valor not in (None, "") and str(valor) != str(yo):
+            return jsonify(error="No autorizado"), 403
+    ausencia = cuerpo.get("ausencia")
+    if ausencia == "":
+        ausencia = None
+    if ausencia not in (None, "V"):
+        return jsonify(error="No autorizado"), 403
+    codigo = cuerpo.get("codigo")
+    if codigo not in (None, "", "V"):
+        return jsonify(error="No autorizado"), 403
+    vacaciones = cuerpo.get("vacaciones")
+    if not isinstance(vacaciones, bool):
+        return jsonify(error="Faltan datos"), 400
+    hora_inicio = parse_hora(cuerpo.get("hora_inicio"))
+    hora_fin = parse_hora(cuerpo.get("hora_fin"))
+    if hora_inicio == "mal" or hora_fin == "mal":
+        return jsonify(error="La hora no es válida"), 400
+    if hora_inicio is not None or hora_fin is not None:
+        return jsonify(error="Indica horario o ausencia, no las dos"), 400
+    try:
+        fecha = datetime.strptime(cuerpo.get("fecha"), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return jsonify(error="La fecha no es válida"), 400
+
+    try:
+        with cursor() as cur:
+            if isinstance(cuerpo.get("login"), str) and cuerpo["login"].strip():
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM usuario
+                    WHERE id = %s AND login = %s AND rol = 'mando'
+                    """,
+                    (yo, cuerpo["login"].strip()),
+                )
+                if cur.fetchone() is None:
+                    return jsonify(error="No autorizado"), 403
+            if _delegacion_mando(cur, yo) is None:
+                return jsonify(error="No autorizado"), 403
+            if vacaciones:
+                cur.execute(
+                    """
+                    INSERT INTO turno (
+                        usuario_id, fecha, ausencia, hora_inicio, hora_fin,
+                        horas_planificadas, horas_nocturnas
+                    )
+                    VALUES (%s, %s, 'V', NULL, NULL, 0, 0)
+                    ON CONFLICT (usuario_id, fecha) DO UPDATE SET
+                        ausencia = 'V',
+                        hora_inicio = NULL,
+                        hora_fin = NULL,
+                        horas_planificadas = 0,
+                        horas_nocturnas = 0
+                    """,
+                    (yo, fecha),
+                )
+            else:
+                cur.execute(
+                    """
+                    DELETE FROM turno
+                    WHERE usuario_id = %s AND fecha = %s AND ausencia = 'V'
+                    """,
+                    (yo, fecha),
+                )
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(fecha=fecha.isoformat(), vacaciones=vacaciones)
 
 
 @bp.post("/turnos/copiar-semana")

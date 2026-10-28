@@ -74,3 +74,15 @@ export function guardarTurno(token, cuerpo) {
 export function borrarTurno(token, cuerpo) {
   return pedir("/turnos", { method: "DELETE", token, cuerpo });
 }
+
+export function semanaMandos(token, desde) {
+  return pedir(`/turnos/mandos?desde=${desde}`, { token });
+}
+
+export function mesMandos(token, anio, mesNumero) {
+  return pedir(`/turnos/mandos/mes?anio=${anio}&mes=${mesNumero}`, { token });
+}
+
+export function vacacionesMando(token, cuerpo) {
+  return pedir("/turnos/mandos/vacaciones", { method: "PUT", token, cuerpo });
+}

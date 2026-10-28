@@ -32,7 +32,7 @@ def departamentos():
             cur.execute(
                 f"""
                 SELECT g.codigo AS delegacion, d.id, d.codigo, d.nombre, d.orden,
-                       s.nombre AS seccion
+                       s.id AS seccion_id, s.nombre AS seccion
                 FROM departamento d
                 JOIN delegacion g ON g.id = d.delegacion_id
                 LEFT JOIN seccion s ON s.departamento_id = d.id
@@ -68,5 +68,5 @@ def departamentos():
             por_codigo[clave] = item
             lista.append(item)
         if fila["seccion"] is not None:
-            item["secciones"].append({"nombre": fila["seccion"]})
+            item["secciones"].append({"id": str(fila["seccion_id"]), "nombre": fila["seccion"]})
     return jsonify(adjuntar_personas(lista, por_codigo, mandos, trabajadores, turnos, horarios))

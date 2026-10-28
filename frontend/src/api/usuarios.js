@@ -16,6 +16,14 @@ export function crearTrabajador(token, datos) {
   return pedir("/trabajadores", { method: "POST", token, cuerpo: datos });
 }
 
+export function cambiarSeccion(token, login, seccionId) {
+  return pedir(`/trabajadores/${encodeURIComponent(login)}/seccion`, {
+    method: "PUT",
+    token,
+    cuerpo: { seccion_id: seccionId },
+  });
+}
+
 export function cambiarHorario(token, login, datos) {
   return pedir(`/trabajadores/${encodeURIComponent(login)}/horario`, {
     method: "PUT",

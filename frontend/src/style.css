@@ -669,6 +669,9 @@ button.migas-enlace:not(.tarjeta):not(.celda):hover {
 }
 
 .persona-datos strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 13.5px;
   font-weight: 600;
 }
@@ -677,6 +680,12 @@ button.migas-enlace:not(.tarjeta):not(.celda):hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   color: var(--text-3);
+}
+
+section.equipo .persona-datos span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .grupo-pastilla {
@@ -855,9 +864,32 @@ button.migas-enlace:not(.tarjeta):not(.celda):hover {
 
 .equipo-barra {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.equipo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.equipo-chips button:not(.tarjeta):not(.celda) {
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.equipo-chips button:not(.tarjeta):not(.celda).activo {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .equipo-grupos {
@@ -912,6 +944,10 @@ button.migas-enlace:not(.tarjeta):not(.celda):hover {
   cursor: default;
 }
 
+.analisis .persona-datos span.analisis-tarde {
+  color: var(--alerta);
+}
+
 .analisis-kpi:hover {
   border-color: var(--border);
   box-shadow: none;
@@ -962,6 +998,35 @@ table.equipo {
   border-collapse: collapse;
 }
 
+section.equipo table.equipo {
+  table-layout: auto;
+}
+
+section.equipo table.equipo th:nth-child(1),
+section.equipo table.equipo td:nth-child(1) {
+  width: 24%;
+}
+
+section.equipo table.equipo th:nth-child(2),
+section.equipo table.equipo td:nth-child(2) {
+  width: 16%;
+}
+
+section.equipo table.equipo th.col-extra,
+section.equipo table.equipo td.col-extra {
+  width: 10%;
+  text-align: center;
+}
+
+section.equipo table.equipo th.equipo-acciones,
+section.equipo table.equipo td.equipo-acciones {
+  width: 1%;
+  padding-left: 8px;
+  padding-right: 12px;
+  white-space: nowrap;
+  text-align: right;
+}
+
 table.equipo th {
   padding: 12px 18px;
   border-bottom: 1px solid var(--border);
@@ -987,12 +1052,63 @@ table.equipo tr:last-child td {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
-.equipo-acciones {
+section.equipo table.equipo th,
+section.equipo table.equipo td {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.equipo-acciones-botones {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+section.equipo .equipo-acciones-botones button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.equipo-mas {
+  position: relative;
+}
+
+.equipo-mas-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 8;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(32, 36, 44, 0.12);
+}
+
+.equipo-mas-menu button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.equipo-mas-menu button:hover {
+  background: var(--libranza-bg);
+}
+
+.equipo-mas-menu button.peligro {
+  color: var(--alerta);
 }
 
 .campo-pista {
@@ -1216,6 +1332,28 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
 
 .semana-nav .cuadrante-imprimir {
   margin-left: auto;
+}
+
+.cuadrante-seccion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0.75rem;
+}
+
+.cuadrante-seccion button:not(.tarjeta):not(.celda) {
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.cuadrante-seccion button:not(.tarjeta):not(.celda).activo {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .cuadrante-horas {
@@ -1585,6 +1723,9 @@ table.cuadrante.mensual tfoot td:first-child {
   .cuadrante-imprimir,
   .cuadrante-exportar,
   .cuadrante-horas,
+  .cuadrante-seccion,
+  .cuadrante-ambito,
+  .vacaciones-dia input,
   .ficha-anio-campo,
   dialog {
     display: none !important;
@@ -2002,6 +2143,22 @@ button.enlace:not(.tarjeta):not(.celda) {
   margin: 0 0 0.5rem;
   color: var(--text-3);
   font-size: 12px;
+}
+
+.cuadrante-ambito {
+  margin: 0 0 0.75rem;
+}
+
+.vacaciones-dia {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.vacaciones-dia input {
+  margin: 0;
+  flex: 0 0 auto;
 }
 
 .aviso-lectura {

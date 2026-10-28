@@ -1,12 +1,13 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
-import { borrarTurno, copiarSemana, exportarCuadrante, guardarTurno, mes, semana, semanaActual } from "../api/turnos.js";
+import { borrarTurno, copiarSemana, exportarCuadrante, guardarTurno, mes, mesMandos, semana, semanaActual, semanaMandos, vacacionesMando } from "../api/turnos.js";
 
 const props = defineProps({
   token: { type: String, required: true },
   propia: { type: Boolean, default: false },
   editable: { type: Boolean, default: false },
+  mandos: { type: Boolean, default: false },
 });
 
 const diasNombre = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -71,6 +72,7 @@ const turnoInicio = ref("");
 const turnoFin = ref("");
 const turnoAusencia = ref("L");
 const errorTurno = ref("");
+const seccionElegida = ref("");
 
 const tituloMes = computed(() => `${mesesLargos[numeroMes.value - 1] || ""} ${anioMes.value}`.trim());
 const gruposCuadrante = [
@@ -86,7 +88,7 @@ const muestraEquipo = computed(
 );
 
 const leyendaVisible = computed(() => {
-  if (!muestraEquipo.value) {
+  if (!muestraEquipo.value && !props.mandos) {
     return leyenda;
   }
   const items = [];
@@ -99,9 +101,38 @@ const leyendaVisible = computed(() => {
   return items;
 });
 
-const filasCuadrante = computed(() => {
+const secciones = computed(() => {
+  const nombres = new Set();
+  for (const trabajador of cuadrante.value?.trabajadores || []) {
+    if (trabajador.seccion) {
+      nombres.add(trabajador.seccion);
+    }
+  }
+  return [...nombres].sort((a, b) => a.localeCompare(b, "es"));
+});
+
+const muestraSecciones = computed(() => !props.propia && !props.mandos && secciones.value.length > 0);
+
+const opcionesSeccion = computed(() => {
+  const nombres = [...secciones.value];
+  if (seccionElegida.value && !nombres.includes(seccionElegida.value)) {
+    nombres.push(seccionElegida.value);
+    nombres.sort((a, b) => a.localeCompare(b, "es"));
+  }
+  return nombres;
+});
+
+const trabajadoresCuadrante = computed(() => {
   const lista = cuadrante.value?.trabajadores || [];
-  if (props.propia && modo.value !== "semana") {
+  if (!muestraSecciones.value || !seccionElegida.value) {
+    return lista;
+  }
+  return lista.filter((trabajador) => trabajador.seccion === seccionElegida.value);
+});
+
+const filasCuadrante = computed(() => {
+  const lista = trabajadoresCuadrante.value;
+  if (props.propia && !props.mandos && modo.value !== "semana") {
     return lista.map((trabajador) => ({ tipo: "persona", trabajador }));
   }
   const filas = [];
@@ -131,7 +162,9 @@ async function cargar(desde) {
     dialogo.value.close();
   }
   try {
-    cuadrante.value = await semana(props.token, desde, props.propia);
+    cuadrante.value = props.mandos
+      ? await semanaMandos(props.token, desde)
+      : await semana(props.token, desde, props.propia);
     semanaDesde.value = cuadrante.value.desde;
   } catch (causa) {
     errorSemana.value = causa instanceof Error ? causa.message : "No se pudo cargar la semana";
@@ -144,7 +177,9 @@ async function cargarMes(anio, mesNumero) {
     dialogo.value.close();
   }
   try {
-    cuadrante.value = await mes(props.token, anio, mesNumero, props.propia);
+    cuadrante.value = props.mandos
+      ? await mesMandos(props.token, anio, mesNumero)
+      : await mes(props.token, anio, mesNumero, props.propia);
     anioMes.value = anio;
     numeroMes.value = mesNumero;
   } catch (causa) {
@@ -207,13 +242,13 @@ function nombreFestivo(indice) {
 }
 
 function totalFranja(franja, indice) {
-  return (cuadrante.value?.trabajadores || []).filter(
+  return trabajadoresCuadrante.value.filter(
     (trabajador) => familia(trabajador.dias[indice]?.turno) === franja,
   ).length;
 }
 
 function horasNocturnas(indice) {
-  const suma = (cuadrante.value?.trabajadores || []).reduce(
+  const suma = trabajadoresCuadrante.value.reduce(
     (total, trabajador) => total + (Number(trabajador.dias[indice]?.turno?.horas_nocturnas) || 0),
     0,
   );
@@ -232,7 +267,7 @@ function horasVisibles(valor) {
 }
 
 const resumenHoras = computed(() => {
-  const lista = cuadrante.value?.trabajadores || [];
+  const lista = trabajadoresCuadrante.value;
   const stef = lista
     .filter((trabajador) => trabajador.grupo === "STEF")
     .reduce((total, trabajador) => total + horasPeriodo(trabajador, "horas_planificadas"), 0);
@@ -250,6 +285,36 @@ const resumenHoras = computed(() => {
     { id: "total", nombre: "Total horas", valor: horasVisibles(stef + ett) },
   ];
 });
+
+function idDeSesion() {
+  try {
+    const parte = props.token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = JSON.parse(atob(parte + "=".repeat((4 - (parte.length % 4)) % 4)));
+    return String(json.sub || "");
+  } catch {
+    return "";
+  }
+}
+
+function esMio(trabajador) {
+  return trabajador.id === idDeSesion();
+}
+
+async function alternarVacaciones(dia, evento) {
+  const marcado = evento.target.checked;
+  errorSemana.value = "";
+  try {
+    await vacacionesMando(props.token, { fecha: dia.fecha, vacaciones: marcado });
+    if (modo.value === "mes") {
+      await cargarMes(anioMes.value, numeroMes.value);
+      return;
+    }
+    await cargar(semanaDesde.value);
+  } catch (causa) {
+    evento.target.checked = dia.turno?.ausencia === "V";
+    errorSemana.value = causa instanceof Error ? causa.message : "No se pudieron guardar las vacaciones";
+  }
+}
 
 function familia(turno) {
   if (!turno) {
@@ -446,7 +511,21 @@ cargar(lunesDe(new Date()));
     <p v-if="!editable" class="aviso-lectura">Solo lectura</p>
     <p v-if="muestraEquipo" class="equipo-semana">Equipo de esta semana</p>
     <p v-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
-    <div v-if="!propia" class="cuadrante-horas">
+    <div v-if="muestraSecciones" class="cuadrante-seccion">
+      <button type="button" :class="{ activo: seccionElegida === '' }" @click="seccionElegida = ''">
+        Todas
+      </button>
+      <button
+        v-for="nombre in opcionesSeccion"
+        :key="nombre"
+        type="button"
+        :class="{ activo: seccionElegida === nombre }"
+        @click="seccionElegida = nombre"
+      >
+        {{ nombre }}
+      </button>
+    </div>
+    <div v-if="!propia && !mandos" class="cuadrante-horas">
       <article v-for="tarjeta in resumenHoras" :key="tarjeta.id" :class="tarjeta.id">
         <p class="lb">{{ tarjeta.nombre }}</p>
         <p class="vl">{{ tarjeta.valor }}</p>
@@ -481,8 +560,17 @@ cargar(lunesDe(new Date()));
               :key="dia.fecha"
               :class="[esFinDia(dia.fecha, indice) ? 'fin' : '', familia(dia.turno) ? `turno-${familia(dia.turno)}` : '']"
             >
+              <label v-if="mandos && esMio(fila.trabajador)" class="vacaciones-dia">
+                <input
+                  type="checkbox"
+                  :checked="dia.turno?.ausencia === 'V'"
+                  :aria-label="`Vacaciones ${fechaVisible(dia.fecha)}`"
+                  @change="alternarVacaciones(dia, $event)"
+                />
+                <span class="celda lectura">{{ textoCelda(dia.turno) }}</span>
+              </label>
               <button
-                v-if="editable"
+                v-else-if="editable"
                 type="button"
                 class="celda"
                 @click="abrirCelda(fila.trabajador, dia)"
@@ -494,7 +582,7 @@ cargar(lunesDe(new Date()));
           </tr>
         </template>
       </tbody>
-      <tfoot v-if="!propia">
+      <tfoot v-if="!propia && !mandos">
         <tr v-for="franja in franjas" :key="franja.id">
           <td>{{ franja.nombre }}</td>
           <td v-for="(dia, indice) in cuadrante.dias" :key="dia">{{ totalFranja(franja.id, indice) }}</td>

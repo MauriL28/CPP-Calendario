@@ -33,7 +33,8 @@ def listar_del_departamento(cur, filtro, params):
     cur.execute(
         f"""
         SELECT g.codigo AS delegacion, d.codigo AS departamento,
-               u.nombre, u.login, u.grupo, u.horas_contrato, u.vacaciones, u.numero_sap
+               u.nombre, u.login, u.grupo, u.horas_contrato, u.vacaciones, u.numero_sap,
+               u.seccion_id
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
         JOIN delegacion g ON g.id = d.delegacion_id
@@ -114,6 +115,7 @@ def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos, h
             "horas_contrato": _decimal(trabajador["horas_contrato"]),
             "vacaciones": _decimal(trabajador["vacaciones"]),
             "numero_sap": trabajador["numero_sap"],
+            "seccion_id": str(trabajador["seccion_id"]) if trabajador["seccion_id"] else None,
             "turnos": [],
         }
         por_login[trabajador["login"]] = persona

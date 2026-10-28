@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
 import {
   borrarAjuste,
@@ -7,6 +7,7 @@ import {
   cambiarNumeroSap,
   crearAjuste,
   editarAjuste,
+  cambiarSeccion,
   crearTrabajador,
   darDeBaja as pedirBaja,
   listarAjustes,
@@ -20,6 +21,7 @@ const props = defineProps({
 });
 
 const vista = ref("cuadrante");
+const ambito = ref("departamento");
 const fichaLogin = ref("");
 const cuadrante = ref(null);
 const departamentos = ref([]);
@@ -36,6 +38,7 @@ const plantillaDia = ref(null);
 const propios = ref(letras.map(() => false));
 const vacaciones = ref("");
 const horasContrato = ref("");
+const seccionId = ref("");
 const errorTrabajador = ref("");
 const dialogo = ref(null);
 const dialogoHorario = ref(null);
@@ -46,7 +49,7 @@ const horasHorario = ref(letras.map(() => ({ inicio: "", fin: "" })));
 const plantillaHorario = ref(null);
 const propiosHorario = ref(letras.map(() => false));
 const errorHorario = ref("");
-const dialogoSap = ref(null);
+const dialogoPerfil = ref(null);
 const dialogoAjustes = ref(null);
 const trabajadorAjuste = ref(null);
 const ajustes = ref([]);
@@ -59,42 +62,74 @@ const errorAjuste = ref("");
 const formularioAjusteAbierto = ref(false);
 const ajusteEnEdicion = ref(null);
 const fechaAjusteInput = ref(null);
-const trabajadorSap = ref(null);
+const trabajadorPerfil = ref(null);
 const numeroSapEdit = ref("");
-const errorSap = ref("");
+const seccionEdit = ref("");
+const errorPerfil = ref("");
 const aviso = ref(false);
 const busqueda = ref("");
+const filtroSeccion = ref("");
+const menuAbierto = ref("");
 let avisoTemporizador = 0;
 
 const equipo = computed(() => departamentos.value[0] || null);
+const seccionesEquipo = computed(() => equipo.value?.secciones ?? []);
 const trabajadores = computed(() => equipo.value?.trabajadores ?? []);
+const chipsSeccion = computed(() => {
+  if (!seccionesEquipo.value.length) {
+    return [];
+  }
+  const lista = trabajadores.value;
+  const chips = [
+    { id: "", nombre: "Todas", total: lista.length },
+  ];
+  for (const seccion of seccionesEquipo.value) {
+    chips.push({
+      id: seccion.id,
+      nombre: seccion.nombre,
+      total: lista.filter((trabajador) => trabajador.seccion_id === seccion.id).length,
+    });
+  }
+  chips.push({
+    id: "sin",
+    nombre: "Sin sección",
+    total: lista.filter((trabajador) => !trabajador.seccion_id).length,
+  });
+  return chips;
+});
 const filtrados = computed(() => {
+  let lista = trabajadores.value;
+  if (seccionesEquipo.value.length && filtroSeccion.value) {
+    if (filtroSeccion.value === "sin") {
+      lista = lista.filter((trabajador) => !trabajador.seccion_id);
+    } else {
+      lista = lista.filter((trabajador) => trabajador.seccion_id === filtroSeccion.value);
+    }
+  }
   const texto = busqueda.value.trim().toLocaleLowerCase("es");
   if (!texto) {
-    return trabajadores.value;
+    return lista;
   }
-  return trabajadores.value.filter((trabajador) => {
+  return lista.filter((trabajador) => {
     const nombreVisible = trabajador.nombre.toLocaleLowerCase("es");
     const loginVisible = trabajador.login.toLocaleLowerCase("es");
     return nombreVisible.includes(texto) || loginVisible.includes(texto);
   });
 });
-const gruposEquipo = computed(() => [
-  {
-    id: "STEF",
-    titulo: "Personal STEF",
-    vacio: "Sin personal STEF en este departamento.",
-    personas: filtrados.value.filter((trabajador) => trabajador.grupo === "STEF"),
-    hay: trabajadores.value.some((trabajador) => trabajador.grupo === "STEF"),
-  },
-  {
-    id: "ETT",
-    titulo: "ETT",
-    vacio: "Sin personal ETT en este departamento.",
-    personas: filtrados.value.filter((trabajador) => trabajador.grupo === "ETT"),
-    hay: trabajadores.value.some((trabajador) => trabajador.grupo === "ETT"),
-  },
-]);
+const gruposEquipo = computed(() =>
+  [
+    {
+      id: "STEF",
+      titulo: "Personal STEF",
+      personas: filtrados.value.filter((trabajador) => trabajador.grupo === "STEF"),
+    },
+    {
+      id: "ETT",
+      titulo: "ETT",
+      personas: filtrados.value.filter((trabajador) => trabajador.grupo === "ETT"),
+    },
+  ].filter((grupo) => grupo.personas.length),
+);
 
 function abrirFicha(trabajador) {
   fichaLogin.value = trabajador.login;
@@ -134,7 +169,39 @@ function vaciarAlta() {
   reiniciarHorario();
   vacaciones.value = "";
   horasContrato.value = "";
+  seccionId.value = "";
   errorTrabajador.value = "";
+}
+
+function datosPersona(trabajador) {
+  const partes = [trabajador.login];
+  if (trabajador.numero_sap) {
+    partes.push(`SAP ${trabajador.numero_sap}`);
+  }
+  if (seccionesEquipo.value.length && trabajador.seccion_id) {
+    const seccion = seccionesEquipo.value.find((item) => item.id === trabajador.seccion_id);
+    if (seccion) {
+      partes.push(seccion.nombre);
+    }
+  }
+  return partes.join(" · ");
+}
+
+function abrirMenu(loginNombre) {
+  menuAbierto.value = menuAbierto.value === loginNombre ? "" : loginNombre;
+}
+
+function cerrarMenu() {
+  menuAbierto.value = "";
+}
+
+function alClicFueraMenu(evento) {
+  if (!(evento.target instanceof Node)) {
+    return;
+  }
+  if (!evento.target.closest(".equipo-mas")) {
+    cerrarMenu();
+  }
 }
 
 function alMarcar(dia, evento) {
@@ -236,41 +303,53 @@ function cantidad(valor) {
   return Number(valor).toLocaleString("es-ES");
 }
 
-function abrirSap(trabajador) {
-  trabajadorSap.value = trabajador;
+function abrirPerfil(trabajador) {
+  trabajadorPerfil.value = trabajador;
   numeroSapEdit.value = trabajador.numero_sap || "";
-  errorSap.value = "";
-  dialogoSap.value?.showModal();
-  dialogoSap.value?.querySelector("[name='numero-sap-edit']")?.focus();
+  seccionEdit.value = trabajador.seccion_id || "";
+  errorPerfil.value = "";
+  dialogoPerfil.value?.showModal();
+  dialogoPerfil.value?.querySelector("[name='numero-sap-edit']")?.focus();
 }
 
-function cerrarSap() {
-  dialogoSap.value?.close();
+function cerrarPerfil() {
+  dialogoPerfil.value?.close();
 }
 
-function alCerrarSap() {
-  trabajadorSap.value = null;
-  errorSap.value = "";
+function alCerrarPerfil() {
+  trabajadorPerfil.value = null;
+  errorPerfil.value = "";
 }
 
-function alFondoSap(evento) {
-  if (evento.target === dialogoSap.value) {
-    cerrarSap();
+function alFondoPerfil(evento) {
+  if (evento.target === dialogoPerfil.value) {
+    cerrarPerfil();
   }
 }
 
-async function guardarSap() {
-  const persona = trabajadorSap.value;
+async function guardarPerfil() {
+  const persona = trabajadorPerfil.value;
   if (!persona) {
     return;
   }
-  errorSap.value = "";
+  errorPerfil.value = "";
+  const sapNuevo = numeroSapEdit.value;
+  const sapActual = persona.numero_sap || "";
+  const seccionNueva = seccionEdit.value || null;
+  const seccionActual = persona.seccion_id || null;
   try {
-    const respuesta = await cambiarNumeroSap(props.token, persona.login, numeroSapEdit.value);
-    persona.numero_sap = respuesta.numero_sap;
-    cerrarSap();
+    if (sapNuevo !== sapActual) {
+      await cambiarNumeroSap(props.token, persona.login, sapNuevo);
+    }
+    if (seccionesEquipo.value.length && seccionNueva !== seccionActual) {
+      await cambiarSeccion(props.token, persona.login, seccionNueva);
+    }
+    cerrarPerfil();
+    await cargarDepartamentos();
+    await cuadrante.value?.recargar();
   } catch (causa) {
-    errorSap.value = causa instanceof Error ? causa.message : "No se pudo guardar el número";
+    errorPerfil.value = causa instanceof Error ? causa.message : "No se pudo guardar el perfil";
+    await cargarDepartamentos();
   }
 }
 
@@ -468,6 +547,7 @@ async function guardar() {
       horario_dias: horarioDias,
       vacaciones: numero(vacaciones.value),
       horas_contrato: numero(horasContrato.value),
+      seccion_id: seccionId.value || null,
     });
     cerrarAlta();
     mostrarAviso();
@@ -653,21 +733,31 @@ function numero(valor) {
 }
 
 watch(vista, (nueva) => {
+  if (nueva !== "equipo") {
+    cerrarMenu();
+  }
   if (nueva !== "equipo" && dialogo.value?.open) {
     cerrarAlta();
   }
   if (nueva !== "equipo" && dialogoHorario.value?.open) {
     cerrarHorario();
   }
-  if (nueva !== "equipo" && dialogoSap.value?.open) {
-    cerrarSap();
+  if (nueva !== "equipo" && dialogoPerfil.value?.open) {
+    cerrarPerfil();
   }
   if (nueva !== "equipo" && dialogoAjustes.value?.open) {
     cerrarAjustes();
   }
 });
 
-onMounted(cargarDepartamentos);
+onMounted(() => {
+  cargarDepartamentos();
+  document.addEventListener("click", alClicFueraMenu);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", alClicFueraMenu);
+});
 </script>
 
 <template>
@@ -683,7 +773,16 @@ onMounted(cargarDepartamentos);
     </button>
   </nav>
   <div v-show="vista === 'cuadrante'">
-    <Cuadrante ref="cuadrante" :token="token" editable />
+    <div class="vistas cuadrante-ambito">
+      <button type="button" :class="{ activo: ambito === 'departamento' }" @click="ambito = 'departamento'">
+        Mi departamento
+      </button>
+      <button type="button" :class="{ activo: ambito === 'mandos' }" @click="ambito = 'mandos'">
+        Mandos + Funcionales
+      </button>
+    </div>
+    <Cuadrante v-if="ambito === 'departamento'" ref="cuadrante" :token="token" editable />
+    <Cuadrante v-else :token="token" mandos />
   </div>
   <Analisis v-if="vista === 'analisis'" :token="token" mando />
   <FichaEmpleado v-if="vista === 'ficha'" :token="token" :login="fichaLogin" />
@@ -701,7 +800,21 @@ onMounted(cargarDepartamentos);
     <template v-else-if="equipo">
       <div class="equipo-barra">
         <input v-model="busqueda" class="equipo-buscar" type="search" placeholder="Buscar trabajador..." />
+        <div v-if="chipsSeccion.length" class="equipo-chips">
+          <button
+            v-for="chip in chipsSeccion"
+            :key="chip.id || 'todas'"
+            type="button"
+            :class="{ activo: filtroSeccion === chip.id }"
+            @click="filtroSeccion = chip.id"
+          >
+            {{ chip.nombre }} ({{ chip.total }})
+          </button>
+        </div>
         <button type="button" class="primario" @click="abrirAlta">+ Añadir trabajador</button>
+      </div>
+      <div v-if="!gruposEquipo.length" class="panel">
+        <p class="panel-vacio">Ningún trabajador coincide con el filtro.</p>
       </div>
       <div class="equipo-grupos">
         <section v-for="grupoEquipo in gruposEquipo" :key="grupoEquipo.id" class="panel">
@@ -709,17 +822,14 @@ onMounted(cargarDepartamentos);
             <h2>{{ grupoEquipo.titulo }}</h2>
             <span class="panel-cuenta">{{ cuenta(grupoEquipo.personas.length) }}</span>
           </header>
-          <p v-if="!grupoEquipo.hay" class="panel-vacio">{{ grupoEquipo.vacio }}</p>
-          <p v-else-if="!grupoEquipo.personas.length" class="panel-vacio">
-            Ningún trabajador coincide con la búsqueda.
-          </p>
-          <table v-else class="equipo">
+          <table class="equipo">
             <thead>
               <tr>
                 <th>Trabajador</th>
                 <th>Horario</th>
                 <th class="col-extra">Horas/semana</th>
                 <th class="col-extra">Vacaciones/año</th>
+                <th class="equipo-acciones">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -729,8 +839,7 @@ onMounted(cargarDepartamentos);
                     <span class="avatar">{{ iniciales(trabajador.nombre) }}</span>
                     <span class="persona-datos">
                       <strong>{{ trabajador.nombre }}</strong>
-                      <span>{{ trabajador.login }}</span>
-                      <span v-if="trabajador.numero_sap">{{ trabajador.numero_sap }}</span>
+                      <span>{{ datosPersona(trabajador) }}</span>
                     </span>
                   </span>
                 </td>
@@ -738,11 +847,18 @@ onMounted(cargarDepartamentos);
                 <td class="col-extra">{{ cantidad(trabajador.horas_contrato) }}</td>
                 <td class="col-extra">{{ cantidad(trabajador.vacaciones) }}</td>
                 <td class="equipo-acciones">
-                  <button type="button" @click="abrirHorario(trabajador)">Cambiar horario</button>
-                  <button type="button" @click="abrirAjustes(trabajador)">Ajustes</button>
-                  <button type="button" @click="abrirSap(trabajador)">Editar número SAP</button>
-                  <button type="button" @click="darDeBaja(trabajador)">Dar de baja</button>
+                  <div class="equipo-acciones-botones">
                   <button type="button" @click="abrirFicha(trabajador)">Ver ficha</button>
+                  <button type="button" @click="abrirAjustes(trabajador)">Ajustes</button>
+                  <div class="equipo-mas">
+                    <button type="button" aria-haspopup="true" :aria-expanded="menuAbierto === trabajador.login" @click.stop="abrirMenu(trabajador.login)">⋯</button>
+                    <div v-if="menuAbierto === trabajador.login" class="equipo-mas-menu" role="menu">
+                      <button type="button" role="menuitem" @click="cerrarMenu(); abrirHorario(trabajador)">Cambiar horario</button>
+                      <button type="button" role="menuitem" @click="cerrarMenu(); abrirPerfil(trabajador)">Editar perfil</button>
+                      <button type="button" class="peligro" role="menuitem" @click="cerrarMenu(); darDeBaja(trabajador)">Dar de baja</button>
+                    </div>
+                  </div>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -777,6 +893,15 @@ onMounted(cargarDepartamentos);
           </label>
           <p class="ancho campo-pista">Lo pasa RRHH. Déjalo en blanco si aún no lo tienes.</p>
           <h3>Contrato</h3>
+          <label v-if="seccionesEquipo.length" class="ancho">
+            Sección
+            <select v-model="seccionId">
+              <option value="">Sin sección</option>
+              <option v-for="seccion in seccionesEquipo" :key="seccion.id" :value="seccion.id">
+                {{ seccion.nombre }}
+              </option>
+            </select>
+          </label>
           <div class="alta-tres">
             <label>
               Grupo
@@ -893,25 +1018,34 @@ onMounted(cargarDepartamentos);
       </footer>
     </form>
   </dialog>
-  <dialog ref="dialogoSap" class="alta-dialogo" @close="alCerrarSap" @click="alFondoSap">
-    <form @submit.prevent="guardarSap">
+  <dialog ref="dialogoPerfil" class="alta-dialogo" @close="alCerrarPerfil" @click="alFondoPerfil">
+    <form @submit.prevent="guardarPerfil">
       <header class="alta-dialogo-cabecera">
         <div>
-          <h2>Número de personal (SAP)</h2>
-          <p v-if="trabajadorSap" class="alta-dialogo-persona">{{ trabajadorSap.nombre }}</p>
+          <h2>Editar perfil</h2>
+          <p v-if="trabajadorPerfil" class="alta-dialogo-persona">{{ trabajadorPerfil.nombre }}</p>
         </div>
-        <button type="button" class="dialogo-cerrar" @click="cerrarSap">✕</button>
+        <button type="button" class="dialogo-cerrar" @click="cerrarPerfil">✕</button>
       </header>
       <div class="alta-dialogo-cuerpo">
         <label class="ancho">
-          Número de personal (SAP)
+          Número SAP
           <input v-model="numeroSapEdit" name="numero-sap-edit" autocomplete="off" />
         </label>
         <p class="ancho campo-pista">Lo pasa RRHH. Déjalo en blanco si aún no lo tienes.</p>
+        <label v-if="seccionesEquipo.length" class="ancho">
+          Sección
+          <select v-model="seccionEdit">
+            <option value="">Sin sección</option>
+            <option v-for="seccion in seccionesEquipo" :key="seccion.id" :value="seccion.id">
+              {{ seccion.nombre }}
+            </option>
+          </select>
+        </label>
       </div>
-      <p v-if="errorSap" class="error" role="alert">{{ errorSap }}</p>
+      <p v-if="errorPerfil" class="error" role="alert">{{ errorPerfil }}</p>
       <footer class="alta-dialogo-pie">
-        <button type="button" @click="cerrarSap">Cancelar</button>
+        <button type="button" @click="cerrarPerfil">Cancelar</button>
         <button class="primario" type="submit">Guardar</button>
       </footer>
     </form>

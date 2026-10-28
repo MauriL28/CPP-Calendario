@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from uuid import UUID
 
 import psycopg
 from flask import Blueprint, jsonify, request
@@ -39,6 +40,9 @@ def crear_trabajador():
     numero_sap, error = _numero_sap(cuerpo.get("numero_sap"))
     if error:
         return error
+    seccion_id, error = _leer_seccion_id(cuerpo, opcional=True)
+    if error:
+        return error
 
     try:
         with cursor() as cur:
@@ -53,6 +57,9 @@ def crear_trabajador():
             mando = cur.fetchone()
             if mando is None or mando["departamento_id"] is None:
                 return jsonify(error="No autorizado"), 403
+            error = _comprobar_seccion(cur, mando["departamento_id"], seccion_id)
+            if error:
+                return error
             cur.execute(
                 "SELECT 1 FROM usuario WHERE login = %s",
                 (login_nombre.strip(),),
@@ -65,10 +72,10 @@ def crear_trabajador():
                 """
                 INSERT INTO usuario (
                     nombre, login, clave, rol, grupo, departamento_id,
-                    vacaciones, horas_contrato, numero_sap
+                    vacaciones, horas_contrato, numero_sap, seccion_id
                 )
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s)
-                RETURNING id, nombre, login, rol, grupo, vacaciones, horas_contrato, numero_sap
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s)
+                RETURNING id, nombre, login, rol, grupo, vacaciones, horas_contrato, numero_sap, seccion_id
                 """,
                 (
                     nombre.strip(),
@@ -79,6 +86,7 @@ def crear_trabajador():
                     vacaciones,
                     horas_contrato,
                     numero_sap,
+                    seccion_id,
                 ),
             )
             creado = cur.fetchone()
@@ -114,6 +122,7 @@ def crear_trabajador():
         vacaciones=float(creado["vacaciones"]),
         horas_contrato=float(creado["horas_contrato"]),
         numero_sap=creado["numero_sap"],
+        seccion_id=str(creado["seccion_id"]) if creado["seccion_id"] else None,
     ), 201
 
 
@@ -277,6 +286,57 @@ def cambiar_clave(login_nombre):
         return jsonify(error=str(exc)), 503
 
     return jsonify(login=login_nombre)
+
+
+@bp.put("/trabajadores/<login_nombre>/seccion")
+@jwt_required()
+def cambiar_seccion(login_nombre):
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+
+    cuerpo = request.get_json(silent=True) or {}
+    seccion_id, error = _leer_seccion_id(cuerpo, opcional=False)
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT departamento_id
+                FROM usuario
+                WHERE id = %s AND rol = 'mando'
+                """,
+                (get_jwt_identity(),),
+            )
+            mando = cur.fetchone()
+            if mando is None or mando["departamento_id"] is None:
+                return jsonify(error="No autorizado"), 403
+            error = _comprobar_seccion(cur, mando["departamento_id"], seccion_id)
+            if error:
+                return error
+            cur.execute(
+                """
+                UPDATE usuario
+                SET seccion_id = %s
+                WHERE login = %s
+                  AND rol = 'trabajador'
+                  AND departamento_id = %s
+                RETURNING login
+                """,
+                (seccion_id, login_nombre, mando["departamento_id"]),
+            )
+            if cur.fetchone() is None:
+                return jsonify(error="Ese trabajador no es de tu departamento"), 404
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return jsonify(error=str(exc)), 503
+
+    return jsonify(
+        login=login_nombre,
+        seccion_id=str(seccion_id) if seccion_id else None,
+    )
 
 
 @bp.put("/trabajadores/<login_nombre>/horario")
@@ -588,6 +648,44 @@ def _horario_dias(valor):
     if not filas:
         return None, (jsonify(error="Faltan datos"), 400)
     return filas, None
+
+
+def _leer_seccion_id(cuerpo, opcional):
+    if "seccion_id" not in cuerpo:
+        if opcional:
+            return None, None
+        return None, (jsonify(error="Faltan datos"), 400)
+    valor = cuerpo.get("seccion_id")
+    if valor is None:
+        return None, None
+    if not isinstance(valor, str) or not valor.strip():
+        return None, (jsonify(error="La sección no es válida"), 400)
+    try:
+        return UUID(valor.strip()), None
+    except ValueError:
+        return None, (jsonify(error="La sección no es válida"), 400)
+
+
+def _comprobar_seccion(cur, departamento_id, seccion_id):
+    if seccion_id is None:
+        return None
+    cur.execute(
+        "SELECT 1 FROM seccion WHERE departamento_id = %s LIMIT 1",
+        (departamento_id,),
+    )
+    if cur.fetchone() is None:
+        return jsonify(error="Este departamento no tiene secciones"), 400
+    cur.execute(
+        """
+        SELECT 1
+        FROM seccion
+        WHERE id = %s AND departamento_id = %s
+        """,
+        (seccion_id, departamento_id),
+    )
+    if cur.fetchone() is None:
+        return jsonify(error="La sección no es de tu departamento"), 400
+    return None
 
 
 def _numero(valor):
