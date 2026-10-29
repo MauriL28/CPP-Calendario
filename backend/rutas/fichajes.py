@@ -15,10 +15,10 @@ from openpyxl.utils.exceptions import InvalidFileException
 
 from db import SinBaseDeDatos, cursor
 from errores import error_bd
-from mandos import departamento_permitido
+from mandos import departamento_lectura
 from fichajes import _segundos, agrupar_dias, cargar, segundos_pausa_con_huecos
 from horas import hora_texto
-from rutas.turnos import _agrupar_versiones, _franja, _habituales, resolver_turno
+from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
 
 bp = Blueprint("fichajes", __name__)
 
@@ -159,18 +159,10 @@ def _argumentos_analisis():
 def _alcance_analisis(cur, ctx):
     departamento = ctx["departamento"]
     if ctx["rol"] == "mando":
-        if departamento:
-            if not departamento_permitido(cur, ctx["identidad"], departamento):
-                return None, None, (jsonify(error="No se ha encontrado el departamento"), 404)
-        else:
-            cur.execute(
-                "SELECT departamento_id FROM usuario WHERE id = %s",
-                (ctx["identidad"],),
-            )
-            propio = cur.fetchone()
-            if propio is None or propio["departamento_id"] is None:
-                return None, None, (jsonify(error="No autorizado"), 403)
-            departamento = str(propio["departamento_id"])
+        departamento, error = departamento_lectura(cur, ctx["identidad"], departamento)
+        if error:
+            return None, None, error
+        departamento = str(departamento)
     elif departamento:
         cur.execute(
             """

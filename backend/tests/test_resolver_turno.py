@@ -1,7 +1,7 @@
 from datetime import date, time
 from decimal import Decimal
 
-from rutas.turnos import resolver_turno
+from turnos_base import resolver_turno
 
 NOCHE_INICIO = time(22, 0)
 NOCHE_FIN = time(6, 0)

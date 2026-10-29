@@ -13,7 +13,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import openpyxl
 
 from db import cursor
-from rutas.turnos import _agrupar_versiones, _franja, _habituales, resolver_turno
+from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
 
 TIPOS = ("Llegada", "Salida", "Inicio Pausa", "Final Pausa")
 MAX_HUECO_JORNADA_H = 4

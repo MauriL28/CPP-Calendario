@@ -9,7 +9,8 @@ from db import SinBaseDeDatos, cursor
 from errores import error_bd
 from mandos import departamento_permitido, departamentos_del_mando
 from horas import hora_texto, parse_hora
-from rutas.turnos import _agrupar_versiones, _franja, _habituales, _texto_celda, resolver_turno
+from rutas.turnos import _texto_celda
+from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
 
 bp = Blueprint("trabajadores", __name__)
 
