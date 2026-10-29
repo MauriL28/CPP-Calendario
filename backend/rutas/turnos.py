@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from db import SinBaseDeDatos, cursor
+from mandos import departamento_permitido
 from horas import hora_texto, horas_de_turno, parse_hora
 
 bp = Blueprint("turnos", __name__)
@@ -88,9 +89,11 @@ def _domingo_libre():
     }, "habitual"
 
 
-def resolver_turno(fecha, fila, versiones, noche_inicio, noche_fin):
+def resolver_turno(fecha, fila, versiones, noche_inicio, noche_fin, usa_horario_habitual=True):
     if fila is not None:
         return _turno(fila), "guardado"
+    if not usa_horario_habitual:
+        return None, "vacio"
     horas = _horas_habituales(fecha, versiones)
     if horas is None:
         if fecha.weekday() == 6:
@@ -134,7 +137,8 @@ def turno_efectivo(usuario, fecha):
         agrupadas = _agrupar_versiones(cur.fetchall())
         versiones = next(iter(agrupadas.values()), [])
         noche_inicio, noche_fin = _franja(cur)
-    return resolver_turno(fecha, None, versiones, noche_inicio, noche_fin)[0]
+        habitual = _habituales(cur, [usuario]).get(usuario, True)
+    return resolver_turno(fecha, None, versiones, noche_inicio, noche_fin, habitual)[0]
 
 
 def _material_rango(cur, ids, inicio, fin):
@@ -167,7 +171,22 @@ def _material_rango(cur, ids, inicio, fin):
         )
         versiones = _agrupar_versiones(cur.fetchall())
     noche_inicio, noche_fin = _franja(cur)
-    return turnos, versiones, noche_inicio, noche_fin
+    return turnos, versiones, noche_inicio, noche_fin, _habituales(cur, ids)
+
+
+def _habituales(cur, ids):
+    if not ids:
+        return {}
+    cur.execute(
+        """
+        SELECT u.id, d.usa_horario_habitual
+        FROM usuario u
+        JOIN departamento d ON d.id = u.departamento_id
+        WHERE u.id = ANY(%s)
+        """,
+        (list(ids),),
+    )
+    return {fila["id"]: fila["usa_horario_habitual"] for fila in cur.fetchall()}
 
 
 def _material_semana(cur, ids, dias):
@@ -190,8 +209,11 @@ def _festivos_semana(cur, dias):
     return _festivos_rango(cur, dias[0], dias[6])
 
 
-def _dias_resueltos(usuario_id, dias, turnos, versiones, noche_inicio, noche_fin, festivos):
+def _dias_resueltos(
+    usuario_id, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales=None
+):
     suyas = versiones.get(usuario_id, [])
+    habitual = True if habituales is None else habituales.get(usuario_id, True)
     resultado = []
     for dia in dias:
         turno, origen = resolver_turno(
@@ -200,9 +222,10 @@ def _dias_resueltos(usuario_id, dias, turnos, versiones, noche_inicio, noche_fin
             suyas,
             noche_inicio,
             noche_fin,
+            habitual,
         )
         entrada = {"fecha": dia.isoformat(), "turno": turno, "festivo": dia in festivos}
-        if turno is not None:
+        if origen is not None:
             entrada["origen"] = origen
         if dia in festivos:
             entrada["nombre"] = festivos[dia]
@@ -227,7 +250,9 @@ def _mes(anio_texto, mes_texto):
     return [inicio + timedelta(days=i) for i in range(ultimo)], None
 
 
-def _trabajadores_resueltos(trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos):
+def _trabajadores_resueltos(
+    trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales=None
+):
     return [
         {
             "nombre": trabajador["nombre"],
@@ -241,6 +266,7 @@ def _trabajadores_resueltos(trabajadores, dias, turnos, versiones, noche_inicio,
                 noche_inicio,
                 noche_fin,
                 festivos,
+                habituales,
             ),
         }
         for trabajador in trabajadores
@@ -251,6 +277,27 @@ def _visible_en_semana(trabajador, dias, turnos):
     if trabajador["activo"]:
         return True
     return any((trabajador["id"], dia) in turnos for dia in dias)
+
+
+def _departamento_lectura(cur):
+    """Departamento del cuadrante. El propio si no llega departamento_id."""
+    pedido = request.args.get("departamento_id")
+    if pedido in (None, ""):
+        cur.execute(
+            """
+            SELECT departamento_id
+            FROM usuario
+            WHERE id = %s AND rol = 'mando'
+            """,
+            (get_jwt_identity(),),
+        )
+        mando = cur.fetchone()
+        if mando is None or mando["departamento_id"] is None:
+            return None, (jsonify(error="No autorizado"), 403)
+        return mando["departamento_id"], None
+    if not departamento_permitido(cur, get_jwt_identity(), pedido):
+        return None, (jsonify(error="No se ha encontrado el departamento"), 404)
+    return pedido, None
 
 
 @bp.get("/turnos")
@@ -265,17 +312,9 @@ def listar_turnos():
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
+            departamento_id, error = _departamento_lectura(cur)
+            if error:
+                return error
             cur.execute(
                 """
                 SELECT u.id, u.nombre, u.login, u.grupo, u.activo, s.nombre AS seccion
@@ -284,10 +323,10 @@ def listar_turnos():
                 WHERE u.rol = 'trabajador' AND u.departamento_id = %s
                 ORDER BY u.nombre
                 """,
-                (mando["departamento_id"],),
+                (departamento_id,),
             )
             trabajadores = cur.fetchall()
-            turnos, versiones, noche_inicio, noche_fin = _material_semana(
+            turnos, versiones, noche_inicio, noche_fin, habituales = _material_semana(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias
             )
             festivos = _festivos_semana(cur, dias)
@@ -318,6 +357,7 @@ def listar_turnos():
                     noche_inicio,
                     noche_fin,
                     festivos,
+                    habituales,
                 ),
             }
             for trabajador in trabajadores
@@ -348,7 +388,7 @@ def listar_turnos_mios():
             trabajador = cur.fetchone()
             if trabajador is None:
                 return jsonify(error="No autorizado"), 403
-            turnos, versiones, noche_inicio, noche_fin = _material_semana(
+            turnos, versiones, noche_inicio, noche_fin, habituales = _material_semana(
                 cur, [trabajador["id"]], dias
             )
             festivos = _festivos_semana(cur, dias)
@@ -374,6 +414,7 @@ def listar_turnos_mios():
                     noche_inicio,
                     noche_fin,
                     festivos,
+                    habituales,
                 ),
             }
         )
@@ -398,8 +439,11 @@ def _turno_visible(turno, propio):
     }
 
 
-def _dias_departamento(usuario_id, dias, turnos, versiones, noche_inicio, noche_fin, propio):
+def _dias_departamento(
+    usuario_id, dias, turnos, versiones, noche_inicio, noche_fin, propio, habituales=None
+):
     suyas = versiones.get(usuario_id, [])
+    habitual = True if habituales is None else habituales.get(usuario_id, True)
     resultado = []
     for dia in dias:
         turno, _origen = resolver_turno(
@@ -408,6 +452,7 @@ def _dias_departamento(usuario_id, dias, turnos, versiones, noche_inicio, noche_
             suyas,
             noche_inicio,
             noche_fin,
+            habitual,
         )
         resultado.append(
             {
@@ -459,7 +504,7 @@ def listar_turnos_departamento():
                 (propio["departamento_id"],),
             )
             trabajadores = cur.fetchall()
-            turnos, versiones, noche_inicio, noche_fin = _material_semana(
+            turnos, versiones, noche_inicio, noche_fin, habituales = _material_semana(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias
             )
     except SinBaseDeDatos:
@@ -484,6 +529,7 @@ def listar_turnos_departamento():
                     noche_inicio,
                     noche_fin,
                     str(trabajador["id"]) == yo,
+                    habituales,
                 ),
             }
             for trabajador in trabajadores
@@ -502,17 +548,9 @@ def listar_turnos_mes():
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
+            departamento_id, error = _departamento_lectura(cur)
+            if error:
+                return error
             cur.execute(
                 """
                 SELECT u.id, u.nombre, u.login, u.grupo, u.activo, s.nombre AS seccion
@@ -521,10 +559,10 @@ def listar_turnos_mes():
                 WHERE u.rol = 'trabajador' AND u.departamento_id = %s
                 ORDER BY u.nombre
                 """,
-                (mando["departamento_id"],),
+                (departamento_id,),
             )
             trabajadores = cur.fetchall()
-            turnos, versiones, noche_inicio, noche_fin = _material_rango(
+            turnos, versiones, noche_inicio, noche_fin, habituales = _material_rango(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
             )
             festivos = _festivos_rango(cur, dias[0], dias[-1])
@@ -539,7 +577,7 @@ def listar_turnos_mes():
         return jsonify(error=str(exc)), 503
 
     personas = _trabajadores_resueltos(
-        trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos
+        trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales
     )
     for persona, trabajador in zip(personas, trabajadores):
         persona["seccion"] = trabajador["seccion"]
@@ -572,7 +610,7 @@ def listar_turnos_mios_mes():
             trabajador = cur.fetchone()
             if trabajador is None:
                 return jsonify(error="No autorizado"), 403
-            turnos, versiones, noche_inicio, noche_fin = _material_rango(
+            turnos, versiones, noche_inicio, noche_fin, habituales = _material_rango(
                 cur, [trabajador["id"]], dias[0], dias[-1]
             )
             festivos = _festivos_rango(cur, dias[0], dias[-1])
@@ -586,7 +624,7 @@ def listar_turnos_mios_mes():
     personas = []
     if trabajador is not None:
         personas = _trabajadores_resueltos(
-            [trabajador], dias, turnos, versiones, noche_inicio, noche_fin, festivos
+            [trabajador], dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales
         )
     return jsonify(
         desde=dias[0].isoformat(),
@@ -648,7 +686,7 @@ def _cuadrante_mandos(cur, yo, dias):
     if delegacion_id is None:
         return None
     personas = _personas_mandos(cur, delegacion_id)
-    turnos, versiones, noche_inicio, noche_fin = _material_rango(
+    turnos, versiones, noche_inicio, noche_fin, habituales = _material_rango(
         cur, [persona["id"] for persona in personas], dias[0], dias[-1]
     )
     return [
@@ -665,6 +703,7 @@ def _cuadrante_mandos(cur, yo, dias):
                 noche_inicio,
                 noche_fin,
                 str(persona["id"]) == str(yo),
+                habituales,
             ),
         }
         for persona in personas
@@ -815,17 +854,24 @@ def copiar_semana():
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
+            pedido = cuerpo.get("departamento_id")
+            if pedido in (None, ""):
+                cur.execute(
+                    """
+                    SELECT departamento_id
+                    FROM usuario
+                    WHERE id = %s AND rol = 'mando'
+                    """,
+                    (get_jwt_identity(),),
+                )
+                mando = cur.fetchone()
+                if mando is None or mando["departamento_id"] is None:
+                    return jsonify(error="No autorizado"), 403
+                departamento_id = mando["departamento_id"]
+            elif not departamento_permitido(cur, get_jwt_identity(), pedido):
+                return jsonify(error="No se ha encontrado el departamento"), 404
+            else:
+                departamento_id = pedido
             cur.execute(
                 """
                 DELETE FROM turno t
@@ -842,7 +888,7 @@ def copiar_semana():
                         AND previo.fecha = t.fecha - 7
                   )
                 """,
-                (mando["departamento_id"], desde, hasta),
+                (departamento_id, desde, hasta),
             )
             cur.execute(
                 """
@@ -865,7 +911,7 @@ def copiar_semana():
                     horas_planificadas = EXCLUDED.horas_planificadas,
                     horas_nocturnas = EXCLUDED.horas_nocturnas
                 """,
-                (mando["departamento_id"], anterior, desde),
+                (departamento_id, anterior, desde),
             )
             dias_copiados = cur.rowcount
     except SinBaseDeDatos:
@@ -915,27 +961,17 @@ def guardar_turno():
         with cursor() as cur:
             cur.execute(
                 """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
-            cur.execute(
-                """
-                SELECT id
+                SELECT id, departamento_id
                 FROM usuario
                 WHERE login = %s
                   AND rol = 'trabajador'
-                  AND departamento_id = %s
                 """,
-                (login_nombre.strip(), mando["departamento_id"]),
+                (login_nombre.strip(),),
             )
             trabajador = cur.fetchone()
-            if trabajador is None:
+            if trabajador is None or not departamento_permitido(
+                cur, get_jwt_identity(), trabajador["departamento_id"]
+            ):
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
             if hay_ausencia:
                 planificadas, nocturnas = 0, 0
@@ -1016,27 +1052,17 @@ def borrar_turno():
         with cursor() as cur:
             cur.execute(
                 """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
-            cur.execute(
-                """
-                SELECT id
+                SELECT id, departamento_id
                 FROM usuario
                 WHERE login = %s
                   AND rol = 'trabajador'
-                  AND departamento_id = %s
                 """,
-                (login_nombre.strip(), mando["departamento_id"]),
+                (login_nombre.strip(),),
             )
             trabajador = cur.fetchone()
-            if trabajador is None:
+            if trabajador is None or not departamento_permitido(
+                cur, get_jwt_identity(), trabajador["departamento_id"]
+            ):
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
             cur.execute(
                 "DELETE FROM turno WHERE usuario_id = %s AND fecha = %s",
@@ -1193,18 +1219,16 @@ def exportar_turnos():
 
     try:
         with cursor() as cur:
+            departamento_id, error = _departamento_lectura(cur)
+            if error:
+                return error
             cur.execute(
-                """
-                SELECT u.departamento_id, d.codigo AS departamento
-                FROM usuario u
-                JOIN departamento d ON d.id = u.departamento_id
-                WHERE u.id = %s AND u.rol = 'mando'
-                """,
-                (get_jwt_identity(),),
+                "SELECT codigo FROM departamento WHERE id = %s",
+                (departamento_id,),
             )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
+            departamento = cur.fetchone()
+            if departamento is None:
+                return jsonify(error="No se ha encontrado el departamento"), 404
             cur.execute(
                 """
                 SELECT id, nombre, login, grupo, activo
@@ -1212,10 +1236,10 @@ def exportar_turnos():
                 WHERE rol = 'trabajador' AND departamento_id = %s
                 ORDER BY nombre
                 """,
-                (mando["departamento_id"],),
+                (departamento_id,),
             )
             trabajadores = cur.fetchall()
-            turnos, versiones, noche_inicio, noche_fin = _material_rango(
+            turnos, versiones, noche_inicio, noche_fin, habituales = _material_rango(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
             )
             festivos = _festivos_rango(cur, dias[0], dias[-1])
@@ -1225,9 +1249,9 @@ def exportar_turnos():
                 if _visible_en_semana(trabajador, dias, turnos)
             ]
             resueltos = _trabajadores_resueltos(
-                trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos
+                trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales
             )
-            codigo = mando["departamento"]
+            codigo = departamento["codigo"]
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:

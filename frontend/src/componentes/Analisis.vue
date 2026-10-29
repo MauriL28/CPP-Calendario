@@ -7,6 +7,7 @@ import { delegacionVisible } from "../fechas.js";
 const props = defineProps({
   token: { type: String, required: true },
   mando: { type: Boolean, default: false },
+  departamentoId: { type: String, default: "" },
 });
 
 const departamentos = ref([]);
@@ -155,7 +156,7 @@ async function cargarDepartamentos() {
 
 function filtrosActuales() {
   return {
-    departamento: props.mando ? "" : departamento.value,
+    departamento: props.mando ? props.departamentoId : departamento.value,
     coincide: estado.value,
     desde: desde.value,
     hasta: hasta.value,
@@ -183,13 +184,28 @@ async function cargar() {
 
 watch([departamento, estado, desde, hasta], cargar);
 
+watch(
+  () => props.departamentoId,
+  () => {
+    if (!props.mando) {
+      return;
+    }
+    datos.value = null;
+    cargar();
+  },
+);
+
 onMounted(async () => {
+  if (props.mando) {
+    await cargar();
+    return;
+  }
   try {
     await cargarDepartamentos();
   } catch (causa) {
     error.value = causa instanceof Error ? causa.message : "No se pudieron cargar los departamentos";
   }
-  if (!props.mando || !departamento.value) {
+  if (!departamento.value) {
     await cargar();
   }
 });
@@ -202,7 +218,7 @@ onMounted(async () => {
       <p>Días ya cruzados con el turno. Una incidencia no entra, porque aún no tiene horas.</p>
     </header>
     <div class="equipo-barra">
-      <label class="analisis-filtro">
+      <label v-if="!mando" class="analisis-filtro">
         Departamento
         <select v-model="departamento" class="equipo-grupo">
           <option v-if="!mando" value="">Todos los departamentos</option>

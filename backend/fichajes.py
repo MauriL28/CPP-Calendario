@@ -13,7 +13,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import openpyxl
 
 from db import cursor
-from rutas.turnos import _agrupar_versiones, _franja, resolver_turno
+from rutas.turnos import _agrupar_versiones, _franja, _habituales, resolver_turno
 
 TIPOS = ("Llegada", "Salida", "Inicio Pausa", "Final Pausa")
 MAX_HUECO_JORNADA_H = 4
@@ -630,6 +630,7 @@ def _turnos_resueltos(cur, dias):
     )
     versiones = _agrupar_versiones(cur.fetchall())
     noche_inicio, noche_fin = _franja(cur)
+    habituales = _habituales(cur, ids)
     resueltos = {}
     for dia in utiles:
         fila = turnos.get((dia["usuario_id"], dia["fecha"]))
@@ -639,6 +640,7 @@ def _turnos_resueltos(cur, dias):
             versiones.get(dia["usuario_id"], []),
             noche_inicio,
             noche_fin,
+            habituales.get(dia["usuario_id"], True),
         )
         resueltos[(dia["usuario_id"], dia["fecha"])] = (turno, _origen)
     return resueltos

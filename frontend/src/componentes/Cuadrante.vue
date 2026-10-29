@@ -8,6 +8,7 @@ const props = defineProps({
   propia: { type: Boolean, default: false },
   editable: { type: Boolean, default: false },
   mandos: { type: Boolean, default: false },
+  departamentoId: { type: String, default: "" },
 });
 
 const diasNombre = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -166,7 +167,7 @@ async function cargar(desde) {
   try {
     cuadrante.value = props.mandos
       ? await semanaMandos(props.token, desde)
-      : await semana(props.token, desde, props.propia);
+      : await semana(props.token, desde, props.propia, props.departamentoId);
     semanaDesde.value = cuadrante.value.desde;
   } catch (causa) {
     errorSemana.value = causa instanceof Error ? causa.message : "No se pudo cargar la semana";
@@ -182,7 +183,7 @@ async function cargarMes(anio, mesNumero) {
   try {
     cuadrante.value = props.mandos
       ? await mesMandos(props.token, anio, mesNumero)
-      : await mes(props.token, anio, mesNumero, props.propia);
+      : await mes(props.token, anio, mesNumero, props.propia, props.departamentoId);
     anioMes.value = anio;
     numeroMes.value = mesNumero;
   } catch (causa) {
@@ -407,7 +408,7 @@ async function copiar() {
     return;
   }
   try {
-    const resultado = await copiarSemana(props.token, semanaDesde.value);
+    const resultado = await copiarSemana(props.token, semanaDesde.value, props.departamentoId);
     await cargar(semanaDesde.value);
     const copiados = diasCopiados(resultado);
     if (copiados !== null) {
@@ -489,6 +490,9 @@ async function exportar() {
     modo.value === "mes"
       ? { anio: String(anioMes.value), mes: String(numeroMes.value) }
       : { desde: semanaDesde.value };
+  if (props.departamentoId && !props.propia && !props.mandos) {
+    parametros.departamento_id = props.departamentoId;
+  }
   try {
     await exportarCuadrante(props.token, parametros);
   } catch (causa) {

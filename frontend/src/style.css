@@ -1725,6 +1725,7 @@ table.cuadrante.mensual tfoot td:first-child {
   .cuadrante-horas,
   .cuadrante-seccion,
   .cuadrante-ambito,
+  .departamento-mando,
   .vacaciones-dia input,
   .ficha-anio-campo,
   dialog {
@@ -2147,6 +2148,11 @@ button.enlace:not(.tarjeta):not(.celda) {
 
 .cuadrante-ambito {
   margin: 0 0 0.75rem;
+}
+
+.departamento-mando {
+  margin: 0 0 0.75rem;
+  max-width: 280px;
 }
 
 .vacaciones-dia {

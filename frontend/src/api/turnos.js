@@ -16,17 +16,25 @@ export function semanaActual() {
   return `${fecha.getUTCFullYear()}-${mesLunes}-${diaLunes}`;
 }
 
-export function semana(token, desde, propia) {
+export function semana(token, desde, propia, departamentoId) {
   let ruta = "/turnos";
   if (propia) {
     ruta = desde === semanaActual() ? "/turnos/departamento" : "/turnos/mios";
   }
-  return pedir(`${ruta}?desde=${desde}`, { token });
+  const consulta = new URLSearchParams({ desde });
+  if (!propia && departamentoId) {
+    consulta.set("departamento_id", departamentoId);
+  }
+  return pedir(`${ruta}?${consulta}`, { token });
 }
 
-export function mes(token, anio, mesNumero, propia) {
+export function mes(token, anio, mesNumero, propia, departamentoId) {
   const ruta = propia ? "/turnos/mios/mes" : "/turnos/mes";
-  return pedir(`${ruta}?anio=${anio}&mes=${mesNumero}`, { token });
+  const consulta = new URLSearchParams({ anio: String(anio), mes: String(mesNumero) });
+  if (!propia && departamentoId) {
+    consulta.set("departamento_id", departamentoId);
+  }
+  return pedir(`${ruta}?${consulta}`, { token });
 }
 
 export async function exportarCuadrante(token, parametros) {
@@ -59,11 +67,15 @@ export async function exportarCuadrante(token, parametros) {
   URL.revokeObjectURL(url);
 }
 
-export function copiarSemana(token, desde) {
+export function copiarSemana(token, desde, departamentoId) {
+  const cuerpo = { desde };
+  if (departamentoId) {
+    cuerpo.departamento_id = departamentoId;
+  }
   return pedir("/turnos/copiar-semana", {
     method: "POST",
     token,
-    cuerpo: { desde },
+    cuerpo,
   });
 }
 
