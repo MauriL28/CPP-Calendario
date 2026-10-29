@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from calendar import monthrange
@@ -14,6 +15,7 @@ from mandos import departamento_permitido
 from horas import hora_texto, horas_de_turno, parse_hora
 
 bp = Blueprint("turnos", __name__)
+logger = logging.getLogger(__name__)
 
 AUSENCIAS = {"L", "D", "V", "B", "F", "P"}
 
@@ -916,8 +918,9 @@ def copiar_semana():
             dias_copiados = cur.rowcount
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
-    except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+    except psycopg.Error:
+        logger.exception("Error de base de datos")
+        return jsonify(error="Error de base de datos"), 503
 
     return jsonify(desde=desde.isoformat(), dias_copiados=dias_copiados)
 
