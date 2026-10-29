@@ -32,6 +32,7 @@ CREATE TABLE departamento (
     codigo          VARCHAR(32)  NOT NULL,
     nombre          VARCHAR(120) NOT NULL,
     orden           INTEGER      NOT NULL DEFAULT 0,
+    usa_horario_habitual BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (delegacion_id, codigo)
 );
 
@@ -67,6 +68,13 @@ CREATE TABLE usuario (
 -- Responsable: un departamento, como mucho un jefe. Ese usuario, como mucho un depto.
 ALTER TABLE departamento
     ADD COLUMN responsable_id UUID UNIQUE REFERENCES usuario (id);
+
+-- Departamentos que un mando puede consultar, además del suyo.
+CREATE TABLE mando_departamento (
+    usuario_id       UUID NOT NULL REFERENCES usuario (id),
+    departamento_id  UUID NOT NULL REFERENCES departamento (id),
+    PRIMARY KEY (usuario_id, departamento_id)
+);
 
 -- Un número de personal SAP identifica a una sola persona en toda la empresa.
 CREATE UNIQUE INDEX usuario_numero_sap

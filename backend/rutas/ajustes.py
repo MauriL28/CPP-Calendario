@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from mandos import departamentos_del_mando
 
 bp = Blueprint("ajustes", __name__)
 BLOQUE_HORAS = Decimal("0.25")
@@ -34,10 +35,17 @@ def crear():
 
     try:
         with cursor() as cur:
-            mando = _mando(cur)
+            ids = _mando(cur)
+            if not ids:
+                return jsonify(error="No autorizado"), 403
+            cur.execute(
+                "SELECT nombre FROM usuario WHERE id = %s AND rol = 'mando'",
+                (get_jwt_identity(),),
+            )
+            mando = cur.fetchone()
             if mando is None:
                 return jsonify(error="No autorizado"), 403
-            trabajador = _trabajador(cur, login_nombre.strip(), mando["departamento_id"])
+            trabajador = _trabajador(cur, login_nombre.strip(), ids)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
             cur.execute(
@@ -48,7 +56,7 @@ def crear():
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (fecha, horas, motivo, trabajador["id"], mando["id"]),
+                (fecha, horas, motivo, trabajador["id"], get_jwt_identity()),
             )
             creado = cur.fetchone()
     except SinBaseDeDatos:
@@ -79,17 +87,17 @@ def listar():
 
     try:
         with cursor() as cur:
-            mando = _mando(cur)
-            if mando is None:
+            ids = _mando(cur)
+            if not ids:
                 return jsonify(error="No autorizado"), 403
             trabajador_id = None
             if login_nombre is not None:
-                trabajador = _trabajador(cur, login_nombre.strip(), mando["departamento_id"])
+                trabajador = _trabajador(cur, login_nombre.strip(), ids)
                 if trabajador is None:
                     return jsonify(error="Ese trabajador no es de tu departamento"), 404
                 trabajador_id = trabajador["id"]
-            clausulas = ["afectado.departamento_id = %s", "afectado.rol = 'trabajador'"]
-            params = [mando["departamento_id"]]
+            clausulas = ["afectado.departamento_id = ANY(%s)", "afectado.rol = 'trabajador'"]
+            params = [ids]
             if trabajador_id is not None:
                 clausulas.append("a.usuario_afectado_id = %s")
                 params.append(trabajador_id)
@@ -144,8 +152,8 @@ def editar(ajuste_id):
 
     try:
         with cursor() as cur:
-            mando = _mando(cur)
-            if mando is None:
+            ids = _mando(cur)
+            if not ids:
                 return jsonify(error="No autorizado"), 403
             cur.execute(
                 """
@@ -156,12 +164,12 @@ def editar(ajuste_id):
                   AND a.usuario_afectado_id = afectado.id
                   AND a.usuario_registra_id = registra.id
                   AND afectado.rol = 'trabajador'
-                  AND afectado.departamento_id = %s
+                  AND afectado.departamento_id = ANY(%s)
                 RETURNING a.id, a.fecha, a.horas, a.motivo,
                           afectado.login AS usuario_afectado,
                           registra.nombre AS registra
                 """,
-                (fecha, horas, motivo, identificador, mando["departamento_id"]),
+                (fecha, horas, motivo, identificador, ids),
             )
             fila = cur.fetchone()
             if fila is None:
@@ -186,8 +194,8 @@ def borrar(ajuste_id):
 
     try:
         with cursor() as cur:
-            mando = _mando(cur)
-            if mando is None:
+            ids = _mando(cur)
+            if not ids:
                 return jsonify(error="No autorizado"), 403
             cur.execute(
                 """
@@ -196,10 +204,10 @@ def borrar(ajuste_id):
                 WHERE a.id = %s
                   AND a.usuario_afectado_id = afectado.id
                   AND afectado.rol = 'trabajador'
-                  AND afectado.departamento_id = %s
+                  AND afectado.departamento_id = ANY(%s)
                 RETURNING a.id
                 """,
-                (identificador, mando["departamento_id"]),
+                (identificador, ids),
             )
             if cur.fetchone() is None:
                 return jsonify(error="No se ha encontrado el ajuste"), 404
@@ -212,30 +220,20 @@ def borrar(ajuste_id):
 
 
 def _mando(cur):
-    cur.execute(
-        """
-        SELECT id, nombre, departamento_id
-        FROM usuario
-        WHERE id = %s AND rol = 'mando'
-        """,
-        (get_jwt_identity(),),
-    )
-    mando = cur.fetchone()
-    if mando is None or mando["departamento_id"] is None:
-        return None
-    return mando
+    """Ids permitidos del mando que llama. Vacío si no es mando."""
+    return departamentos_del_mando(cur, get_jwt_identity())
 
 
-def _trabajador(cur, login_nombre, departamento_id):
+def _trabajador(cur, login_nombre, departamentos):
     cur.execute(
         """
         SELECT id
         FROM usuario
         WHERE login = %s
           AND rol = 'trabajador'
-          AND departamento_id = %s
+          AND departamento_id = ANY(%s)
         """,
-        (login_nombre, departamento_id),
+        (login_nombre, departamentos),
     )
     return cur.fetchone()
 

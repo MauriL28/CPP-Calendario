@@ -6,8 +6,9 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from mandos import departamento_permitido, departamentos_del_mando
 from horas import hora_texto, parse_hora
-from rutas.turnos import _agrupar_versiones, _franja, _texto_celda, resolver_turno
+from rutas.turnos import _agrupar_versiones, _franja, _habituales, _texto_celda, resolver_turno
 
 bp = Blueprint("trabajadores", __name__)
 
@@ -46,18 +47,10 @@ def crear_trabajador():
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
-            error = _comprobar_seccion(cur, mando["departamento_id"], seccion_id)
+            departamento_id, error = _departamento_alta(cur, cuerpo.get("departamento_id"))
+            if error:
+                return error
+            error = _comprobar_seccion(cur, departamento_id, seccion_id)
             if error:
                 return error
             cur.execute(
@@ -82,7 +75,7 @@ def crear_trabajador():
                     login_nombre.strip(),
                     clave,
                     grupo,
-                    mando["departamento_id"],
+                    departamento_id,
                     vacaciones,
                     horas_contrato,
                     numero_sap,
@@ -139,28 +132,7 @@ def dar_de_baja(login_nombre):
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
-            cur.execute(
-                """
-                SELECT id
-                FROM usuario
-                WHERE login = %s
-                  AND rol = 'trabajador'
-                  AND departamento_id = %s
-                """,
-                (login_nombre, mando["departamento_id"]),
-            )
-            trabajador = cur.fetchone()
+            trabajador = _trabajador_permitido(cur, login_nombre)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
             cur.execute(
@@ -203,28 +175,7 @@ def cambiar_numero_sap(login_nombre):
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
-            cur.execute(
-                """
-                SELECT id
-                FROM usuario
-                WHERE login = %s
-                  AND rol = 'trabajador'
-                  AND departamento_id = %s
-                """,
-                (login_nombre, mando["departamento_id"]),
-            )
-            trabajador = cur.fetchone()
+            trabajador = _trabajador_permitido(cur, login_nombre)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
             if _sap_ocupado(cur, numero_sap, trabajador["id"]):
@@ -256,30 +207,17 @@ def cambiar_clave(login_nombre):
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
+            trabajador = _trabajador_permitido(cur, login_nombre)
+            if trabajador is None:
+                return jsonify(error="Ese trabajador no es de tu departamento"), 404
             cur.execute(
                 """
                 UPDATE usuario
                 SET clave = crypt(%s, gen_salt('bf'))
-                WHERE login = %s
-                  AND rol = 'trabajador'
-                  AND departamento_id = %s
-                RETURNING login
+                WHERE id = %s
                 """,
-                (clave, login_nombre, mando["departamento_id"]),
+                (clave, trabajador["id"]),
             )
-            if cur.fetchone() is None:
-                return jsonify(error="Ese trabajador no es de tu departamento"), 404
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
@@ -301,33 +239,20 @@ def cambiar_seccion(login_nombre):
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
-            error = _comprobar_seccion(cur, mando["departamento_id"], seccion_id)
+            trabajador = _trabajador_permitido(cur, login_nombre)
+            if trabajador is None:
+                return jsonify(error="Ese trabajador no es de tu departamento"), 404
+            error = _comprobar_seccion(cur, trabajador["departamento_id"], seccion_id)
             if error:
                 return error
             cur.execute(
                 """
                 UPDATE usuario
                 SET seccion_id = %s
-                WHERE login = %s
-                  AND rol = 'trabajador'
-                  AND departamento_id = %s
-                RETURNING login
+                WHERE id = %s
                 """,
-                (seccion_id, login_nombre, mando["departamento_id"]),
+                (seccion_id, trabajador["id"]),
             )
-            if cur.fetchone() is None:
-                return jsonify(error="Ese trabajador no es de tu departamento"), 404
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
@@ -355,28 +280,7 @@ def cambiar_horario(login_nombre):
 
     try:
         with cursor() as cur:
-            cur.execute(
-                """
-                SELECT departamento_id
-                FROM usuario
-                WHERE id = %s AND rol = 'mando'
-                """,
-                (get_jwt_identity(),),
-            )
-            mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
-                return jsonify(error="No autorizado"), 403
-            cur.execute(
-                """
-                SELECT id
-                FROM usuario
-                WHERE login = %s
-                  AND rol = 'trabajador'
-                  AND departamento_id = %s
-                """,
-                (login_nombre, mando["departamento_id"]),
-            )
-            trabajador = cur.fetchone()
+            trabajador = _trabajador_permitido(cur, login_nombre)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
             cur.execute(
@@ -471,19 +375,6 @@ def ficha(login_nombre):
 
     try:
         with cursor() as cur:
-            mando = None
-            if rol == "mando":
-                cur.execute(
-                    """
-                    SELECT departamento_id
-                    FROM usuario
-                    WHERE id = %s AND rol = 'mando'
-                    """,
-                    (get_jwt_identity(),),
-                )
-                mando = cur.fetchone()
-                if mando is None or mando["departamento_id"] is None:
-                    return jsonify(error="No autorizado"), 403
             cur.execute(
                 """
                 SELECT u.id, u.nombre, u.grupo, u.departamento_id,
@@ -498,7 +389,9 @@ def ficha(login_nombre):
             if rol == "trabajador":
                 if trabajador is None or str(trabajador["id"]) != get_jwt_identity():
                     return jsonify(error="No autorizado"), 403
-            elif trabajador is None or trabajador["departamento_id"] != mando["departamento_id"]:
+            elif trabajador is None or not departamento_permitido(
+                cur, get_jwt_identity(), trabajador["departamento_id"]
+            ):
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
             cur.execute(
                 """
@@ -522,6 +415,7 @@ def ficha(login_nombre):
             )
             versiones = _agrupar_versiones(cur.fetchall()).get(trabajador["id"], [])
             noche_inicio, noche_fin = _franja(cur)
+            habitual = _habituales(cur, [trabajador["id"]]).get(trabajador["id"], True)
             cur.execute(
                 "SELECT fecha FROM festivo WHERE fecha >= %s AND fecha <= %s",
                 (inicio, fin),
@@ -557,7 +451,7 @@ def ficha(login_nombre):
     dia = inicio
     while dia <= fin:
         turno, _origen = resolver_turno(
-            dia, turnos.get(dia), versiones, noche_inicio, noche_fin
+            dia, turnos.get(dia), versiones, noche_inicio, noche_fin, habitual
         )
         dias.append(
             {
@@ -664,6 +558,36 @@ def _leer_seccion_id(cuerpo, opcional):
         return UUID(valor.strip()), None
     except ValueError:
         return None, (jsonify(error="La sección no es válida"), 400)
+
+
+def _departamento_alta(cur, pedido):
+    ids = departamentos_del_mando(cur, get_jwt_identity())
+    if not ids:
+        return None, (jsonify(error="No autorizado"), 403)
+    if pedido in (None, ""):
+        if len(ids) != 1:
+            return None, (jsonify(error="Faltan datos"), 400)
+        return ids[0], None
+    if not departamento_permitido(cur, get_jwt_identity(), pedido):
+        return None, (jsonify(error="No se ha encontrado el departamento"), 404)
+    return pedido, None
+
+
+def _trabajador_permitido(cur, login_nombre):
+    cur.execute(
+        """
+        SELECT id, departamento_id
+        FROM usuario
+        WHERE login = %s AND rol = 'trabajador'
+        """,
+        (login_nombre,),
+    )
+    trabajador = cur.fetchone()
+    if trabajador is None or not departamento_permitido(
+        cur, get_jwt_identity(), trabajador["departamento_id"]
+    ):
+        return None
+    return trabajador
 
 
 def _comprobar_seccion(cur, departamento_id, seccion_id):

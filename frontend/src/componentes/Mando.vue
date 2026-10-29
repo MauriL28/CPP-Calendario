@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
+import { delegacionVisible } from "../fechas.js";
 import {
   borrarAjuste,
   cambiarHorario,
@@ -25,6 +26,8 @@ const ambito = ref("departamento");
 const fichaLogin = ref("");
 const cuadrante = ref(null);
 const departamentos = ref([]);
+const departamentoId = ref("");
+const departamentosCargados = ref(false);
 const error = ref("");
 const nombre = ref("");
 const login = ref("");
@@ -72,7 +75,11 @@ const filtroSeccion = ref("");
 const menuAbierto = ref("");
 let avisoTemporizador = 0;
 
-const equipo = computed(() => departamentos.value[0] || null);
+const equipo = computed(
+  () => departamentos.value.find((item) => item.id === departamentoId.value) || null,
+);
+const variosDepartamentos = computed(() => departamentos.value.length > 1);
+const muestraHorario = computed(() => equipo.value?.usa_horario_habitual !== false);
 const seccionesEquipo = computed(() => equipo.value?.secciones ?? []);
 const trabajadores = computed(() => equipo.value?.trabajadores ?? []);
 const chipsSeccion = computed(() => {
@@ -144,13 +151,24 @@ function iniciales(texto) {
     .join("");
 }
 
+function etiquetaDepartamento(item) {
+  return `${item.nombre} · ${delegacionVisible(item.delegacion)}`;
+}
+
 async function cargarDepartamentos() {
   error.value = "";
   try {
-    departamentos.value = await listar(props.token);
+    const lista = await listar(props.token);
+    departamentos.value = lista;
+    if (!lista.some((item) => item.id === departamentoId.value)) {
+      departamentoId.value = lista[0]?.id || "";
+    }
   } catch (causa) {
+    departamentos.value = [];
+    departamentoId.value = "";
     error.value = causa instanceof Error ? causa.message : "No se pudieron cargar los departamentos";
   }
+  departamentosCargados.value = true;
 }
 
 function reiniciarHorario() {
@@ -538,7 +556,7 @@ async function guardar() {
     return;
   }
   try {
-    await crearTrabajador(props.token, {
+    const alta = {
       nombre: nombre.value,
       login: login.value,
       clave: clave.value,
@@ -548,7 +566,11 @@ async function guardar() {
       vacaciones: numero(vacaciones.value),
       horas_contrato: numero(horasContrato.value),
       seccion_id: seccionId.value || null,
-    });
+    };
+    if (departamentoId.value) {
+      alta.departamento_id = departamentoId.value;
+    }
+    await crearTrabajador(props.token, alta);
     cerrarAlta();
     mostrarAviso();
     await cargarDepartamentos();
@@ -732,6 +754,28 @@ function numero(valor) {
   return Number.isNaN(cantidad) ? null : cantidad;
 }
 
+watch(departamentoId, () => {
+  busqueda.value = "";
+  filtroSeccion.value = "";
+  menuAbierto.value = "";
+  if (vista.value === "ficha") {
+    fichaLogin.value = "";
+    vista.value = "equipo";
+  }
+  if (dialogo.value?.open) {
+    cerrarAlta();
+  }
+  if (dialogoHorario.value?.open) {
+    cerrarHorario();
+  }
+  if (dialogoPerfil.value?.open) {
+    cerrarPerfil();
+  }
+  if (dialogoAjustes.value?.open) {
+    cerrarAjustes();
+  }
+});
+
 watch(vista, (nueva) => {
   if (nueva !== "equipo") {
     cerrarMenu();
@@ -772,6 +816,14 @@ onUnmounted(() => {
       Análisis
     </button>
   </nav>
+  <label v-if="variosDepartamentos" class="analisis-filtro departamento-mando">
+    Departamento
+    <select v-model="departamentoId" class="equipo-grupo">
+      <option v-for="item in departamentos" :key="item.id" :value="item.id">
+        {{ etiquetaDepartamento(item) }}
+      </option>
+    </select>
+  </label>
   <div v-show="vista === 'cuadrante'">
     <div class="vistas cuadrante-ambito">
       <button type="button" :class="{ activo: ambito === 'departamento' }" @click="ambito = 'departamento'">
@@ -781,10 +833,23 @@ onUnmounted(() => {
         Mandos + Funcionales
       </button>
     </div>
-    <Cuadrante v-if="ambito === 'departamento'" ref="cuadrante" :token="token" editable />
-    <Cuadrante v-else :token="token" mandos />
+    <Cuadrante
+      v-if="ambito === 'departamento' && departamentosCargados"
+      :key="departamentoId || 'propio'"
+      ref="cuadrante"
+      :token="token"
+      :departamento-id="departamentoId"
+      editable
+    />
+    <Cuadrante v-else-if="ambito === 'mandos'" :token="token" mandos />
   </div>
-  <Analisis v-if="vista === 'analisis'" :token="token" mando />
+  <Analisis
+    v-if="vista === 'analisis'"
+    :key="departamentoId || 'propio'"
+    :token="token"
+    :departamento-id="departamentoId"
+    mando
+  />
   <FichaEmpleado v-if="vista === 'ficha'" :token="token" :login="fichaLogin" />
   <section v-if="vista === 'equipo'" class="equipo">
     <header class="equipo-intro">
@@ -826,7 +891,7 @@ onUnmounted(() => {
             <thead>
               <tr>
                 <th>Trabajador</th>
-                <th>Horario</th>
+                <th v-if="muestraHorario">Horario</th>
                 <th class="col-extra">Horas/semana</th>
                 <th class="col-extra">Vacaciones/año</th>
                 <th class="equipo-acciones">Acciones</th>
@@ -843,7 +908,7 @@ onUnmounted(() => {
                     </span>
                   </span>
                 </td>
-                <td>{{ horario(trabajador) }}</td>
+                <td v-if="muestraHorario">{{ horario(trabajador) }}</td>
                 <td class="col-extra">{{ cantidad(trabajador.horas_contrato) }}</td>
                 <td class="col-extra">{{ cantidad(trabajador.vacaciones) }}</td>
                 <td class="equipo-acciones">
@@ -853,7 +918,7 @@ onUnmounted(() => {
                   <div class="equipo-mas">
                     <button type="button" aria-haspopup="true" :aria-expanded="menuAbierto === trabajador.login" @click.stop="abrirMenu(trabajador.login)">⋯</button>
                     <div v-if="menuAbierto === trabajador.login" class="equipo-mas-menu" role="menu">
-                      <button type="button" role="menuitem" @click="cerrarMenu(); abrirHorario(trabajador)">Cambiar horario</button>
+                      <button v-if="muestraHorario" type="button" role="menuitem" @click="cerrarMenu(); abrirHorario(trabajador)">Cambiar horario</button>
                       <button type="button" role="menuitem" @click="cerrarMenu(); abrirPerfil(trabajador)">Editar perfil</button>
                       <button type="button" class="peligro" role="menuitem" @click="cerrarMenu(); darDeBaja(trabajador)">Dar de baja</button>
                     </div>

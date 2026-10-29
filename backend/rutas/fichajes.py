@@ -14,9 +14,10 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils.exceptions import InvalidFileException
 
 from db import SinBaseDeDatos, cursor
+from mandos import departamento_permitido
 from fichajes import _segundos, agrupar_dias, cargar, segundos_pausa_con_huecos
 from horas import hora_texto
-from rutas.turnos import _agrupar_versiones, _franja, resolver_turno
+from rutas.turnos import _agrupar_versiones, _franja, _habituales, resolver_turno
 
 bp = Blueprint("fichajes", __name__)
 
@@ -157,14 +158,18 @@ def _argumentos_analisis():
 def _alcance_analisis(cur, ctx):
     departamento = ctx["departamento"]
     if ctx["rol"] == "mando":
-        cur.execute(
-            "SELECT departamento_id FROM usuario WHERE id = %s",
-            (ctx["identidad"],),
-        )
-        propio = cur.fetchone()
-        if propio is None or propio["departamento_id"] is None:
-            return None, None, (jsonify(error="No autorizado"), 403)
-        departamento = str(propio["departamento_id"])
+        if departamento:
+            if not departamento_permitido(cur, ctx["identidad"], departamento):
+                return None, None, (jsonify(error="No se ha encontrado el departamento"), 404)
+        else:
+            cur.execute(
+                "SELECT departamento_id FROM usuario WHERE id = %s",
+                (ctx["identidad"],),
+            )
+            propio = cur.fetchone()
+            if propio is None or propio["departamento_id"] is None:
+                return None, None, (jsonify(error="No autorizado"), 403)
+            departamento = str(propio["departamento_id"])
     elif departamento:
         cur.execute(
             """
@@ -319,6 +324,7 @@ def _planes_analisis(cur, filas):
     )
     versiones = _agrupar_versiones(cur.fetchall())
     noche_inicio, noche_fin = _franja(cur)
+    habituales = _habituales(cur, ids)
     planes = {}
     for fila in utiles:
         guardado = turnos.get((fila["usuario_id"], fila["fecha"]))
@@ -328,6 +334,7 @@ def _planes_analisis(cur, filas):
             versiones.get(fila["usuario_id"], []),
             noche_inicio,
             noche_fin,
+            habituales.get(fila["usuario_id"], True),
         )
         planes[(fila["usuario_id"], fila["fecha"])] = turno
     return planes

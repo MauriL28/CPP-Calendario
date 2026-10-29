@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from mandos import departamento_permitido
 from horas import hora_texto
 
 bp = Blueprint("usuarios", __name__)
@@ -239,7 +240,9 @@ def cambiar_numero_sap_mando(login_nombre):
                 (login_nombre,),
             )
             mando = cur.fetchone()
-            if mando is None or mando["departamento_id"] is None:
+            if mando is None or not departamento_permitido(
+                cur, mando["id"], mando["departamento_id"]
+            ):
                 return jsonify(error="No autorizado"), 404
             if _sap_ocupado(cur, numero_sap, mando["id"]):
                 return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
