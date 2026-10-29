@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from errores import error_bd
 from mandos import departamentos_del_mando
 
 bp = Blueprint("ajustes", __name__)
@@ -62,7 +63,7 @@ def crear():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(_fila(creado["id"], fecha, horas, motivo, login_nombre.strip(), mando["nombre"])), 201
 
@@ -124,7 +125,7 @@ def listar():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(filas)
 
@@ -177,7 +178,7 @@ def editar(ajuste_id):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(_fila_bd(fila))
 
@@ -214,7 +215,7 @@ def borrar(ajuste_id):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return "", 204
 

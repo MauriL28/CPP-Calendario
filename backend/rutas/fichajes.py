@@ -14,6 +14,7 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils.exceptions import InvalidFileException
 
 from db import SinBaseDeDatos, cursor
+from errores import error_bd
 from mandos import departamento_permitido
 from fichajes import _segundos, agrupar_dias, cargar, segundos_pausa_con_huecos
 from horas import hora_texto
@@ -89,7 +90,7 @@ def importar():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
     finally:
         if temporal and os.path.exists(temporal):
             os.remove(temporal)
@@ -586,7 +587,7 @@ def analisis():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(
         filas=filas,
@@ -616,7 +617,7 @@ def exportar_analisis():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return send_file(
         _libro_analisis(filas),

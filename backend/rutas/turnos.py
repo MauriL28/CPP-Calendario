@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from calendar import monthrange
@@ -11,11 +10,11 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from db import SinBaseDeDatos, cursor
+from errores import error_bd
 from mandos import departamento_permitido
 from horas import hora_texto, horas_de_turno, parse_hora
 
 bp = Blueprint("turnos", __name__)
-logger = logging.getLogger(__name__)
 
 AUSENCIAS = {"L", "D", "V", "B", "F", "P"}
 
@@ -340,7 +339,7 @@ def listar_turnos():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(
         desde=desde.isoformat(),
@@ -399,7 +398,7 @@ def listar_turnos_mios():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     personas = []
     if trabajador is not None:
@@ -512,7 +511,7 @@ def listar_turnos_departamento():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(
         desde=desde.isoformat(),
@@ -576,7 +575,7 @@ def listar_turnos_mes():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     personas = _trabajadores_resueltos(
         trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales
@@ -621,7 +620,7 @@ def listar_turnos_mios_mes():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     personas = []
     if trabajador is not None:
@@ -727,7 +726,7 @@ def listar_turnos_mandos():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
     if trabajadores is None:
         return jsonify(error="No autorizado"), 403
     return jsonify(
@@ -751,7 +750,7 @@ def listar_turnos_mandos_mes():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
     if trabajadores is None:
         return jsonify(error="No autorizado"), 403
     return jsonify(
@@ -837,7 +836,7 @@ def guardar_vacaciones_mando():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(fecha=fecha.isoformat(), vacaciones=vacaciones)
 
@@ -918,9 +917,8 @@ def copiar_semana():
             dias_copiados = cur.rowcount
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
-    except psycopg.Error:
-        logger.exception("Error de base de datos")
-        return jsonify(error="Error de base de datos"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
 
     return jsonify(desde=desde.isoformat(), dias_copiados=dias_copiados)
 
@@ -1022,7 +1020,7 @@ def guardar_turno():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(
         login=login_nombre.strip(),
@@ -1074,7 +1072,7 @@ def borrar_turno():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(login=login_nombre.strip(), fecha=fecha.isoformat())
 
@@ -1258,7 +1256,7 @@ def exportar_turnos():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return send_file(
         _libro(resueltos, dias, mensual),

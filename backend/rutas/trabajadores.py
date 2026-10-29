@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from errores import error_bd
 from mandos import departamento_permitido, departamentos_del_mando
 from horas import hora_texto, parse_hora
 from rutas.turnos import _agrupar_versiones, _franja, _habituales, _texto_celda, resolver_turno
@@ -105,7 +106,7 @@ def crear_trabajador():
     except psycopg.errors.UniqueViolation as exc:
         return _error_unico(exc)
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(
         nombre=creado["nombre"],
@@ -157,7 +158,7 @@ def dar_de_baja(login_nombre):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(login=login_nombre, activo=False, desde=desde.isoformat())
 
@@ -189,7 +190,7 @@ def cambiar_numero_sap(login_nombre):
     except psycopg.errors.UniqueViolation as exc:
         return _error_unico(exc)
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(login=login_nombre, numero_sap=numero_sap)
 
@@ -221,7 +222,7 @@ def cambiar_clave(login_nombre):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(login=login_nombre)
 
@@ -256,7 +257,7 @@ def cambiar_seccion(login_nombre):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(
         login=login_nombre,
@@ -311,7 +312,7 @@ def cambiar_horario(login_nombre):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(
         login=login_nombre,
@@ -358,7 +359,7 @@ def _sap_ocupado(cur, numero, excepto_id=None):
 def _error_unico(exc):
     if getattr(exc.diag, "constraint_name", None) == "usuario_numero_sap":
         return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
-    return jsonify(error=str(exc)), 503
+    return error_bd(exc)
 
 
 @bp.get("/trabajadores/<login_nombre>/ficha")
@@ -441,7 +442,7 @@ def ficha(login_nombre):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     horas_mes = [0.0] * 12
     ausencias = {"V": 0, "B": 0, "P": 0, "F": 0}

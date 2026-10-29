@@ -1,15 +1,13 @@
-import logging
-
 import psycopg
 from flask import Blueprint, jsonify
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from errores import error_bd
 from mandos import departamentos_del_mando
 from rutas.usuarios import adjuntar_personas, listar_del_departamento
 
 bp = Blueprint("departamentos", __name__)
-logger = logging.getLogger(__name__)
 
 
 @bp.get("/departamentos")
@@ -67,9 +65,8 @@ def departamentos():
             mandos, trabajadores, turnos, horarios = listar_del_departamento(cur, filtro, params)
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
-    except psycopg.Error:
-        logger.exception("Error de base de datos")
-        return jsonify(error="Error de base de datos"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
 
     lista = []
     por_codigo = {}

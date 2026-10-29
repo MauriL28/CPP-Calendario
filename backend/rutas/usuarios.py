@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from errores import error_bd
 from mandos import departamento_permitido
 from horas import hora_texto
 
@@ -206,7 +207,7 @@ def crear_usuario():
     except psycopg.errors.UniqueViolation as exc:
         return _error_unico(exc)
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(
         nombre=creado["nombre"],
@@ -255,7 +256,7 @@ def cambiar_numero_sap_mando(login_nombre):
     except psycopg.errors.UniqueViolation as exc:
         return _error_unico(exc)
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(login=login_nombre, numero_sap=numero_sap)
 
@@ -289,4 +290,4 @@ def _sap_ocupado(cur, numero, excepto_id=None):
 def _error_unico(exc):
     if getattr(exc.diag, "constraint_name", None) == "usuario_numero_sap":
         return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
-    return jsonify(error=str(exc)), 503
+    return error_bd(exc)

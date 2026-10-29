@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, jwt_required
 
 from db import SinBaseDeDatos, cursor
+from errores import error_bd
 
 bp = Blueprint("festivos", __name__)
 
@@ -19,7 +20,7 @@ def listar():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
     return jsonify([_fila(fila["fecha"], fila["nombre"]) for fila in filas])
 
 
@@ -49,7 +50,7 @@ def crear():
     except psycopg.errors.UniqueViolation:
         return jsonify(error="Ya hay un festivo en esa fecha"), 409
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
     return jsonify(_fila(fecha, nombre)), 201
 
 
@@ -69,7 +70,7 @@ def borrar(fecha_texto):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
     return "", 204
 
 

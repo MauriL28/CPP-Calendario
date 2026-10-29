@@ -2,6 +2,7 @@ import psycopg
 from flask import Blueprint, jsonify, request
 
 from db import SinBaseDeDatos, cursor
+from errores import error_bd
 from seguridad import emitir_token
 
 bp = Blueprint("auth", __name__)
@@ -52,6 +53,6 @@ def login():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
-        return jsonify(error=str(exc)), 503
+        return error_bd(exc)
 
     return jsonify(access_token=emitir_token(usuario_id, rol, delegaciones, nombre, departamento))
