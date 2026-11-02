@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
 import { analisisFichajes, exportarAnalisis } from "../api/fichajes.js";
 import { delegacionVisible } from "../fechas.js";
@@ -11,7 +11,8 @@ const props = defineProps({
 });
 
 const departamentos = ref([]);
-const departamento = ref("");
+const delegacion = ref("");
+const codigo = ref("");
 const estado = ref("");
 const desde = ref("");
 const hasta = ref("");
@@ -41,9 +42,27 @@ const kpis = [
   { clave: "sin_emparejar", texto: "Sin emparejar" },
 ];
 
-function nombreDepartamento(item) {
-  return `${item.nombre} · ${delegacionVisible(item.delegacion)}`;
-}
+const delegaciones = computed(() => {
+  const vistas = [];
+  const codigos = new Set();
+  for (const item of departamentos.value) {
+    if (!codigos.has(item.delegacion)) {
+      codigos.add(item.delegacion);
+      vistas.push(item.delegacion);
+    }
+  }
+  return vistas;
+});
+
+const departamentosUnicos = computed(() => {
+  const vistos = new Map();
+  for (const item of departamentos.value) {
+    if (!vistos.has(item.codigo)) {
+      vistos.set(item.codigo, { codigo: item.codigo, nombre: item.nombre });
+    }
+  }
+  return [...vistos.values()];
+});
 
 function fechaVisible(iso) {
   const [anio, mes, dia] = iso.split("-");
@@ -149,18 +168,21 @@ function claseEstado(coincide) {
 
 async function cargarDepartamentos() {
   departamentos.value = await listar(props.token);
-  if (props.mando && departamentos.value.length) {
-    departamento.value = departamentos.value[0].id;
-  }
 }
 
 function filtrosActuales() {
-  return {
-    departamento: props.mando ? props.departamentoId : departamento.value,
+  const filtros = {
     coincide: estado.value,
     desde: desde.value,
     hasta: hasta.value,
   };
+  if (props.mando) {
+    filtros.departamento = props.departamentoId;
+    return filtros;
+  }
+  filtros.delegacion = delegacion.value;
+  filtros.codigo = codigo.value;
+  return filtros;
 }
 
 async function exportar() {
@@ -182,7 +204,7 @@ async function cargar() {
   }
 }
 
-watch([departamento, estado, desde, hasta], cargar);
+watch([delegacion, codigo, estado, desde, hasta], cargar);
 
 watch(
   () => props.departamentoId,
@@ -205,7 +227,7 @@ onMounted(async () => {
   } catch (causa) {
     error.value = causa instanceof Error ? causa.message : "No se pudieron cargar los departamentos";
   }
-  if (!departamento.value) {
+  if (!delegacion.value && !codigo.value) {
     await cargar();
   }
 });
@@ -219,11 +241,20 @@ onMounted(async () => {
     </header>
     <div class="equipo-barra">
       <label v-if="!mando" class="analisis-filtro">
+        Delegación
+        <select v-model="delegacion" class="equipo-grupo">
+          <option value="">Todas las delegaciones</option>
+          <option v-for="codigoSede in delegaciones" :key="codigoSede" :value="codigoSede">
+            {{ delegacionVisible(codigoSede) }}
+          </option>
+        </select>
+      </label>
+      <label v-if="!mando" class="analisis-filtro">
         Departamento
-        <select v-model="departamento" class="equipo-grupo">
-          <option v-if="!mando" value="">Todos los departamentos</option>
-          <option v-for="item in departamentos" :key="item.id" :value="item.id">
-            {{ nombreDepartamento(item) }}
+        <select v-model="codigo" class="equipo-grupo">
+          <option value="">Todos los departamentos</option>
+          <option v-for="item in departamentosUnicos" :key="item.codigo" :value="item.codigo">
+            {{ item.nombre }}
           </option>
         </select>
       </label>
@@ -245,7 +276,7 @@ onMounted(async () => {
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <template v-else-if="datos">
-      <div class="rejilla-deptos">
+      <div class="rejilla-deptos" :class="{ 'analisis-admin': !mando }">
         <div v-for="kpi in kpis" :key="kpi.clave" class="tarjeta analisis-kpi">
           <span class="tarjeta-nombre">{{ datos.totales[kpi.clave] }}</span>
           <span class="tarjeta-recuento">{{ kpi.texto }}</span>
@@ -303,3 +334,38 @@ onMounted(async () => {
     </template>
   </section>
 </template>
+
+<style scoped>
+.analisis-admin {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.analisis-admin .analisis-kpi {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.analisis-admin .tarjeta-nombre {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.analisis-admin .tarjeta-recuento {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .analisis-admin {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .analisis-admin {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>

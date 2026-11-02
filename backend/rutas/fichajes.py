@@ -101,7 +101,54 @@ def importar():
         sin_emparejar=resultado["sin_emparejar"],
         dias_con_incidencia=resultado["incidencias"],
         filas_nuevas=resultado["filas_nuevas"],
+        personas_excel=resultado["personas_excel"],
+        personas_emparejadas=resultado["personas_emparejadas"],
+        filas_actualizadas=resultado["filas_actualizadas"],
+        jornadas=resultado["dias"],
+        fecha_desde=resultado["fecha_desde"],
+        fecha_hasta=resultado["fecha_hasta"],
     )
+
+
+def _importacion(fila):
+    desde = fila["fecha_desde"]
+    hasta = fila["fecha_hasta"]
+    return {
+        "momento": fila["momento"].isoformat(),
+        "nombre_archivo": fila["nombre_archivo"],
+        "nombre": fila["nombre"],
+        "filas_leidas": fila["filas_leidas"],
+        "filas_sin_emparejar": fila["filas_sin_emparejar"],
+        "dias_incidencia": fila["dias_incidencia"],
+        "fecha_desde": desde.isoformat() if desde else None,
+        "fecha_hasta": hasta.isoformat() if hasta else None,
+    }
+
+
+@bp.get("/fichajes/importaciones")
+@jwt_required()
+def importaciones():
+    if get_jwt().get("rol") != "admin":
+        return jsonify(error="No autorizado"), 403
+    try:
+        with cursor() as cur:
+            cur.execute(
+                """
+                SELECT i.momento, i.nombre_archivo, u.nombre,
+                       i.filas_leidas, i.filas_sin_emparejar, i.dias_incidencia,
+                       i.fecha_desde, i.fecha_hasta
+                FROM fichaje_importacion AS i
+                JOIN usuario AS u ON u.id = i.usuario_id
+                ORDER BY i.momento DESC
+                LIMIT 10
+                """
+            )
+            filas = cur.fetchall()
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
+    return jsonify([_importacion(fila) for fila in filas])
 
 
 def _fecha(texto):
@@ -145,6 +192,11 @@ def _argumentos_analisis():
         except ValueError:
             return None, (jsonify(error="departamento_id no es válido"), 400)
 
+    delegacion = request.args.get("delegacion") or ""
+    if delegacion and delegacion not in codigos:
+        return None, (jsonify(error="No se ha encontrado la delegación"), 404)
+    codigo = request.args.get("codigo") or ""
+
     return {
         "rol": rol,
         "codigos": codigos,
@@ -152,6 +204,8 @@ def _argumentos_analisis():
         "hasta": hasta,
         "estado": estado,
         "departamento": departamento,
+        "delegacion": delegacion,
+        "codigo": codigo,
         "identidad": get_jwt_identity(),
     }, None
 
@@ -199,9 +253,19 @@ def _alcance_analisis(cur, ctx):
     if ctx["rol"] == "mando" or departamento:
         clausulas.append("u.departamento_id = %s")
         params.append(departamento)
+    elif ctx["delegacion"] or ctx["codigo"]:
+        if not ctx["delegacion"]:
+            clausulas.append("g.codigo = ANY(%s)")
+            params.append(ctx["codigos"])
     else:
         clausulas.append("(f.usuario_id IS NULL OR g.codigo = ANY(%s))")
         params.append(ctx["codigos"])
+    if ctx["delegacion"]:
+        clausulas.append("g.codigo = %s")
+        params.append(ctx["delegacion"])
+    if ctx["codigo"]:
+        clausulas.append("d.codigo = %s")
+        params.append(ctx["codigo"])
     if ctx["estado"]:
         clausulas.append("f.coincide = %s")
         params.append(ctx["estado"])
