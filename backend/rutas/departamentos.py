@@ -62,7 +62,12 @@ def departamentos():
                 params + ([propio_id] if filtro and propio_id is not None else []),
             )
             filas = cur.fetchall()
-            mandos, trabajadores, turnos, horarios = listar_del_departamento(cur, filtro, params)
+            mandos, trabajadores, turnos, horarios = listar_del_departamento(
+                cur,
+                filtro,
+                params,
+                solo_mandos_activos=get_jwt().get("rol") != "admin",
+            )
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:

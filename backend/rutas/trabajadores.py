@@ -11,6 +11,15 @@ from mandos import departamento_permitido, departamentos_del_mando
 from horas import hora_texto, parse_hora
 from rutas.turnos import _texto_celda
 from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
+import validaciones
+from validaciones import (
+    comprobar_seccion,
+    error_unico,
+    grupo_valido,
+    leer_seccion_id,
+    numero,
+    sap_ocupado,
+)
 
 bp = Blueprint("trabajadores", __name__)
 
@@ -18,7 +27,7 @@ bp = Blueprint("trabajadores", __name__)
 @bp.post("/trabajadores")
 @jwt_required()
 def crear_trabajador():
-    if get_jwt().get("rol") != "mando":
+    if get_jwt().get("rol") not in ("mando", "admin"):
         return jsonify(error="No autorizado"), 403
 
     cuerpo = request.get_json(silent=True) or {}
@@ -26,12 +35,13 @@ def crear_trabajador():
     login_nombre = cuerpo.get("login")
     clave = cuerpo.get("clave")
     grupo = cuerpo.get("grupo")
-    vacaciones = _numero(cuerpo.get("vacaciones"))
-    horas_contrato = _numero(cuerpo.get("horas_contrato"))
+    vacaciones = numero(cuerpo.get("vacaciones"))
+    horas_contrato = numero(cuerpo.get("horas_contrato"))
     if not all(isinstance(valor, str) and valor.strip() for valor in (nombre, login_nombre, clave)):
         return jsonify(error="Faltan datos"), 400
-    if grupo not in ("STEF", "ETT"):
-        return jsonify(error="El grupo tiene que ser STEF o ETT"), 400
+    error = grupo_valido(grupo)
+    if error:
+        return error
     if vacaciones is None or horas_contrato is None or vacaciones == "mal" or horas_contrato == "mal":
         return jsonify(error="Faltan datos"), 400
     filas, error = _horario_dias(cuerpo.get("horario_dias"))
@@ -40,10 +50,10 @@ def crear_trabajador():
     desde, error = _desde(cuerpo.get("desde"))
     if error:
         return error
-    numero_sap, error = _numero_sap(cuerpo.get("numero_sap"))
+    numero_sap, error = validaciones.numero_sap(cuerpo.get("numero_sap"))
     if error:
         return error
-    seccion_id, error = _leer_seccion_id(cuerpo, opcional=True)
+    seccion_id, error = leer_seccion_id(cuerpo, opcional=True)
     if error:
         return error
 
@@ -52,7 +62,7 @@ def crear_trabajador():
             departamento_id, error = _departamento_alta(cur, cuerpo.get("departamento_id"))
             if error:
                 return error
-            error = _comprobar_seccion(cur, departamento_id, seccion_id)
+            error = comprobar_seccion(cur, departamento_id, seccion_id)
             if error:
                 return error
             cur.execute(
@@ -61,7 +71,7 @@ def crear_trabajador():
             )
             if cur.fetchone() is not None:
                 return jsonify(error="El login ya existe"), 409
-            if _sap_ocupado(cur, numero_sap):
+            if sap_ocupado(cur, numero_sap):
                 return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
             cur.execute(
                 """
@@ -105,7 +115,7 @@ def crear_trabajador():
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.errors.UniqueViolation as exc:
-        return _error_unico(exc)
+        return error_unico(exc)
     except psycopg.Error as exc:
         return error_bd(exc)
 
@@ -171,7 +181,7 @@ def cambiar_numero_sap(login_nombre):
         return jsonify(error="No autorizado"), 403
 
     cuerpo = request.get_json(silent=True) or {}
-    numero_sap, error = _numero_sap(cuerpo.get("numero_sap"))
+    numero_sap, error = validaciones.numero_sap(cuerpo.get("numero_sap"))
     if error:
         return error
 
@@ -180,7 +190,7 @@ def cambiar_numero_sap(login_nombre):
             trabajador = _trabajador_permitido(cur, login_nombre)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
-            if _sap_ocupado(cur, numero_sap, trabajador["id"]):
+            if sap_ocupado(cur, numero_sap, trabajador["id"]):
                 return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
             cur.execute(
                 "UPDATE usuario SET numero_sap = %s WHERE id = %s",
@@ -189,7 +199,7 @@ def cambiar_numero_sap(login_nombre):
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.errors.UniqueViolation as exc:
-        return _error_unico(exc)
+        return error_unico(exc)
     except psycopg.Error as exc:
         return error_bd(exc)
 
@@ -235,7 +245,7 @@ def cambiar_seccion(login_nombre):
         return jsonify(error="No autorizado"), 403
 
     cuerpo = request.get_json(silent=True) or {}
-    seccion_id, error = _leer_seccion_id(cuerpo, opcional=False)
+    seccion_id, error = leer_seccion_id(cuerpo, opcional=False)
     if error:
         return error
 
@@ -244,7 +254,7 @@ def cambiar_seccion(login_nombre):
             trabajador = _trabajador_permitido(cur, login_nombre)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
-            error = _comprobar_seccion(cur, trabajador["departamento_id"], seccion_id)
+            error = comprobar_seccion(cur, trabajador["departamento_id"], seccion_id)
             if error:
                 return error
             cur.execute(
@@ -327,40 +337,6 @@ def cambiar_horario(login_nombre):
             for dia, inicio, fin in filas
         ],
     )
-
-
-def _numero_sap(valor):
-    if valor is None or valor == "":
-        return None, None
-    if not isinstance(valor, str):
-        return None, (jsonify(error="Faltan datos"), 400)
-    texto = valor.strip()
-    if not texto:
-        return None, None
-    if len(texto) > 40:
-        return None, (jsonify(error="El número de personal es demasiado largo"), 400)
-    return texto, None
-
-
-def _sap_ocupado(cur, numero, excepto_id=None):
-    if numero is None:
-        return False
-    cur.execute(
-        """
-        SELECT 1
-        FROM usuario
-        WHERE numero_sap = %s
-          AND id IS DISTINCT FROM %s
-        """,
-        (numero, excepto_id),
-    )
-    return cur.fetchone() is not None
-
-
-def _error_unico(exc):
-    if getattr(exc.diag, "constraint_name", None) == "usuario_numero_sap":
-        return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
-    return error_bd(exc)
 
 
 @bp.get("/trabajadores/<login_nombre>/ficha")
@@ -546,23 +522,18 @@ def _horario_dias(valor):
     return filas, None
 
 
-def _leer_seccion_id(cuerpo, opcional):
-    if "seccion_id" not in cuerpo:
-        if opcional:
-            return None, None
-        return None, (jsonify(error="Faltan datos"), 400)
-    valor = cuerpo.get("seccion_id")
-    if valor is None:
-        return None, None
-    if not isinstance(valor, str) or not valor.strip():
-        return None, (jsonify(error="La sección no es válida"), 400)
-    try:
-        return UUID(valor.strip()), None
-    except ValueError:
-        return None, (jsonify(error="La sección no es válida"), 400)
-
-
 def _departamento_alta(cur, pedido):
+    if get_jwt().get("rol") == "admin":
+        if pedido in (None, ""):
+            return None, (jsonify(error="Faltan datos"), 400)
+        try:
+            identificador = UUID(str(pedido).strip())
+        except (ValueError, AttributeError):
+            return None, (jsonify(error="No se ha encontrado el departamento"), 404)
+        cur.execute("SELECT 1 FROM departamento WHERE id = %s", (identificador,))
+        if cur.fetchone() is None:
+            return None, (jsonify(error="No se ha encontrado el departamento"), 404)
+        return identificador, None
     ids = departamentos_del_mando(cur, get_jwt_identity())
     if not ids:
         return None, (jsonify(error="No autorizado"), 403)
@@ -590,43 +561,3 @@ def _trabajador_permitido(cur, login_nombre):
     ):
         return None
     return trabajador
-
-
-def _comprobar_seccion(cur, departamento_id, seccion_id):
-    if seccion_id is None:
-        return None
-    cur.execute(
-        "SELECT 1 FROM seccion WHERE departamento_id = %s LIMIT 1",
-        (departamento_id,),
-    )
-    if cur.fetchone() is None:
-        return jsonify(error="Este departamento no tiene secciones"), 400
-    cur.execute(
-        """
-        SELECT 1
-        FROM seccion
-        WHERE id = %s AND departamento_id = %s
-        """,
-        (seccion_id, departamento_id),
-    )
-    if cur.fetchone() is None:
-        return jsonify(error="La sección no es de tu departamento"), 400
-    return None
-
-
-def _numero(valor):
-    if isinstance(valor, bool) or valor is None or valor == "":
-        return None
-    if isinstance(valor, (int, float)):
-        if valor < 0:
-            return "mal"
-        return float(valor)
-    if isinstance(valor, str):
-        try:
-            numero = float(valor.strip().replace(",", "."))
-        except ValueError:
-            return "mal"
-        if numero < 0:
-            return "mal"
-        return numero
-    return "mal"

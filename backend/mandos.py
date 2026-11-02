@@ -49,6 +49,34 @@ def departamentos_del_mando(cur, usuario_id):
     return ids
 
 
+def tiene_mando_activo(cur, departamento_id, excluir_login=None):
+    """True si ese departamento ya tiene un mando activo, propio o enlazado.
+
+    excluir_login no cuenta: sirve para reactivar a ese mismo mando.
+    """
+    cur.execute(
+        """
+        SELECT 1
+        FROM usuario AS u
+        WHERE u.rol = 'mando'
+          AND u.activo
+          AND (
+            u.departamento_id = %s
+            OR EXISTS (
+                SELECT 1
+                FROM mando_departamento AS m
+                WHERE m.usuario_id = u.id
+                  AND m.departamento_id = %s
+            )
+          )
+          AND (CAST(%s AS text) IS NULL OR u.login IS DISTINCT FROM %s)
+        LIMIT 1
+        """,
+        (departamento_id, departamento_id, excluir_login, excluir_login),
+    )
+    return cur.fetchone() is not None
+
+
 def departamento_permitido(cur, usuario_id, departamento_id):
     if departamento_id is None:
         return False

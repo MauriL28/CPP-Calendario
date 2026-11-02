@@ -25,6 +25,7 @@ def login():
                 LEFT JOIN departamento d ON d.id = u.departamento_id
                 LEFT JOIN delegacion g ON g.id = d.delegacion_id
                 WHERE u.login = %s
+                  AND u.activo
                   AND u.clave IS NOT NULL
                   AND u.clave = crypt(%s, u.clave)
                 """,
