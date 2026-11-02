@@ -5,6 +5,12 @@ function consultaAnalisis(filtros) {
   if (filtros.departamento) {
     consulta.set("departamento_id", filtros.departamento);
   }
+  if (filtros.delegacion) {
+    consulta.set("delegacion", filtros.delegacion);
+  }
+  if (filtros.codigo) {
+    consulta.set("codigo", filtros.codigo);
+  }
   if (filtros.coincide) {
     consulta.set("coincide", filtros.coincide);
   }
@@ -50,6 +56,10 @@ export async function exportarAnalisis(token, filtros) {
   enlace.download = nombre;
   enlace.click();
   URL.revokeObjectURL(url);
+}
+
+export function listarImportaciones(token) {
+  return pedir("/fichajes/importaciones", { token });
 }
 
 export function importarFichajes(token, archivo) {

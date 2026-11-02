@@ -136,11 +136,11 @@ CREATE TABLE ajuste (
 CREATE INDEX ajuste_afectado_fecha ON ajuste (usuario_afectado_id, fecha);
 
 -- Un evento del extracto (una fila del Excel), no el día ya sumado.
--- orden es la fila del Excel: desempata horas iguales y hace repetible la carga.
+-- orden es la fila del Excel de esa carga: solo informativo, no identifica el evento.
 -- usuario_id solo si numero_sap casa con un único usuario en toda la tabla.
 CREATE TABLE fichaje_evento (
     id          BIGSERIAL PRIMARY KEY,
-    orden       INTEGER NOT NULL UNIQUE,
+    orden       INTEGER NOT NULL,
     numero_sap  TEXT    NOT NULL,
     usuario_id  UUID REFERENCES usuario (id),
     tipo        TEXT,
@@ -149,6 +149,7 @@ CREATE TABLE fichaje_evento (
 );
 
 CREATE INDEX fichaje_evento_sap_fecha ON fichaje_evento (numero_sap, fecha);
+CREATE INDEX fichaje_evento_fecha ON fichaje_evento (fecha);
 
 -- coincide y horas_planificadas se rellenan al importar.
 -- Una incidencia deja coincide y horas_planificadas vacíos. horas_fichadas sigue en 0.
@@ -194,7 +195,9 @@ CREATE TABLE fichaje_importacion (
     filas_leidas                    INTEGER     NOT NULL,
     filas_insertadas_o_actualizadas INTEGER     NOT NULL,
     filas_sin_emparejar             INTEGER     NOT NULL,
-    dias_incidencia                 INTEGER     NOT NULL
+    dias_incidencia                 INTEGER     NOT NULL,
+    fecha_desde                     DATE,
+    fecha_hasta                     DATE
 );
 
 CREATE TABLE festivo (

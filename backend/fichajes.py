@@ -481,30 +481,22 @@ def agrupar_dias(eventos, rango=None):
     return dias
 
 
-def _mismo_reloj(izquierda, derecha):
-    def partes(valor):
-        if isinstance(valor, datetime):
-            valor = valor.time()
-        return (valor.hour, valor.minute, valor.second, valor.microsecond)
-
-    return partes(izquierda) == partes(derecha)
+def _reloj(valor):
+    if isinstance(valor, datetime):
+        valor = valor.time()
+    return (valor.hour, valor.minute, valor.second, valor.microsecond)
 
 
-def _igual_evento(previo, ev):
-    return (
-        previo["numero_sap"] == ev["numero_sap"]
-        and previo["tipo"] == ev["tipo"]
-        and previo["fecha"] == ev["fecha"]
-        and _mismo_reloj(previo["hora"], ev["hora"])
-    )
+def _clave_evento(ev):
+    """numero_sap, tipo, fecha y hora. orden no identifica el evento."""
+    return (ev["numero_sap"], ev["tipo"], ev["fecha"], _reloj(ev["hora"]))
 
 
 def _insertar_eventos(cur, eventos):
     """Devuelve (nuevas, actualizadas).
 
-    La fila que ya está, con el mismo orden y los mismos datos, no se borra
-    ni se vuelve a insertar. Así la segunda carga del mismo libro no cuenta
-    como filas nuevas.
+    Sustituye solo el rango de fechas de este Excel y las filas sin fecha.
+    Lo que queda fuera de ese rango se conserva. Luego inserta todas las filas.
     """
     cur.execute(
         """
@@ -512,24 +504,31 @@ def _insertar_eventos(cur, eventos):
         FROM fichaje_evento
         """
     )
-    previos = {fila["orden"]: fila for fila in cur.fetchall()}
-    ordenes = [ev["orden"] for ev in eventos]
-    if ordenes:
+    previos = list(cur.fetchall())
+    claves_previas = {_clave_evento(fila) for fila in previos}
+    claves_excel = {_clave_evento(ev) for ev in eventos}
+    fechas = [ev["fecha"] for ev in eventos if ev["fecha"] is not None]
+    if fechas:
+        desde, hasta = min(fechas), max(fechas)
         cur.execute(
-            "DELETE FROM fichaje_evento WHERE NOT (orden = ANY(%s))",
-            (ordenes,),
+            """
+            DELETE FROM fichaje_evento
+            WHERE fecha BETWEEN %s AND %s
+               OR fecha IS NULL
+            """,
+            (desde, hasta),
+        )
+        actualizadas = sum(
+            1
+            for fila in previos
+            if fila["fecha"] is not None
+            and desde <= fila["fecha"] <= hasta
+            and _clave_evento(fila) not in claves_excel
         )
     else:
-        cur.execute("DELETE FROM fichaje_evento")
-    nuevos = []
-    cambiados = []
-    for ev in eventos:
-        previo = previos.get(ev["orden"])
-        if previo is None:
-            nuevos.append(ev)
-        elif not _igual_evento(previo, ev):
-            cambiados.append(ev)
-    if nuevos:
+        actualizadas = 0
+    nuevas = sum(1 for ev in eventos if _clave_evento(ev) not in claves_previas)
+    if eventos:
         cur.executemany(
             """
             INSERT INTO fichaje_evento (orden, numero_sap, tipo, fecha, hora)
@@ -537,19 +536,7 @@ def _insertar_eventos(cur, eventos):
             """,
             [
                 (ev["orden"], ev["numero_sap"], ev["tipo"], ev["fecha"], ev["hora"])
-                for ev in nuevos
-            ],
-        )
-    if cambiados:
-        cur.executemany(
-            """
-            UPDATE fichaje_evento
-            SET numero_sap = %s, tipo = %s, fecha = %s, hora = %s, usuario_id = NULL
-            WHERE orden = %s
-            """,
-            [
-                (ev["numero_sap"], ev["tipo"], ev["fecha"], ev["hora"], ev["orden"])
-                for ev in cambiados
+                for ev in eventos
             ],
         )
     cur.execute(
@@ -566,7 +553,7 @@ def _insertar_eventos(cur, eventos):
         WHERE e.numero_sap = m.numero_sap
         """
     )
-    return len(nuevos), len(cambiados)
+    return nuevas, actualizadas
 
 
 def _leer_eventos(cur):
@@ -743,15 +730,19 @@ def cargar(ruta, registro=None):
         dias_resueltos = [dia for dia in dias if dia["usuario_id"] is not None]
         incidencias = sum(1 for dia in dias if dia["incidencia"])
         sin_emparejar = len(sin_coincidencia) + len(filas_ambiguas)
+        fechas = [ev["fecha"] for ev in eventos if ev["fecha"] is not None]
+        fecha_desde = min(fechas) if fechas else None
+        fecha_hasta = max(fechas) if fechas else None
         if registro is not None:
             cur.execute(
                 """
                 INSERT INTO fichaje_importacion (
                     usuario_id, nombre_archivo, filas_leidas,
                     filas_insertadas_o_actualizadas,
-                    filas_sin_emparejar, dias_incidencia
+                    filas_sin_emparejar, dias_incidencia,
+                    fecha_desde, fecha_hasta
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     registro["usuario_id"],
@@ -760,6 +751,8 @@ def cargar(ruta, registro=None):
                     nuevas + actualizadas,
                     sin_emparejar,
                     incidencias,
+                    fecha_desde,
+                    fecha_hasta,
                 ),
             )
     return {
@@ -783,6 +776,8 @@ def cargar(ruta, registro=None):
         "fichajes_insertados": fichajes,
         "fichajes_en_tabla": filas_fichaje,
         "dias_detalle": dias,
+        "fecha_desde": fecha_desde.isoformat() if fecha_desde else None,
+        "fecha_hasta": fecha_hasta.isoformat() if fecha_hasta else None,
     }
 
 
