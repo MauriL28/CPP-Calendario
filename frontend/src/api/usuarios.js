@@ -12,6 +12,37 @@ export function cambiarNumeroSapMando(token, login, numeroSap) {
   });
 }
 
+export function cambiarActivoMando(token, login, activo) {
+  return pedir(`/usuarios/${encodeURIComponent(login)}/activo`, {
+    method: "PUT",
+    token,
+    cuerpo: { activo },
+  });
+}
+
+export function asignarDepartamentoMando(token, login, delegacion, departamento) {
+  return pedir(`/usuarios/${encodeURIComponent(login)}/departamentos`, {
+    method: "POST",
+    token,
+    cuerpo: { delegacion, departamento },
+  });
+}
+
+export function quitarDepartamentoMando(token, login, departamentoId) {
+  return pedir(
+    `/usuarios/${encodeURIComponent(login)}/departamentos/${encodeURIComponent(departamentoId)}`,
+    { method: "DELETE", token },
+  );
+}
+
+export function editarUsuario(token, login, cambios) {
+  return pedir(`/usuarios/${encodeURIComponent(login)}`, {
+    method: "PUT",
+    token,
+    cuerpo: cambios,
+  });
+}
+
 export function crearTrabajador(token, datos) {
   return pedir("/trabajadores", { method: "POST", token, cuerpo: datos });
 }

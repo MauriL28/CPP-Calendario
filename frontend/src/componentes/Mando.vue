@@ -14,6 +14,7 @@ import {
   listarAjustes,
 } from "../api/usuarios.js";
 import Analisis from "./Analisis.vue";
+import HorarioHabitual from "./HorarioHabitual.vue";
 import Cuadrante from "./Cuadrante.vue";
 import FichaEmpleado from "./FichaEmpleado.vue";
 
@@ -35,10 +36,7 @@ const clave = ref("");
 const numeroSap = ref("");
 const grupo = ref("STEF");
 const letras = ["L", "M", "X", "J", "V", "S", "D"];
-const diasMarcados = ref([true, true, true, true, true, false, false]);
-const horasDia = ref(letras.map(() => ({ inicio: "", fin: "" })));
-const plantillaDia = ref(null);
-const propios = ref(letras.map(() => false));
+const horarioAlta = ref(null);
 const vacaciones = ref("");
 const horasContrato = ref("");
 const seccionId = ref("");
@@ -172,10 +170,7 @@ async function cargarDepartamentos() {
 }
 
 function reiniciarHorario() {
-  diasMarcados.value = [true, true, true, true, true, false, false];
-  horasDia.value = letras.map(() => ({ inicio: "", fin: "" }));
-  plantillaDia.value = null;
-  propios.value = letras.map(() => false);
+  horarioAlta.value?.reiniciar();
 }
 
 function vaciarAlta() {
@@ -220,37 +215,6 @@ function alClicFueraMenu(evento) {
   if (!evento.target.closest(".equipo-mas")) {
     cerrarMenu();
   }
-}
-
-function alMarcar(dia, evento) {
-  const marcado = evento.target.checked;
-  diasMarcados.value[dia] = marcado;
-  if (!marcado || plantillaDia.value === null || propios.value[dia]) {
-    return;
-  }
-  const origen = horasDia.value[plantillaDia.value];
-  horasDia.value[dia] = { inicio: origen.inicio, fin: origen.fin };
-}
-
-function alHora(dia, campo, valor) {
-  const actual = horasDia.value[dia];
-  horasDia.value[dia] = { ...actual, [campo]: valor };
-  if (plantillaDia.value === null) {
-    plantillaDia.value = dia;
-  } else if (dia !== plantillaDia.value) {
-    propios.value[dia] = true;
-    return;
-  }
-  const origen = horasDia.value[dia];
-  horasDia.value = horasDia.value.map((item, indice) => {
-    if (indice === dia) {
-      return origen;
-    }
-    if (!diasMarcados.value[indice] || propios.value[indice]) {
-      return item;
-    }
-    return { inicio: origen.inicio, fin: origen.fin };
-  });
 }
 
 function abrirAlta() {
@@ -535,24 +499,9 @@ async function darDeBaja(trabajador) {
 
 async function guardar() {
   errorTrabajador.value = "";
-  const horarioDias = [];
-  for (let dia = 0; dia < letras.length; dia += 1) {
-    if (!diasMarcados.value[dia]) {
-      continue;
-    }
-    const horas = horasDia.value[dia];
-    if (!horas.inicio || !horas.fin) {
-      errorTrabajador.value = "Indica la hora de inicio y de fin de cada día marcado.";
-      return;
-    }
-    horarioDias.push({
-      dia_semana: dia,
-      hora_inicio: horas.inicio,
-      hora_fin: horas.fin,
-    });
-  }
-  if (!horarioDias.length) {
-    errorTrabajador.value = "Marca al menos un día.";
+  const horario = horarioAlta.value?.horarioDias();
+  if (!horario?.horario_dias) {
+    errorTrabajador.value = horario?.error || "Marca al menos un día.";
     return;
   }
   try {
@@ -562,7 +511,7 @@ async function guardar() {
       clave: clave.value,
       grupo: grupo.value,
       numero_sap: numeroSap.value,
-      horario_dias: horarioDias,
+      horario_dias: horario.horario_dias,
       vacaciones: numero(vacaciones.value),
       horas_contrato: numero(horasContrato.value),
       seccion_id: seccionId.value || null,
@@ -984,41 +933,7 @@ onUnmounted(() => {
               <input v-model="vacaciones" name="vacaciones" type="number" min="0" step="0.5" />
             </label>
           </div>
-          <h3>Horario habitual</h3>
-          <div class="ancho alta-dias-marcas">
-            <label v-for="(letra, dia) in letras" :key="letra" class="alta-casilla">
-              <input
-                type="checkbox"
-                :checked="diasMarcados[dia]"
-                @change="alMarcar(dia, $event)"
-              />
-              {{ letra }}
-            </label>
-          </div>
-          <div
-            v-for="(letra, dia) in letras"
-            v-show="diasMarcados[dia]"
-            :key="`horas-${letra}`"
-            class="ancho alta-dia-horas"
-          >
-            <span>{{ letra }}</span>
-            <label>
-              Hora de inicio
-              <input
-                :value="horasDia[dia].inicio"
-                type="time"
-                @input="alHora(dia, 'inicio', $event.target.value)"
-              />
-            </label>
-            <label>
-              Hora de fin
-              <input
-                :value="horasDia[dia].fin"
-                type="time"
-                @input="alHora(dia, 'fin', $event.target.value)"
-              />
-            </label>
-          </div>
+          <HorarioHabitual ref="horarioAlta" />
         </div>
         <p v-if="errorTrabajador" class="error" role="alert">{{ errorTrabajador }}</p>
         <footer class="alta-dialogo-pie">

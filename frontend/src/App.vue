@@ -77,7 +77,13 @@ function salir() {
       </div>
     </header>
     <main>
-      <Admin v-if="rol === 'admin'" :key="marcaPaso" :token="token" :delegaciones="delegaciones" />
+      <Admin
+        v-if="rol === 'admin'"
+        :key="marcaPaso"
+        :token="token"
+        :delegaciones="delegaciones"
+        :nombre-sesion="nombre"
+      />
       <Mando v-else-if="rol === 'mando'" :key="marcaPaso" :token="token" />
       <Trabajador v-else-if="rol === 'trabajador'" :token="token" :login="login" />
     </main>
