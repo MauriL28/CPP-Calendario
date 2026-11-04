@@ -78,6 +78,13 @@ export function textoCelda(turno) {
     return "";
   }
   if (turno.ausencia) {
+    if (
+      (turno.ausencia === "ST" || turno.ausencia === "FT")
+      && turno.hora_inicio
+      && turno.hora_fin
+    ) {
+      return `${turno.ausencia} ${horaCompacta(turno.hora_inicio)}-${horaCompacta(turno.hora_fin)}`;
+    }
     return turno.ausencia;
   }
   return `${horaCompacta(turno.hora_inicio)}-${horaCompacta(turno.hora_fin)}`;

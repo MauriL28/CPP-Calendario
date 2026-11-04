@@ -56,12 +56,12 @@ function salir() {
         <button v-if="rol !== 'trabajador'" type="button" class="marca" @click="alMarca">
           <img class="marca-logo" :src="logo" alt="STEF" />
           <span class="marca-sep"></span>
-          <h1>CPP-Calendario</h1>
+          <h1>Stef365</h1>
         </button>
         <div v-else class="marca">
           <img class="marca-logo" :src="logo" alt="STEF" />
           <span class="marca-sep"></span>
-          <h1>CPP-Calendario</h1>
+          <h1>Stef365</h1>
         </div>
         <div class="sesion">
           <span class="avatar">{{ iniciales }}</span>
@@ -89,7 +89,7 @@ function salir() {
     </main>
     <footer class="pie">
       <div class="pie-interior">
-        <p class="pie-marca">CPP-Calendario</p>
+        <p class="pie-marca">Stef365</p>
         <p class="pie-meta">STEF · {{ anio }}</p>
       </div>
     </footer>

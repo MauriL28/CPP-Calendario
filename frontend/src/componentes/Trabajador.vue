@@ -13,15 +13,45 @@ const ficha = ref(false);
 
 <template>
   <header v-if="!ficha" class="mi-horario">
-    <h1>Mi horario</h1>
+    <div class="mi-horario-fila">
+      <h1>Mi horario</h1>
+      <button type="button" class="primario" @click="ficha = true">Ver mi ficha</button>
+    </div>
     <p>Turnos de la semana seleccionada.</p>
-    <button type="button" class="enlace" @click="ficha = true">Ver ficha</button>
-  </header>
-  <header v-else class="mi-horario">
-    <button type="button" class="enlace" @click="ficha = false">Mi horario</button>
   </header>
   <div v-show="!ficha">
     <Cuadrante :token="token" propia />
   </div>
-  <FichaEmpleado v-if="ficha" :token="token" :login="login" />
+  <FichaEmpleado v-if="ficha" :token="token" :login="login" volver @volver="ficha = false" />
 </template>
+
+<style scoped>
+div :deep(.aviso-lectura) {
+  display: none;
+}
+
+.mi-horario-fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mi-horario-fila button.primario {
+  padding: 10px 22px;
+  font-size: 16px;
+  font-weight: 700;
+  min-height: 44px;
+}
+
+@media (max-width: 599px) {
+  .mi-horario-fila {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mi-horario-fila button.primario {
+    width: 100%;
+  }
+}
+</style>
