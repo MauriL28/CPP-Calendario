@@ -11,7 +11,9 @@ from mandos import departamento_permitido, departamentos_del_mando
 from horas import hora_texto, parse_hora
 from rutas.turnos import _texto_celda
 from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
+from vacaciones import dias_v_usados
 import validaciones
+from usuarios_edicion import campos_desconocidos, editar_campos
 from validaciones import (
     comprobar_seccion,
     error_unico,
@@ -44,12 +46,17 @@ def crear_trabajador():
         return error
     if vacaciones is None or horas_contrato is None or vacaciones == "mal" or horas_contrato == "mal":
         return jsonify(error="Faltan datos"), 400
-    filas, error = _horario_dias(cuerpo.get("horario_dias"))
-    if error:
-        return error
-    desde, error = _desde(cuerpo.get("desde"))
-    if error:
-        return error
+    horario_pedido = cuerpo.get("horario_dias")
+    sin_horario = horario_pedido is None or horario_pedido == []
+    filas = []
+    desde = None
+    if not sin_horario:
+        filas, error = _horario_dias(horario_pedido)
+        if error:
+            return error
+        desde, error = _desde(cuerpo.get("desde"))
+        if error:
+            return error
     numero_sap, error = validaciones.numero_sap(cuerpo.get("numero_sap"))
     if error:
         return error
@@ -62,6 +69,17 @@ def crear_trabajador():
             departamento_id, error = _departamento_alta(cur, cuerpo.get("departamento_id"))
             if error:
                 return error
+            cur.execute(
+                """
+                SELECT usa_horario_habitual
+                FROM departamento
+                WHERE id = %s
+                """,
+                (departamento_id,),
+            )
+            departamento = cur.fetchone()
+            if sin_horario and (departamento is None or departamento["usa_horario_habitual"]):
+                return jsonify(error="Faltan datos"), 400
             error = comprobar_seccion(cur, departamento_id, seccion_id)
             if error:
                 return error
@@ -95,23 +113,24 @@ def crear_trabajador():
                 ),
             )
             creado = cur.fetchone()
-            cur.execute(
-                """
-                INSERT INTO horario_version (usuario_id, desde)
-                VALUES (%s, %s)
-                """,
-                (creado["id"], desde),
-            )
-            for dia, inicio, fin in filas:
+            if not sin_horario:
                 cur.execute(
                     """
-                    INSERT INTO horario_dia (
-                        usuario_id, desde, dia_semana, horario_inicio, horario_fin
-                    )
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO horario_version (usuario_id, desde)
+                    VALUES (%s, %s)
                     """,
-                    (creado["id"], desde, dia, inicio, fin),
+                    (creado["id"], desde),
                 )
+                for dia, inicio, fin in filas:
+                    cur.execute(
+                        """
+                        INSERT INTO horario_dia (
+                            usuario_id, desde, dia_semana, horario_inicio, horario_fin
+                        )
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (creado["id"], desde, dia, inicio, fin),
+                    )
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.errors.UniqueViolation as exc:
@@ -129,6 +148,41 @@ def crear_trabajador():
         numero_sap=creado["numero_sap"],
         seccion_id=str(creado["seccion_id"]) if creado["seccion_id"] else None,
     ), 201
+
+
+@bp.put("/trabajadores/<login_nombre>")
+@jwt_required()
+def editar_trabajador(login_nombre):
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+
+    cuerpo = request.get_json(silent=True) or {}
+    if not isinstance(cuerpo, dict):
+        return jsonify(error="Faltan datos"), 400
+    if campos_desconocidos(cuerpo):
+        return jsonify(error="Campo no permitido"), 400
+
+    try:
+        with cursor() as cur:
+            trabajador = _trabajador_permitido(cur, login_nombre)
+            if trabajador is None:
+                return jsonify(error="Ese trabajador no es de tu departamento"), 404
+            persona = {
+                "id": trabajador["id"],
+                "rol": "trabajador",
+                "departamento_id": trabajador["departamento_id"],
+            }
+            cambios, error = editar_campos(cur, persona, cuerpo)
+            if error:
+                return error
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.errors.UniqueViolation as exc:
+        return error_unico(exc)
+    except psycopg.Error as exc:
+        return error_bd(exc)
+
+    return jsonify(login=login_nombre, rol="trabajador", **cambios), 200
 
 
 @bp.put("/trabajadores/<login_nombre>/baja")
@@ -276,6 +330,53 @@ def cambiar_seccion(login_nombre):
     )
 
 
+def guardar_horario(cur, usuario_id, cuerpo):
+    """Valida el horario y, si hay cursor, lo escribe. Sin cursor solo valida."""
+    filas, error = _horario_dias(None if not isinstance(cuerpo, dict) else cuerpo.get("horario_dias"))
+    if error:
+        return None, error
+    desde, error = _desde_futuro(None if not isinstance(cuerpo, dict) else cuerpo.get("desde"))
+    if error:
+        return None, error
+    if cur is not None:
+        cur.execute(
+            """
+            DELETE FROM horario_dia
+            WHERE usuario_id = %s AND desde = %s
+            """,
+            (usuario_id, desde),
+        )
+        cur.execute(
+            """
+            INSERT INTO horario_version (usuario_id, desde)
+            VALUES (%s, %s)
+            ON CONFLICT (usuario_id, desde) DO NOTHING
+            """,
+            (usuario_id, desde),
+        )
+        for dia, inicio, fin in filas:
+            cur.execute(
+                """
+                INSERT INTO horario_dia (
+                    usuario_id, desde, dia_semana, horario_inicio, horario_fin
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (usuario_id, desde, dia, inicio, fin),
+            )
+    return {
+        "desde": desde.isoformat(),
+        "horario": [
+            {
+                "dia_semana": dia,
+                "inicio": hora_texto(inicio),
+                "fin": hora_texto(fin),
+            }
+            for dia, inicio, fin in filas
+        ],
+    }, None
+
+
 @bp.put("/trabajadores/<login_nombre>/horario")
 @jwt_required()
 def cambiar_horario(login_nombre):
@@ -283,10 +384,7 @@ def cambiar_horario(login_nombre):
         return jsonify(error="No autorizado"), 403
 
     cuerpo = request.get_json(silent=True) or {}
-    filas, error = _horario_dias(cuerpo.get("horario_dias"))
-    if error:
-        return error
-    desde, error = _desde_futuro(cuerpo.get("desde"))
+    _datos, error = guardar_horario(None, None, cuerpo)
     if error:
         return error
 
@@ -295,48 +393,41 @@ def cambiar_horario(login_nombre):
             trabajador = _trabajador_permitido(cur, login_nombre)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
-            cur.execute(
-                """
-                DELETE FROM horario_dia
-                WHERE usuario_id = %s AND desde = %s
-                """,
-                (trabajador["id"], desde),
-            )
-            cur.execute(
-                """
-                INSERT INTO horario_version (usuario_id, desde)
-                VALUES (%s, %s)
-                ON CONFLICT (usuario_id, desde) DO NOTHING
-                """,
-                (trabajador["id"], desde),
-            )
-            for dia, inicio, fin in filas:
-                cur.execute(
-                    """
-                    INSERT INTO horario_dia (
-                        usuario_id, desde, dia_semana, horario_inicio, horario_fin
-                    )
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (trabajador["id"], desde, dia, inicio, fin),
-                )
+            datos, error = guardar_horario(cur, trabajador["id"], cuerpo)
+            if error:
+                return error
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
         return error_bd(exc)
 
-    return jsonify(
-        login=login_nombre,
-        desde=desde.isoformat(),
-        horario=[
-            {
-                "dia_semana": dia,
-                "inicio": hora_texto(inicio),
-                "fin": hora_texto(fin),
-            }
-            for dia, inicio, fin in filas
-        ],
-    )
+    return jsonify(login=login_nombre, **datos)
+
+
+@bp.put("/mandos/propio/horario")
+@jwt_required()
+def cambiar_horario_propio():
+    if get_jwt().get("rol") != "mando":
+        return jsonify(error="No autorizado"), 403
+
+    cuerpo = request.get_json(silent=True) or {}
+    if cuerpo.get("login") not in (None, ""):
+        return jsonify(error="Campo no permitido"), 400
+    _datos, error = guardar_horario(None, None, cuerpo)
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            datos, error = guardar_horario(cur, get_jwt_identity(), cuerpo)
+            if error:
+                return error
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
+
+    return jsonify(**datos)
 
 
 @bp.get("/trabajadores/<login_nombre>/ficha")
@@ -416,6 +507,7 @@ def ficha(login_nombre):
                 }
                 for fila in cur.fetchall()
             ]
+            usados_v = dias_v_usados(cur, trabajador["id"], anio)
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
@@ -448,6 +540,7 @@ def ficha(login_nombre):
             if dia.weekday() == 5:
                 sabados_trabajados += 1
         dia += timedelta(days=1)
+    ausencias["V"] = usados_v
 
     return jsonify(
         nombre=trabajador["nombre"],

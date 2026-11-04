@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
 import { importarFichajes, listarImportaciones } from "../api/fichajes.js";
 import Analisis from "./Analisis.vue";
@@ -9,6 +9,7 @@ import Festivos from "./Festivos.vue";
 import {
   asignarDepartamentoMando,
   cambiarActivoMando,
+  cambiarHorarioMando,
   crearMando,
   crearTrabajador,
   quitarDepartamentoMando,
@@ -58,6 +59,11 @@ const clave = ref("");
 const numeroSap = ref("");
 const errorMando = ref("");
 const personaEditar = ref(null);
+const dialogoHorario = ref(null);
+const horarioMando = ref(null);
+const horarioMandoForm = ref(null);
+const desdeHorario = ref("");
+const errorHorario = ref("");
 const seccionesEditar = ref([]);
 const archivo = ref(null);
 const entradaArchivo = ref(null);
@@ -254,6 +260,80 @@ async function alGuardarUsuario() {
   await cargar();
 }
 
+function fechaLocal(dia) {
+  const mes = String(dia.getMonth() + 1).padStart(2, "0");
+  const numero = String(dia.getDate()).padStart(2, "0");
+  return `${dia.getFullYear()}-${mes}-${numero}`;
+}
+
+function hoyIso() {
+  return fechaLocal(new Date());
+}
+
+function lunesQueViene() {
+  const hoy = new Date();
+  hoy.setHours(12, 0, 0, 0);
+  const salto = hoy.getDay() === 1 ? 0 : (8 - hoy.getDay()) % 7;
+  hoy.setDate(hoy.getDate() + salto);
+  return fechaLocal(hoy);
+}
+
+function abrirHorario(mando) {
+  horarioMando.value = mando;
+  desdeHorario.value = lunesQueViene();
+  errorHorario.value = "";
+  dialogoHorario.value?.showModal();
+  nextTick(() => dialogoHorario.value?.querySelector("[name='desde-horario']")?.focus());
+}
+
+function cerrarHorario() {
+  dialogoHorario.value?.close();
+}
+
+function alCerrarHorario() {
+  horarioMando.value = null;
+  errorHorario.value = "";
+}
+
+function alFondoHorario(evento) {
+  if (evento.target === dialogoHorario.value) {
+    cerrarHorario();
+  }
+}
+
+async function guardarHorario() {
+  errorHorario.value = "";
+  const mando = horarioMando.value;
+  if (!mando) {
+    return;
+  }
+  if (!desdeHorario.value) {
+    errorHorario.value = "Indica desde qué fecha aplica.";
+    return;
+  }
+  if (desdeHorario.value < hoyIso()) {
+    errorHorario.value = "La fecha no puede ser anterior a hoy.";
+    return;
+  }
+  const horario = horarioMandoForm.value?.horarioDias();
+  if (!horario?.horario_dias) {
+    errorHorario.value = horario?.error || "Marca al menos un día.";
+    return;
+  }
+  const sede = sedeVisible.value;
+  try {
+    await cambiarHorarioMando(props.token, mando.login, {
+      desde: desdeHorario.value,
+      horario_dias: horario.horario_dias,
+    });
+    cerrarHorario();
+    await cargar();
+    sedeVisible.value = sede;
+  } catch (causa) {
+    errorHorario.value = causa instanceof Error ? causa.message : "No se pudo cambiar el horario";
+  }
+}
+
 function volver() {
   errorMando.value = "";
   errorAccion.value = "";
@@ -301,11 +381,6 @@ async function guardarTrabajador() {
     errorTrabajador.value = "No se ha encontrado el departamento";
     return;
   }
-  const horario = horarioSeleccionado();
-  if (!horario?.horario_dias) {
-    errorTrabajador.value = horario?.error || "Marca al menos un día.";
-    return;
-  }
   errorTrabajador.value = "";
   const datos = {
     nombre: nombreTrabajador.value,
@@ -316,8 +391,15 @@ async function guardarTrabajador() {
     horas_contrato: numeroTrabajador(horasContratoTrabajador.value),
     numero_sap: numeroSapTrabajador.value,
     departamento_id: sede.id,
-    horario_dias: horario.horario_dias,
   };
+  if (sede.usa_horario_habitual !== false) {
+    const horario = horarioSeleccionado();
+    if (!horario?.horario_dias) {
+      errorTrabajador.value = horario?.error || "Marca al menos un día.";
+      return;
+    }
+    datos.horario_dias = horario.horario_dias;
+  }
   if (sede.secciones?.length) {
     datos.seccion_id = seccionTrabajador.value || null;
   }
@@ -648,6 +730,7 @@ onMounted(cargar);
                   <button v-if="mando.propio === false" type="button" @click="quitarDeSede(mando, sede)">
                     Quitar de esta sede
                   </button>
+                  <button type="button" @click="abrirHorario(mando)">Horario</button>
                   <button type="button" @click="abrirEdicion(mando, 'mando', sede)">Editar</button>
                 </span>
               </li>
@@ -701,7 +784,7 @@ onMounted(cargar);
                   </option>
                 </select>
               </label>
-              <HorarioHabitual ref="horarioTrabajador" />
+              <HorarioHabitual v-if="sede.usa_horario_habitual !== false" ref="horarioTrabajador" />
               <p v-if="errorTrabajador" class="error" role="alert">{{ errorTrabajador }}</p>
               <button class="primario" type="submit">Guardar trabajador</button>
             </form>
@@ -919,6 +1002,35 @@ onMounted(cargar);
   </section>
   <Analisis v-else-if="vista === 'analisis'" :token="token" />
   <Festivos v-else-if="vista === 'festivos'" :token="token" />
+  <dialog ref="dialogoHorario" class="alta-dialogo" @close="alCerrarHorario" @click="alFondoHorario">
+    <form v-if="horarioMando" @submit.prevent="guardarHorario">
+      <header class="alta-dialogo-cabecera">
+        <div>
+          <h2>Cambiar horario</h2>
+          <p class="alta-dialogo-persona">{{ horarioMando.nombre }}</p>
+        </div>
+        <button type="button" class="dialogo-cerrar" @click="cerrarHorario">✕</button>
+      </header>
+      <div class="alta-dialogo-cuerpo">
+        <label class="ancho">
+          Desde
+          <input
+            v-model="desdeHorario"
+            name="desde-horario"
+            type="date"
+            required
+            :min="hoyIso()"
+          />
+        </label>
+        <HorarioHabitual ref="horarioMandoForm" />
+      </div>
+      <p v-if="errorHorario" class="error" role="alert">{{ errorHorario }}</p>
+      <footer class="alta-dialogo-pie">
+        <button type="button" @click="cerrarHorario">Cancelar</button>
+        <button class="primario" type="submit">Guardar horario</button>
+      </footer>
+    </form>
+  </dialog>
   <EditarUsuario
     v-if="personaEditar"
     :token="token"

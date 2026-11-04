@@ -43,6 +43,14 @@ export function editarUsuario(token, login, cambios) {
   });
 }
 
+export function editarTrabajador(token, login, cambios) {
+  return pedir(`/trabajadores/${encodeURIComponent(login)}`, {
+    method: "PUT",
+    token,
+    cuerpo: cambios,
+  });
+}
+
 export function crearTrabajador(token, datos) {
   return pedir("/trabajadores", { method: "POST", token, cuerpo: datos });
 }
@@ -57,6 +65,22 @@ export function cambiarSeccion(token, login, seccionId) {
 
 export function cambiarHorario(token, login, datos) {
   return pedir(`/trabajadores/${encodeURIComponent(login)}/horario`, {
+    method: "PUT",
+    token,
+    cuerpo: datos,
+  });
+}
+
+export function cambiarHorarioPropio(token, datos) {
+  return pedir("/mandos/propio/horario", {
+    method: "PUT",
+    token,
+    cuerpo: datos,
+  });
+}
+
+export function cambiarHorarioMando(token, login, datos) {
+  return pedir(`/usuarios/${encodeURIComponent(login)}/horario`, {
     method: "PUT",
     token,
     cuerpo: datos,

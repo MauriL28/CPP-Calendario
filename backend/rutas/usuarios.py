@@ -9,7 +9,9 @@ from errores import error_bd
 from mandos import departamento_permitido, departamentos_del_mando, tiene_mando_activo
 from horas import hora_texto
 import validaciones
-from validaciones import comprobar_seccion, error_unico, sap_ocupado
+from rutas.trabajadores import guardar_horario
+from usuarios_edicion import campos_desconocidos, editar_campos
+from validaciones import error_unico, sap_ocupado
 
 bp = Blueprint("usuarios", __name__)
 
@@ -281,20 +283,6 @@ def cambiar_numero_sap_mando(login_nombre):
     return jsonify(login=login_nombre, numero_sap=numero_sap)
 
 
-CAMPOS_COMUNES = {"nombre", "numero_sap", "clave"}
-CAMPOS_TRABAJADOR = {"grupo", "vacaciones", "horas_contrato", "seccion_id"}
-CAMPOS_USUARIO = CAMPOS_COMUNES | CAMPOS_TRABAJADOR
-ORDEN_USUARIO = (
-    "nombre",
-    "numero_sap",
-    "clave",
-    "grupo",
-    "vacaciones",
-    "horas_contrato",
-    "seccion_id",
-)
-
-
 @bp.put("/usuarios/<login_nombre>")
 @jwt_required()
 def editar_usuario(login_nombre):
@@ -304,7 +292,7 @@ def editar_usuario(login_nombre):
     cuerpo = request.get_json(silent=True) or {}
     if not isinstance(cuerpo, dict):
         return jsonify(error="Faltan datos"), 400
-    if any(clave not in CAMPOS_USUARIO for clave in cuerpo):
+    if campos_desconocidos(cuerpo):
         return jsonify(error="Campo no permitido"), 400
 
     try:
@@ -320,19 +308,9 @@ def editar_usuario(login_nombre):
             persona = cur.fetchone()
             if persona is None:
                 return jsonify(error="No se ha encontrado el usuario"), 404
-            if persona["rol"] == "mando" and any(clave in CAMPOS_TRABAJADOR for clave in cuerpo):
-                return jsonify(error="Campo no permitido"), 400
-            cambios, error = _cambios_usuario(cuerpo)
+            cambios, error = editar_campos(cur, persona, cuerpo)
             if error:
                 return error
-            if "seccion_id" in cambios:
-                error = comprobar_seccion(cur, persona["departamento_id"], cambios["seccion_id"])
-                if error:
-                    return error
-            if "numero_sap" in cuerpo and sap_ocupado(cur, cambios["numero_sap"], persona["id"]):
-                return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
-            if cambios:
-                _guardar_usuario(cur, persona["id"], cambios)
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.errors.UniqueViolation as exc:
@@ -340,72 +318,7 @@ def editar_usuario(login_nombre):
     except psycopg.Error as exc:
         return error_bd(exc)
 
-    return jsonify(login=login_nombre, rol=persona["rol"], **_respuesta_usuario(cambios)), 200
-
-
-def _cambios_usuario(cuerpo):
-    cambios = {}
-    if "nombre" in cuerpo:
-        nombre = cuerpo["nombre"]
-        if not isinstance(nombre, str) or not nombre.strip():
-            return None, (jsonify(error="Faltan datos"), 400)
-        nombre = nombre.strip()
-        if len(nombre) > 100:
-            return None, (jsonify(error="El nombre es demasiado largo"), 400)
-        cambios["nombre"] = nombre
-    if "numero_sap" in cuerpo:
-        numero, error = validaciones.numero_sap(cuerpo["numero_sap"])
-        if error:
-            return None, error
-        cambios["numero_sap"] = numero
-    if "clave" in cuerpo:
-        clave = cuerpo["clave"]
-        if not isinstance(clave, str) or not clave.strip():
-            return None, (jsonify(error="Faltan datos"), 400)
-        cambios["clave"] = clave
-    if "grupo" in cuerpo:
-        error = validaciones.grupo_valido(cuerpo["grupo"])
-        if error:
-            return None, error
-        cambios["grupo"] = cuerpo["grupo"]
-    for campo in ("vacaciones", "horas_contrato"):
-        if campo not in cuerpo:
-            continue
-        valor = validaciones.numero(cuerpo[campo])
-        if valor is None or valor == "mal":
-            return None, (jsonify(error="Faltan datos"), 400)
-        cambios[campo] = valor
-    if "seccion_id" in cuerpo:
-        seccion_id, error = validaciones.leer_seccion_id(cuerpo, opcional=False)
-        if error:
-            return None, error
-        cambios["seccion_id"] = seccion_id
-    return cambios, None
-
-
-def _guardar_usuario(cur, usuario_id, cambios):
-    columnas = []
-    params = []
-    for campo in ORDEN_USUARIO:
-        if campo not in cambios:
-            continue
-        if campo == "clave":
-            columnas.append("clave = crypt(%s, gen_salt('bf'))")
-        else:
-            columnas.append(f"{campo} = %s")
-        params.append(cambios[campo])
-    params.append(usuario_id)
-    cur.execute(
-        f"UPDATE usuario SET {', '.join(columnas)} WHERE id = %s",
-        tuple(params),
-    )
-
-
-def _respuesta_usuario(cambios):
-    visible = {campo: valor for campo, valor in cambios.items() if campo != "clave"}
-    if visible.get("seccion_id") is not None:
-        visible["seccion_id"] = str(visible["seccion_id"])
-    return visible
+    return jsonify(login=login_nombre, rol=persona["rol"], **cambios), 200
 
 
 def _mando(cur, login_nombre):
@@ -431,6 +344,33 @@ def _departamento(cur, delegacion, codigo):
         (delegacion, codigo),
     )
     return cur.fetchone()
+
+
+@bp.put("/usuarios/<login_nombre>/horario")
+@jwt_required()
+def cambiar_horario_mando(login_nombre):
+    if get_jwt().get("rol") != "admin":
+        return jsonify(error="No autorizado"), 403
+
+    cuerpo = request.get_json(silent=True) or {}
+    _datos, error = guardar_horario(None, None, cuerpo)
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            mando = _mando(cur, login_nombre)
+            if mando is None:
+                return jsonify(error="No se ha encontrado el mando"), 404
+            datos, error = guardar_horario(cur, mando["id"], cuerpo)
+            if error:
+                return error
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
+
+    return jsonify(login=login_nombre, **datos)
 
 
 @bp.put("/usuarios/<login_nombre>/activo")

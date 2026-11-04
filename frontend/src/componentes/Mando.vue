@@ -5,10 +5,9 @@ import { delegacionVisible } from "../fechas.js";
 import {
   borrarAjuste,
   cambiarHorario,
-  cambiarNumeroSap,
+  cambiarHorarioPropio,
   crearAjuste,
   editarAjuste,
-  cambiarSeccion,
   crearTrabajador,
   darDeBaja as pedirBaja,
   listarAjustes,
@@ -16,6 +15,7 @@ import {
 import Analisis from "./Analisis.vue";
 import HorarioHabitual from "./HorarioHabitual.vue";
 import Cuadrante from "./Cuadrante.vue";
+import EditarUsuario from "./EditarUsuario.vue";
 import FichaEmpleado from "./FichaEmpleado.vue";
 
 const props = defineProps({
@@ -43,6 +43,9 @@ const seccionId = ref("");
 const errorTrabajador = ref("");
 const dialogo = ref(null);
 const dialogoHorario = ref(null);
+const horarioPropio = ref(false);
+const horarioPropioForm = ref(null);
+const cuadranteMandos = ref(null);
 const trabajadorHorario = ref(null);
 const desdeHorario = ref("");
 const diasHorario = ref([true, true, true, true, true, false, false]);
@@ -50,7 +53,6 @@ const horasHorario = ref(letras.map(() => ({ inicio: "", fin: "" })));
 const plantillaHorario = ref(null);
 const propiosHorario = ref(letras.map(() => false));
 const errorHorario = ref("");
-const dialogoPerfil = ref(null);
 const dialogoAjustes = ref(null);
 const trabajadorAjuste = ref(null);
 const ajustes = ref([]);
@@ -63,10 +65,7 @@ const errorAjuste = ref("");
 const formularioAjusteAbierto = ref(false);
 const ajusteEnEdicion = ref(null);
 const fechaAjusteInput = ref(null);
-const trabajadorPerfil = ref(null);
-const numeroSapEdit = ref("");
-const seccionEdit = ref("");
-const errorPerfil = ref("");
+const personaEditar = ref(null);
 const aviso = ref(false);
 const busqueda = ref("");
 const filtroSeccion = ref("");
@@ -286,53 +285,11 @@ function cantidad(valor) {
 }
 
 function abrirPerfil(trabajador) {
-  trabajadorPerfil.value = trabajador;
-  numeroSapEdit.value = trabajador.numero_sap || "";
-  seccionEdit.value = trabajador.seccion_id || "";
-  errorPerfil.value = "";
-  dialogoPerfil.value?.showModal();
-  dialogoPerfil.value?.querySelector("[name='numero-sap-edit']")?.focus();
+  personaEditar.value = { ...trabajador, rol: "trabajador" };
 }
 
-function cerrarPerfil() {
-  dialogoPerfil.value?.close();
-}
-
-function alCerrarPerfil() {
-  trabajadorPerfil.value = null;
-  errorPerfil.value = "";
-}
-
-function alFondoPerfil(evento) {
-  if (evento.target === dialogoPerfil.value) {
-    cerrarPerfil();
-  }
-}
-
-async function guardarPerfil() {
-  const persona = trabajadorPerfil.value;
-  if (!persona) {
-    return;
-  }
-  errorPerfil.value = "";
-  const sapNuevo = numeroSapEdit.value;
-  const sapActual = persona.numero_sap || "";
-  const seccionNueva = seccionEdit.value || null;
-  const seccionActual = persona.seccion_id || null;
-  try {
-    if (sapNuevo !== sapActual) {
-      await cambiarNumeroSap(props.token, persona.login, sapNuevo);
-    }
-    if (seccionesEquipo.value.length && seccionNueva !== seccionActual) {
-      await cambiarSeccion(props.token, persona.login, seccionNueva);
-    }
-    cerrarPerfil();
-    await cargarDepartamentos();
-    await cuadrante.value?.recargar();
-  } catch (causa) {
-    errorPerfil.value = causa instanceof Error ? causa.message : "No se pudo guardar el perfil";
-    await cargarDepartamentos();
-  }
+async function alGuardarTrabajador() {
+  await cargarDepartamentos();
 }
 
 function cuenta(total) {
@@ -358,6 +315,7 @@ function lunesQueViene() {
 }
 
 function abrirHorario(trabajador) {
+  horarioPropio.value = false;
   trabajadorHorario.value = trabajador;
   desdeHorario.value = lunesQueViene();
   errorHorario.value = "";
@@ -384,12 +342,22 @@ function abrirHorario(trabajador) {
   dialogoHorario.value?.querySelector("[name='desde-horario']")?.focus();
 }
 
+function abrirHorarioPropio() {
+  horarioPropio.value = true;
+  trabajadorHorario.value = null;
+  desdeHorario.value = lunesQueViene();
+  errorHorario.value = "";
+  dialogoHorario.value?.showModal();
+  dialogoHorario.value?.querySelector("[name='desde-horario']")?.focus();
+}
+
 function cerrarHorario() {
   dialogoHorario.value?.close();
 }
 
 function alCerrarHorario() {
   trabajadorHorario.value = null;
+  horarioPropio.value = false;
   errorHorario.value = "";
 }
 
@@ -432,16 +400,34 @@ function alHoraHorario(dia, campo, valor) {
 
 async function guardarHorario() {
   errorHorario.value = "";
-  const persona = trabajadorHorario.value;
-  if (!persona) {
-    return;
-  }
   if (!desdeHorario.value) {
     errorHorario.value = "Indica desde qué fecha aplica.";
     return;
   }
   if (desdeHorario.value < hoyIso()) {
     errorHorario.value = "La fecha no puede ser anterior a hoy.";
+    return;
+  }
+  if (horarioPropio.value) {
+    const horario = horarioPropioForm.value?.horarioDias();
+    if (!horario?.horario_dias) {
+      errorHorario.value = horario?.error || "Marca al menos un día.";
+      return;
+    }
+    try {
+      await cambiarHorarioPropio(props.token, {
+        desde: desdeHorario.value,
+        horario_dias: horario.horario_dias,
+      });
+      cerrarHorario();
+      await cuadranteMandos.value?.recargar();
+    } catch (causa) {
+      errorHorario.value = causa instanceof Error ? causa.message : "No se pudo cambiar el horario";
+    }
+    return;
+  }
+  const persona = trabajadorHorario.value;
+  if (!persona) {
     return;
   }
   const horarioDias = [];
@@ -499,11 +485,6 @@ async function darDeBaja(trabajador) {
 
 async function guardar() {
   errorTrabajador.value = "";
-  const horario = horarioAlta.value?.horarioDias();
-  if (!horario?.horario_dias) {
-    errorTrabajador.value = horario?.error || "Marca al menos un día.";
-    return;
-  }
   try {
     const alta = {
       nombre: nombre.value,
@@ -511,11 +492,18 @@ async function guardar() {
       clave: clave.value,
       grupo: grupo.value,
       numero_sap: numeroSap.value,
-      horario_dias: horario.horario_dias,
       vacaciones: numero(vacaciones.value),
       horas_contrato: numero(horasContrato.value),
       seccion_id: seccionId.value || null,
     };
+    if (muestraHorario.value) {
+      const horario = horarioAlta.value?.horarioDias();
+      if (!horario?.horario_dias) {
+        errorTrabajador.value = horario?.error || "Marca al menos un día.";
+        return;
+      }
+      alta.horario_dias = horario.horario_dias;
+    }
     if (departamentoId.value) {
       alta.departamento_id = departamentoId.value;
     }
@@ -717,8 +705,8 @@ watch(departamentoId, () => {
   if (dialogoHorario.value?.open) {
     cerrarHorario();
   }
-  if (dialogoPerfil.value?.open) {
-    cerrarPerfil();
+  if (personaEditar.value) {
+    personaEditar.value = null;
   }
   if (dialogoAjustes.value?.open) {
     cerrarAjustes();
@@ -735,8 +723,8 @@ watch(vista, (nueva) => {
   if (nueva !== "equipo" && dialogoHorario.value?.open) {
     cerrarHorario();
   }
-  if (nueva !== "equipo" && dialogoPerfil.value?.open) {
-    cerrarPerfil();
+  if (nueva !== "equipo" && personaEditar.value) {
+    personaEditar.value = null;
   }
   if (nueva !== "equipo" && dialogoAjustes.value?.open) {
     cerrarAjustes();
@@ -790,7 +778,13 @@ onUnmounted(() => {
       :departamento-id="departamentoId"
       editable
     />
-    <Cuadrante v-else-if="ambito === 'mandos'" :token="token" mandos />
+    <Cuadrante
+      v-else-if="ambito === 'mandos'"
+      ref="cuadranteMandos"
+      :token="token"
+      mandos
+      @cambiar-horario="abrirHorarioPropio"
+    />
   </div>
   <Analisis
     v-if="vista === 'analisis'"
@@ -933,7 +927,7 @@ onUnmounted(() => {
               <input v-model="vacaciones" name="vacaciones" type="number" min="0" step="0.5" />
             </label>
           </div>
-          <HorarioHabitual ref="horarioAlta" />
+          <HorarioHabitual v-if="muestraHorario" ref="horarioAlta" />
         </div>
         <p v-if="errorTrabajador" class="error" role="alert">{{ errorTrabajador }}</p>
         <footer class="alta-dialogo-pie">
@@ -946,7 +940,7 @@ onUnmounted(() => {
     <form @submit.prevent="guardarHorario">
       <header class="alta-dialogo-cabecera">
         <div>
-          <h2>Cambiar horario</h2>
+          <h2>{{ horarioPropio ? "Cambiar mi horario" : "Cambiar horario" }}</h2>
           <p v-if="trabajadorHorario" class="alta-dialogo-persona">{{ trabajadorHorario.nombre }}</p>
         </div>
         <button type="button" class="dialogo-cerrar" @click="cerrarHorario">✕</button>
@@ -954,9 +948,16 @@ onUnmounted(() => {
       <div class="alta-dialogo-cuerpo">
         <label class="ancho">
           Desde
-          <input v-model="desdeHorario" name="desde-horario" type="date" :min="hoyIso()" />
+          <input
+            v-model="desdeHorario"
+            name="desde-horario"
+            type="date"
+            :required="horarioPropio"
+            :min="hoyIso()"
+          />
         </label>
-        <div class="ancho alta-dias-marcas">
+        <HorarioHabitual v-if="horarioPropio" ref="horarioPropioForm" />
+        <div v-if="!horarioPropio" class="ancho alta-dias-marcas">
           <label v-for="(letra, dia) in letras" :key="`cambio-${letra}`" class="alta-casilla">
             <input
               type="checkbox"
@@ -968,7 +969,7 @@ onUnmounted(() => {
         </div>
         <div
           v-for="(letra, dia) in letras"
-          v-show="diasHorario[dia]"
+          v-show="!horarioPropio && diasHorario[dia]"
           :key="`cambio-horas-${letra}`"
           class="ancho alta-dia-horas"
         >
@@ -998,38 +999,15 @@ onUnmounted(() => {
       </footer>
     </form>
   </dialog>
-  <dialog ref="dialogoPerfil" class="alta-dialogo" @close="alCerrarPerfil" @click="alFondoPerfil">
-    <form @submit.prevent="guardarPerfil">
-      <header class="alta-dialogo-cabecera">
-        <div>
-          <h2>Editar perfil</h2>
-          <p v-if="trabajadorPerfil" class="alta-dialogo-persona">{{ trabajadorPerfil.nombre }}</p>
-        </div>
-        <button type="button" class="dialogo-cerrar" @click="cerrarPerfil">✕</button>
-      </header>
-      <div class="alta-dialogo-cuerpo">
-        <label class="ancho">
-          Número SAP
-          <input v-model="numeroSapEdit" name="numero-sap-edit" autocomplete="off" />
-        </label>
-        <p class="ancho campo-pista">Lo pasa RRHH. Déjalo en blanco si aún no lo tienes.</p>
-        <label v-if="seccionesEquipo.length" class="ancho">
-          Sección
-          <select v-model="seccionEdit">
-            <option value="">Sin sección</option>
-            <option v-for="seccion in seccionesEquipo" :key="seccion.id" :value="seccion.id">
-              {{ seccion.nombre }}
-            </option>
-          </select>
-        </label>
-      </div>
-      <p v-if="errorPerfil" class="error" role="alert">{{ errorPerfil }}</p>
-      <footer class="alta-dialogo-pie">
-        <button type="button" @click="cerrarPerfil">Cancelar</button>
-        <button class="primario" type="submit">Guardar</button>
-      </footer>
-    </form>
-  </dialog>
+  <EditarUsuario
+    v-if="personaEditar"
+    modo="mando"
+    :token="token"
+    :persona="personaEditar"
+    :secciones="seccionesEquipo"
+    @guardado="alGuardarTrabajador"
+    @cerrar="personaEditar = null"
+  />
   <dialog
     ref="dialogoAjustes"
     class="alta-dialogo ajustes-dialogo"

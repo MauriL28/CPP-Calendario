@@ -8,10 +8,12 @@ DEPARTAMENTO = "bdc0a198-ac3a-47ef-84f3-d834f2adf608"
 
 
 class Cursor:
-    def __init__(self, departamentos, mando=None):
+    def __init__(self, departamentos, mando=None, habitual=True):
         self.departamentos = {str(identificador) for identificador in departamentos}
         self.mando = mando
+        self.habitual = habitual
         self.insertados = []
+        self.horarios = []
         self._fila = None
         self._filas = []
 
@@ -22,6 +24,9 @@ class Cursor:
         self._filas = []
         if texto.startswith("SELECT 1 FROM departamento"):
             self._fila = (1,) if str(params[0]) in self.departamentos else None
+        elif "usa_horario_habitual" in texto:
+            if str(params[0]) in self.departamentos:
+                self._fila = {"usa_horario_habitual": self.habitual}
         elif texto.startswith("SELECT rol, departamento_id"):
             if self.mando and self.mando["id"] == str(params[0]):
                 self._fila = self.mando
@@ -43,6 +48,10 @@ class Cursor:
                 "numero_sap": params[7],
                 "seccion_id": params[8],
             }
+        elif texto.startswith("INSERT INTO horario_version"):
+            self.horarios.append(("horario_version", params))
+        elif texto.startswith("INSERT INTO horario_dia"):
+            self.horarios.append(("horario_dia", params))
         elif texto.startswith("INSERT INTO horario"):
             return
         else:
@@ -148,6 +157,59 @@ def test_un_trabajador_no_puede_crear():
 
     assert respuesta.status_code == 403
     cursor.assert_not_called()
+
+
+def test_alta_sin_horario_si_el_departamento_no_usa_horario_habitual():
+    app = create_app()
+    cursor = Cursor([DEPARTAMENTO], habitual=False)
+    datos = cuerpo()
+    del datos["horario_dias"]
+    cliente = app.test_client()
+    with patch("rutas.trabajadores.cursor", return_value=Conexion(cursor)):
+        respuesta = cliente.post(
+            "/trabajadores",
+            json=datos,
+            headers={"Authorization": f"Bearer {token(app, 'admin')}"},
+        )
+
+    assert respuesta.status_code == 201
+    assert respuesta.get_json()["login"] == "nerea.lago"
+    assert cursor.insertados == [{"login": "nerea.lago", "departamento_id": DEPARTAMENTO}]
+    assert cursor.horarios == []
+
+
+def test_alta_sin_horario_en_departamento_habitual_da_400():
+    app = create_app()
+    cursor = Cursor([DEPARTAMENTO], habitual=True)
+    datos = cuerpo()
+    datos["horario_dias"] = []
+    cliente = app.test_client()
+    with patch("rutas.trabajadores.cursor", return_value=Conexion(cursor)):
+        respuesta = cliente.post(
+            "/trabajadores",
+            json=datos,
+            headers={"Authorization": f"Bearer {token(app, 'admin')}"},
+        )
+
+    assert respuesta.status_code == 400
+    assert respuesta.get_json()["error"] == "Faltan datos"
+    assert cursor.insertados == []
+    assert cursor.horarios == []
+
+
+def test_alta_con_horario_sigue_guardando_si_el_flag_es_false():
+    app = create_app()
+    cursor = Cursor([DEPARTAMENTO], habitual=False)
+    cliente = app.test_client()
+    with patch("rutas.trabajadores.cursor", return_value=Conexion(cursor)):
+        respuesta = cliente.post(
+            "/trabajadores",
+            json=cuerpo(),
+            headers={"Authorization": f"Bearer {token(app, 'admin')}"},
+        )
+
+    assert respuesta.status_code == 201
+    assert [tabla for tabla, _params in cursor.horarios] == ["horario_version", "horario_dia"]
 
 
 class CursorLogin:

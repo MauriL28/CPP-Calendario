@@ -1,11 +1,16 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from "vue";
-import { editarUsuario } from "../api/usuarios.js";
+import { editarTrabajador, editarUsuario } from "../api/usuarios.js";
 
 const props = defineProps({
   token: { type: String, required: true },
   persona: { type: Object, required: true },
   secciones: { type: Array, default: () => [] },
+  modo: {
+    type: String,
+    default: "admin",
+    validator: (valor) => valor === "admin" || valor === "mando",
+  },
 });
 
 const emit = defineEmits(["guardado", "cerrar"]);
@@ -101,7 +106,8 @@ async function guardar() {
   }
   error.value = "";
   try {
-    const respuesta = await editarUsuario(props.token, props.persona.login, cambios);
+    const guardarEdicion = props.modo === "mando" ? editarTrabajador : editarUsuario;
+    const respuesta = await guardarEdicion(props.token, props.persona.login, cambios);
     emit("guardado", respuesta);
     cerrar();
   } catch (causa) {
