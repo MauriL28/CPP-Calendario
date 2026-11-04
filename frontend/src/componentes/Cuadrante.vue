@@ -1,7 +1,9 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
-import { borrarTurno, copiarSemana, exportarCuadrante, guardarTurno, mes, mesMandos, semana, semanaActual, semanaMandos, vacacionesMando } from "../api/turnos.js";
+import { borrarAusenciaMando, borrarTurno, copiarSemana, exportarCuadrante, guardarAusenciasMando, guardarTurno, guardarTurnos, mes, mesMandos, semana, semanaActual, semanaMandos } from "../api/turnos.js";
+
+const emit = defineEmits(["cambiar-horario"]);
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -34,6 +36,19 @@ const ausencias = [
   { codigo: "B", nombre: "Baja" },
   { codigo: "F", nombre: "Festivo" },
   { codigo: "P", nombre: "Permiso" },
+  { codigo: "SR", nombre: "Sábado recuperado" },
+  { codigo: "FR", nombre: "Festivo recuperado" },
+  { codigo: "HS", nombre: "Horas sindicales" },
+  { codigo: "PEND", nombre: "Pendientes año anterior" },
+  { codigo: "ST", nombre: "Sábado trabajado" },
+  { codigo: "FT", nombre: "Festivo trabajado" },
+];
+const ausenciasPropias = [
+  { codigo: "V", nombre: "Vacaciones" },
+  { codigo: "B", nombre: "Baja" },
+  { codigo: "P", nombre: "Permiso" },
+  { codigo: "F", nombre: "Festivo" },
+  { codigo: "L", nombre: "Libranza" },
 ];
 const familias = {
   L: "libranza",
@@ -43,6 +58,12 @@ const familias = {
   A: "ausente",
   F: "festivo",
   P: "permiso",
+  SR: "vacaciones",
+  FR: "vacaciones",
+  HS: "permiso",
+  PEND: "permiso",
+  ST: "festivo",
+  FT: "festivo",
 };
 const franjas = [
   { id: "noche", nombre: "Total noche" },
@@ -73,8 +94,13 @@ const turnoModo = ref("horario");
 const turnoInicio = ref("");
 const turnoFin = ref("");
 const turnoAusencia = ref("L");
+const conHorario = computed(
+  () => turnoModo.value === "ausencia" && (turnoAusencia.value === "ST" || turnoAusencia.value === "FT"),
+);
 const errorTurno = ref("");
 const seccionElegida = ref("");
+const copiasMarcadas = ref([false, false, false, false, false, false, false]);
+const letrasCopia = ["L", "M", "X", "J", "V", "S", "D"];
 
 const tituloMes = computed(() => `${mesesLargos[numeroMes.value - 1] || ""} ${anioMes.value}`.trim());
 const gruposCuadrante = [
@@ -139,8 +165,17 @@ const filasCuadrante = computed(() => {
   }
   const filas = [];
   const vistos = new Set();
+  if (props.mandos) {
+    const propio = lista.find((trabajador) => esMio(trabajador));
+    if (propio) {
+      vistos.add(claveTrabajador(propio));
+      filas.push({ tipo: "persona", trabajador: propio });
+    }
+  }
   for (const grupo of gruposCuadrante) {
-    const personas = lista.filter((trabajador) => trabajador.grupo === grupo.id);
+    const personas = lista.filter(
+      (trabajador) => trabajador.grupo === grupo.id && !vistos.has(claveTrabajador(trabajador)),
+    );
     if (!personas.length) {
       continue;
     }
@@ -304,22 +339,6 @@ function esMio(trabajador) {
   return trabajador.id === idDeSesion();
 }
 
-async function alternarVacaciones(dia, evento) {
-  const marcado = evento.target.checked;
-  errorSemana.value = "";
-  try {
-    await vacacionesMando(props.token, { fecha: dia.fecha, vacaciones: marcado });
-    if (modo.value === "mes") {
-      await cargarMes(anioMes.value, numeroMes.value);
-      return;
-    }
-    await cargar(semanaDesde.value);
-  } catch (causa) {
-    evento.target.checked = dia.turno?.ausencia === "V";
-    errorSemana.value = causa instanceof Error ? causa.message : "No se pudieron guardar las vacaciones";
-  }
-}
-
 function familia(turno) {
   if (!turno) {
     return "";
@@ -339,22 +358,30 @@ function familia(turno) {
 }
 
 async function abrirCelda(trabajador, dia) {
-  if (!props.editable) {
+  if (!props.editable && !props.mandos) {
     return;
   }
   const turno = dia.turno;
   celda.value = {
     login: trabajador.login,
+    id: trabajador.id,
     nombre: trabajador.nombre,
     fecha: dia.fecha,
     origen: dia.origen || "",
   };
   errorTurno.value = "";
+  copiasMarcadas.value = marcasIniciales(dia.fecha);
   if (turno && turno.ausencia) {
     turnoModo.value = "ausencia";
-    turnoAusencia.value = turno.ausencia;
-    turnoInicio.value = "";
-    turnoFin.value = "";
+    const permitida = !props.mandos || ausenciasPropias.some((item) => item.codigo === turno.ausencia);
+    turnoAusencia.value = permitida ? turno.ausencia : "L";
+    if (turno.ausencia === "ST" || turno.ausencia === "FT") {
+      turnoInicio.value = turno.hora_inicio || "";
+      turnoFin.value = turno.hora_fin || "";
+    } else {
+      turnoInicio.value = "";
+      turnoFin.value = "";
+    }
   } else {
     turnoModo.value = "horario";
     turnoAusencia.value = "L";
@@ -364,6 +391,61 @@ async function abrirCelda(trabajador, dia) {
   await nextTick();
   dialogo.value?.showModal();
   dialogo.value?.querySelector("select")?.focus();
+}
+
+function indiceSemana(iso) {
+  const [anio, mes, dia] = iso.split("-").map(Number);
+  const ordinal = new Date(anio, mes - 1, dia).getDay();
+  return ordinal === 0 ? 6 : ordinal - 1;
+}
+
+function marcasIniciales(fecha) {
+  const marcas = [false, false, false, false, false, false, false];
+  marcas[indiceSemana(fecha)] = true;
+  return marcas;
+}
+
+const diasCopia = computed(() => {
+  if (!celda.value?.fecha) {
+    return [];
+  }
+  const [anio, mes, dia] = celda.value.fecha.split("-").map(Number);
+  const lunes = lunesDe(new Date(anio, mes - 1, dia));
+  const trabajador = (cuadrante.value?.trabajadores || []).find((item) =>
+    celda.value.login ? item.login === celda.value.login : item.id === celda.value.id,
+  );
+  return letrasCopia.map((letra, indice) => {
+    const fecha = sumarDias(lunes, indice);
+    const dato = trabajador?.dias?.find((item) => item.fecha === fecha);
+    return {
+      letra,
+      fecha,
+      indice,
+      marcado: copiasMarcadas.value[indice],
+      propio: fecha === celda.value.fecha,
+      guardado: dato?.origen === "guardado",
+    };
+  });
+});
+
+const avisaSustitucion = computed(() => diasCopia.value.some((dia) => dia.guardado));
+
+function alternarCopia(indice, marcado) {
+  if (diasCopia.value[indice]?.propio) {
+    return;
+  }
+  const marcas = [...copiasMarcadas.value];
+  marcas[indice] = marcado;
+  copiasMarcadas.value = marcas;
+}
+
+function marcarLaborables() {
+  const propio = indiceSemana(celda.value.fecha);
+  copiasMarcadas.value = letrasCopia.map((_, indice) => indice < 5 || indice === propio);
+}
+
+function marcarTodos() {
+  copiasMarcadas.value = letrasCopia.map(() => true);
 }
 
 function cerrarCelda() {
@@ -425,18 +507,59 @@ async function guardar() {
     return;
   }
   errorTurno.value = "";
+  const fechasMarcadas = diasCopia.value.filter((dia) => dia.marcado).map((dia) => dia.fecha);
+  if (props.mandos) {
+    try {
+      const datos = { fechas: fechasMarcadas };
+      if (turnoModo.value === "ausencia") {
+        datos.ausencia = turnoAusencia.value;
+      } else {
+        datos.hora_inicio = turnoInicio.value;
+        datos.hora_fin = turnoFin.value;
+      }
+      await guardarAusenciasMando(props.token, datos);
+      cerrarCelda();
+      await refrescar();
+    } catch (causa) {
+      errorTurno.value = causa instanceof Error ? causa.message : "No se pudo guardar el turno";
+    }
+    return;
+  }
   const cuerpo = {
     login: celda.value.login,
     fecha: celda.value.fecha,
   };
   if (turnoModo.value === "ausencia") {
     cuerpo.ausencia = turnoAusencia.value;
+    if (conHorario.value) {
+      cuerpo.hora_inicio = turnoInicio.value;
+      cuerpo.hora_fin = turnoFin.value;
+    }
   } else {
     cuerpo.hora_inicio = turnoInicio.value;
     cuerpo.hora_fin = turnoFin.value;
   }
   try {
-    await guardarTurno(props.token, cuerpo);
+    const fechas = fechasMarcadas;
+    if (fechas.length > 1) {
+      const datos = {
+        login: celda.value.login,
+        fechas,
+      };
+      if (turnoModo.value === "ausencia") {
+        datos.ausencia = turnoAusencia.value;
+        if (conHorario.value) {
+          datos.hora_inicio = turnoInicio.value;
+          datos.hora_fin = turnoFin.value;
+        }
+      } else {
+        datos.hora_inicio = turnoInicio.value;
+        datos.hora_fin = turnoFin.value;
+      }
+      await guardarTurnos(props.token, datos);
+    } else {
+      await guardarTurno(props.token, cuerpo);
+    }
     cerrarCelda();
     await refrescar();
   } catch (causa) {
@@ -449,9 +572,12 @@ async function quitar() {
     return;
   }
   errorTurno.value = "";
-  const cuerpo = { login: celda.value.login, fecha: celda.value.fecha };
   try {
-    await borrarTurno(props.token, cuerpo);
+    if (props.mandos) {
+      await borrarAusenciaMando(props.token, celda.value.fecha);
+    } else {
+      await borrarTurno(props.token, { login: celda.value.login, fecha: celda.value.fecha });
+    }
     cerrarCelda();
     await refrescar();
   } catch (causa) {
@@ -519,7 +645,7 @@ cargar(lunesDe(new Date()));
     v-if="cuadrante"
     ref="raiz"
     class="semana"
-    :class="{ lectura: !editable, 'pagina-horizontal': modo === 'mes' }"
+    :class="{ lectura: !editable && !mandos, 'pagina-horizontal': modo === 'mes' }"
   >
     <div class="semana-nav">
       <div class="vistas modo-vista">
@@ -541,10 +667,11 @@ cargar(lunesDe(new Date()));
         <span class="rango">{{ tituloMes }}</span>
         <button type="button" @click="moverMes(1)">Mes siguiente</button>
       </template>
+      <button v-if="mandos" type="button" @click="emit('cambiar-horario')">Cambiar mi horario</button>
       <button type="button" class="cuadrante-imprimir" @click="imprimir">Imprimir</button>
       <button v-if="editable" type="button" class="cuadrante-exportar" @click="exportar">Exportar</button>
     </div>
-    <p v-if="!editable" class="aviso-lectura">Solo lectura</p>
+    <p v-if="!editable && !mandos" class="aviso-lectura">Solo lectura</p>
     <p v-if="muestraEquipo" class="equipo-semana">Equipo de esta semana</p>
     <p v-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
     <p v-if="avisoCopia" class="aviso-ok" role="status">{{ avisoCopia }}</p>
@@ -597,24 +724,15 @@ cargar(lunesDe(new Date()));
               :key="dia.fecha"
               :class="[esFinDia(dia.fecha, indice) ? 'fin' : '', familia(dia.turno) ? `turno-${familia(dia.turno)}` : '']"
             >
-              <label v-if="mandos && esMio(fila.trabajador)" class="vacaciones-dia">
-                <input
-                  type="checkbox"
-                  :checked="dia.turno?.ausencia === 'V'"
-                  :aria-label="`Vacaciones ${fechaVisible(dia.fecha)}`"
-                  @change="alternarVacaciones(dia, $event)"
-                />
-                <span class="celda lectura">{{ textoCelda(dia.turno) }}</span>
-              </label>
               <button
-                v-else-if="editable"
+                v-if="editable || (mandos && esMio(fila.trabajador))"
                 type="button"
                 class="celda"
                 @click="abrirCelda(fila.trabajador, dia)"
               >
                 {{ textoCelda(dia.turno) }}
               </button>
-              <span v-else class="celda lectura">{{ textoCelda(dia.turno) }}</span>
+              <span v-else class="celda" :class="{ lectura: !mandos }">{{ textoCelda(dia.turno) }}</span>
             </td>
           </tr>
         </template>
@@ -656,7 +774,17 @@ cargar(lunesDe(new Date()));
             <option value="ausencia">Ausencia</option>
           </select>
         </label>
-        <template v-if="turnoModo === 'horario'">
+        <template v-if="turnoModo === 'ausencia'">
+          <label class="ancho">
+            Ausencia
+            <select v-model="turnoAusencia">
+              <option v-for="item in mandos ? ausenciasPropias : ausencias" :key="item.codigo" :value="item.codigo">
+                {{ item.nombre }}
+              </option>
+            </select>
+          </label>
+        </template>
+        <template v-if="turnoModo === 'horario' || conHorario">
           <label>
             Hora de inicio
             <input v-model="turnoInicio" type="time" required />
@@ -666,19 +794,31 @@ cargar(lunesDe(new Date()));
             <input v-model="turnoFin" type="time" required />
           </label>
         </template>
-        <label v-else class="ancho">
-          Ausencia
-          <select v-model="turnoAusencia">
-            <option v-for="item in ausencias" :key="item.codigo" :value="item.codigo">
-              {{ item.nombre }}
-            </option>
-          </select>
-        </label>
+        <div class="ancho copiar-dias">
+          <p class="copiar-dias-titulo">Copiar también a:</p>
+          <div class="copiar-dias-marcas">
+            <label v-for="dia in diasCopia" :key="dia.fecha" class="copiar-dia">
+              <input
+                type="checkbox"
+                :checked="dia.marcado"
+                :disabled="dia.propio"
+                @change="alternarCopia(dia.indice, $event.target.checked)"
+              />
+              <span>{{ dia.letra }}</span>
+              <span v-if="dia.guardado" class="copiar-dia-punto" aria-hidden="true"></span>
+            </label>
+          </div>
+          <p v-if="avisaSustitucion" class="copiar-dias-aviso">ya tiene turno, se sustituirá</p>
+          <div class="copiar-dias-atajos">
+            <button type="button" class="copiar-dias-atajo" @click="marcarLaborables">Lunes a viernes</button>
+            <button type="button" class="copiar-dias-atajo" @click="marcarTodos">Todos</button>
+          </div>
+        </div>
       </div>
       <p v-if="errorTurno" class="error" role="alert">{{ errorTurno }}</p>
       <footer class="editor-dia-pie">
         <button v-if="celda.origen === 'guardado'" type="button" @click="quitar">
-          Quitar excepción y volver al horario habitual
+          {{ mandos ? "Quitar" : "Quitar excepción y volver al horario habitual" }}
         </button>
         <span class="editor-dia-acciones">
           <button type="button" @click="cerrarCelda">Cancelar</button>
@@ -688,3 +828,58 @@ cargar(lunesDe(new Date()));
     </form>
   </dialog>
 </template>
+
+<style scoped>
+.copiar-dias-titulo {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.copiar-dias-marcas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.copiar-dia {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.copiar-dia input {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.copiar-dia-punto {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--alerta);
+}
+
+.copiar-dias-aviso {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.copiar-dias-atajos {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+button.copiar-dias-atajo {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+</style>

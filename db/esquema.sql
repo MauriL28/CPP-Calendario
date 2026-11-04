@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TYPE rol_usuario AS ENUM ('admin', 'mando', 'trabajador');
 CREATE TYPE grupo_persona AS ENUM ('STEF', 'ETT');
-CREATE TYPE codigo_ausencia AS ENUM ('L', 'D', 'V', 'B', 'F', 'P');
+CREATE TYPE codigo_ausencia AS ENUM ('L', 'D', 'V', 'B', 'F', 'P', 'SR', 'FR', 'HS', 'PEND', 'ST', 'FT');
 CREATE TYPE estado_cruce AS ENUM ('ok', 'descuadre', 'sin_plan', 'sin_emparejar');
 
 -- Franja de noche de la empresa (no es caja del ER: dos números).
@@ -112,7 +112,13 @@ CREATE TABLE turno (
     PRIMARY KEY (usuario_id, fecha),
     CONSTRAINT turno_horario_o_ausencia CHECK (
         (
+            ausencia IN ('ST', 'FT')
+            AND hora_inicio IS NOT NULL
+            AND hora_fin IS NOT NULL
+        )
+        OR (
             ausencia IS NOT NULL
+            AND ausencia NOT IN ('ST', 'FT')
             AND hora_inicio IS NULL
             AND hora_fin IS NULL
         )

@@ -83,6 +83,10 @@ export function guardarTurno(token, cuerpo) {
   return pedir("/turnos", { method: "PUT", token, cuerpo });
 }
 
+export function guardarTurnos(token, datos) {
+  return pedir("/turnos/varios", { method: "PUT", token, cuerpo: datos });
+}
+
 export function borrarTurno(token, cuerpo) {
   return pedir("/turnos", { method: "DELETE", token, cuerpo });
 }
@@ -97,4 +101,19 @@ export function mesMandos(token, anio, mesNumero) {
 
 export function vacacionesMando(token, cuerpo) {
   return pedir("/turnos/mandos/vacaciones", { method: "PUT", token, cuerpo });
+}
+
+export function guardarAusenciasMando(token, datos) {
+  const cuerpo = { fechas: datos.fechas };
+  if (datos.hora_inicio || datos.hora_fin) {
+    cuerpo.hora_inicio = datos.hora_inicio;
+    cuerpo.hora_fin = datos.hora_fin;
+  } else {
+    cuerpo.ausencia = datos.ausencia;
+  }
+  return pedir("/turnos/mandos/propio", { method: "PUT", token, cuerpo });
+}
+
+export function borrarAusenciaMando(token, fecha) {
+  return pedir("/turnos/mandos/propio", { method: "DELETE", token, cuerpo: { fecha } });
 }

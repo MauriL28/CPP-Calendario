@@ -6,7 +6,10 @@ import { fechaVisible } from "../fechas.js";
 const props = defineProps({
   token: { type: String, required: true },
   login: { type: String, required: true },
+  volver: { type: Boolean, default: false },
 });
+
+const emit = defineEmits(["volver"]);
 
 const MESES = [
   "Enero",
@@ -26,6 +29,7 @@ const MESES = [
 const anio = ref(new Date().getFullYear());
 const ficha = ref(null);
 const error = ref("");
+const ajustesAbiertos = ref(false);
 
 const DIAS_CORTOS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 const AUSENCIAS = {
@@ -35,6 +39,12 @@ const AUSENCIAS = {
   B: "baja",
   F: "festivo",
   P: "permiso",
+  SR: "vacaciones",
+  FR: "vacaciones",
+  HS: "permiso",
+  PEND: "permiso",
+  ST: "festivo",
+  FT: "festivo",
 };
 const leyenda = [
   { id: "manana", nombre: "Mañana" },
@@ -223,6 +233,7 @@ onMounted(cargar);
       <span>{{ fechaImpresion() }}</span>
     </p>
     <header class="ficha-cabecera">
+      <button v-if="volver" type="button" class="primario ficha-volver" @click="emit('volver')">← Mi horario</button>
       <div>
         <h1>{{ ficha?.nombre || "Ficha" }}</h1>
         <p v-if="ficha">{{ ficha.departamento }} · {{ ficha.grupo }}</p>
@@ -261,19 +272,27 @@ onMounted(cargar);
           <span class="tarjeta-recuento">{{ item.texto }}</span>
         </div>
       </div>
-      <section class="panel">
-        <header class="panel-cabecera">
-          <h2>Ajustes</h2>
-        </header>
-        <p v-if="!ficha.ajustes.length" class="panel-vacio">Sin ajustes registrados.</p>
-        <ul v-else class="panel-filas">
-          <li v-for="(ajuste, indice) in ficha.ajustes" :key="`${ajuste.fecha}-${indice}`">
-            <span class="persona-datos">
-              <strong>{{ fechaVisible(ajuste.fecha) }} · {{ horasConSigno(ajuste.horas) }}</strong>
-              <span>{{ ajuste.motivo }}</span>
-            </span>
-          </li>
-        </ul>
+      <section class="panel ficha-ajustes">
+        <button
+          type="button"
+          class="panel-cabecera ficha-ajustes-cabecera"
+          :aria-expanded="ajustesAbiertos"
+          @click="ajustesAbiertos = !ajustesAbiertos"
+        >
+          <h2>Ajustes ({{ ficha.ajustes.length }})</h2>
+          <span class="ficha-ajustes-flecha" :class="{ abierta: ajustesAbiertos }" aria-hidden="true">›</span>
+        </button>
+        <template v-if="ajustesAbiertos">
+          <p v-if="!ficha.ajustes.length" class="panel-vacio">Sin ajustes este año</p>
+          <ul v-else class="panel-filas">
+            <li v-for="(ajuste, indice) in ficha.ajustes" :key="`${ajuste.fecha}-${indice}`">
+              <span class="persona-datos">
+                <strong>{{ fechaVisible(ajuste.fecha) }} · {{ horasConSigno(ajuste.horas) }}</strong>
+                <span>{{ ajuste.motivo }}</span>
+              </span>
+            </li>
+          </ul>
+        </template>
       </section>
       <div class="ficha-calendario">
         <h2 class="ficha-calendario-titulo">Calendario anual</h2>
@@ -325,3 +344,74 @@ onMounted(cargar);
     </template>
   </section>
 </template>
+
+<style scoped>
+.ficha-cabecera:has(.ficha-volver) {
+  justify-content: flex-start;
+}
+
+button.primario.ficha-volver {
+  order: 2;
+  margin-left: auto;
+  padding: 10px 22px;
+  font-size: 16px;
+  font-weight: 700;
+  min-height: 44px;
+}
+
+.ficha-cabecera:has(.ficha-volver) .ficha-acciones {
+  order: 3;
+}
+
+@media (max-width: 599px) {
+  .ficha-cabecera:has(.ficha-volver) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  button.primario.ficha-volver {
+    order: -1;
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+@media print {
+  .ficha-volver {
+    display: none !important;
+  }
+}
+
+button.panel-cabecera.ficha-ajustes-cabecera {
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.panel-cabecera.ficha-ajustes-cabecera[aria-expanded="true"] {
+  border-bottom: 1px solid var(--border);
+}
+
+button.panel-cabecera.ficha-ajustes-cabecera:hover {
+  border-bottom-color: var(--border);
+  background: transparent;
+}
+
+.ficha-ajustes-flecha {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.ficha-ajustes-flecha.abierta {
+  transform: rotate(90deg);
+}
+</style>
