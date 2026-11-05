@@ -51,7 +51,8 @@ def listar_del_departamento(cur, filtro, params, solo_mandos_activos=False):
     cur.execute(
         f"""
         SELECT g.codigo AS delegacion, d.codigo AS departamento,
-               u.nombre, u.login, u.grupo, u.horas_contrato, u.horas_convenio, u.vacaciones, u.numero_sap,
+               u.nombre, u.login, u.grupo, u.horas_contrato, u.horas_convenio,
+               u.pausa_minutos, u.vacaciones, u.numero_sap,
                u.seccion_id
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
@@ -134,6 +135,7 @@ def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos, h
             "horario": [],
             "horas_contrato": _decimal(trabajador["horas_contrato"]),
             "horas_convenio": _decimal(trabajador["horas_convenio"]),
+            "pausa_minutos": int(trabajador.get("pausa_minutos") or 0),
             "vacaciones": _decimal(trabajador["vacaciones"]),
             "numero_sap": trabajador["numero_sap"],
             "seccion_id": str(trabajador["seccion_id"]) if trabajador["seccion_id"] else None,

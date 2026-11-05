@@ -83,6 +83,23 @@ def comprobar_seccion(cur, departamento_id, seccion_id):
     return None
 
 
+def pausa_minutos(valor):
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, str):
+        texto = valor.strip()
+        if not texto.isdigit():
+            return None
+        valor = int(texto)
+    elif isinstance(valor, float):
+        if not valor.is_integer():
+            return None
+        valor = int(valor)
+    if isinstance(valor, int) and valor in (0, 30, 60):
+        return valor
+    return None
+
+
 def numero(valor):
     if isinstance(valor, bool) or valor is None or valor == "":
         return None

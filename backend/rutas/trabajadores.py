@@ -57,6 +57,12 @@ def crear_trabajador():
         desde, error = _desde(cuerpo.get("desde"))
         if error:
             return error
+    if "pausa_minutos" in cuerpo and cuerpo.get("pausa_minutos") not in (None, ""):
+        pausa = validaciones.pausa_minutos(cuerpo.get("pausa_minutos"))
+        if pausa is None:
+            return jsonify(error="La pausa tiene que ser 0, 30 o 60"), 400
+    else:
+        pausa = 0
     numero_sap, error = validaciones.numero_sap(cuerpo.get("numero_sap"))
     if error:
         return error
@@ -95,9 +101,9 @@ def crear_trabajador():
                 """
                 INSERT INTO usuario (
                     nombre, login, clave, rol, grupo, departamento_id,
-                    vacaciones, horas_contrato, numero_sap, seccion_id
+                    vacaciones, horas_contrato, numero_sap, seccion_id, pausa_minutos
                 )
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, nombre, login, rol, grupo, vacaciones, horas_contrato, numero_sap, seccion_id
                 """,
                 (
@@ -110,6 +116,7 @@ def crear_trabajador():
                     horas_contrato,
                     numero_sap,
                     seccion_id,
+                    pausa,
                 ),
             )
             creado = cur.fetchone()
@@ -488,7 +495,9 @@ def ficha(login_nombre):
             )
             versiones = _agrupar_versiones(cur.fetchall()).get(trabajador["id"], [])
             noche_inicio, noche_fin = _franja(cur)
-            habitual = _habituales(cur, [trabajador["id"]]).get(trabajador["id"], True)
+            habituales, pausas = _habituales(cur, [trabajador["id"]])
+            habitual = habituales.get(trabajador["id"], True)
+            pausa = pausas.get(trabajador["id"], 0)
             cur.execute(
                 "SELECT fecha FROM festivo WHERE fecha >= %s AND fecha <= %s",
                 (inicio, fin),
@@ -526,7 +535,7 @@ def ficha(login_nombre):
     dia = inicio
     while dia <= fin:
         turno, _origen = resolver_turno(
-            dia, turnos.get(dia), versiones, noche_inicio, noche_fin, habitual
+            dia, turnos.get(dia), versiones, noche_inicio, noche_fin, habitual, pausa
         )
         dias.append(
             {

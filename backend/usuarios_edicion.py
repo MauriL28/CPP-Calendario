@@ -1,10 +1,20 @@
+from datetime import date, datetime
+
 from flask import jsonify
 
 import validaciones
+from horas import horas_de_turno
 from validaciones import comprobar_seccion, sap_ocupado
 
 CAMPOS_COMUNES = {"nombre", "numero_sap", "clave"}
-CAMPOS_TRABAJADOR = {"grupo", "vacaciones", "horas_contrato", "horas_convenio", "seccion_id"}
+CAMPOS_TRABAJADOR = {
+    "grupo",
+    "vacaciones",
+    "horas_contrato",
+    "horas_convenio",
+    "pausa_minutos",
+    "seccion_id",
+}
 CAMPOS_USUARIO = CAMPOS_COMUNES | CAMPOS_TRABAJADOR
 ORDEN_USUARIO = (
     "nombre",
@@ -14,6 +24,7 @@ ORDEN_USUARIO = (
     "vacaciones",
     "horas_contrato",
     "horas_convenio",
+    "pausa_minutos",
     "seccion_id",
 )
 
@@ -36,6 +47,8 @@ def editar_campos(cur, persona, cuerpo):
         return None, (jsonify(error="Ese número de personal ya está asignado a otra persona"), 409)
     if cambios:
         _guardar_usuario(cur, persona["id"], cambios)
+    if "pausa_minutos" in cambios:
+        _recalcular_planificadas(cur, persona["id"], cambios["pausa_minutos"])
     return _respuesta_usuario(cambios), None
 
 
@@ -76,6 +89,11 @@ def _cambios_usuario(cuerpo):
         if valor == "mal":
             return None, (jsonify(error="Faltan datos"), 400)
         cambios["horas_convenio"] = valor
+    if "pausa_minutos" in cuerpo:
+        valor = validaciones.pausa_minutos(cuerpo["pausa_minutos"])
+        if valor is None:
+            return None, (jsonify(error="La pausa tiene que ser 0, 30 o 60"), 400)
+        cambios["pausa_minutos"] = valor
     if "seccion_id" in cuerpo:
         seccion_id, error = validaciones.leer_seccion_id(cuerpo, opcional=False)
         if error:
@@ -100,6 +118,44 @@ def _guardar_usuario(cur, usuario_id, cambios):
         f"UPDATE usuario SET {', '.join(columnas)} WHERE id = %s",
         tuple(params),
     )
+
+
+def _recalcular_planificadas(cur, usuario_id, pausa):
+    cur.execute("SELECT noche_inicio, noche_fin FROM empresa WHERE id = 1")
+    franja = cur.fetchone()
+    if franja is None:
+        noche_inicio = datetime.strptime("22:00", "%H:%M").time()
+        noche_fin = datetime.strptime("06:00", "%H:%M").time()
+    else:
+        noche_inicio = franja["noche_inicio"]
+        noche_fin = franja["noche_fin"]
+    cur.execute(
+        """
+        SELECT fecha, hora_inicio, hora_fin
+        FROM turno
+        WHERE usuario_id = %s
+          AND fecha >= %s
+          AND hora_inicio IS NOT NULL
+          AND hora_fin IS NOT NULL
+        """,
+        (usuario_id, date.today()),
+    )
+    for fila in cur.fetchall():
+        planificadas, _nocturnas = horas_de_turno(
+            fila["hora_inicio"],
+            fila["hora_fin"],
+            noche_inicio,
+            noche_fin,
+            pausa,
+        )
+        cur.execute(
+            """
+            UPDATE turno
+            SET horas_planificadas = %s
+            WHERE usuario_id = %s AND fecha = %s
+            """,
+            (planificadas, usuario_id, fila["fecha"]),
+        )
 
 
 def _respuesta_usuario(cambios):

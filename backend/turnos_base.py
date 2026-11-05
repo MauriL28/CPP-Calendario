@@ -65,7 +65,9 @@ def _domingo_libre():
     }, "habitual"
 
 
-def resolver_turno(fecha, fila, versiones, noche_inicio, noche_fin, usa_horario_habitual=True):
+def resolver_turno(
+    fecha, fila, versiones, noche_inicio, noche_fin, usa_horario_habitual=True, pausa_minutos=0
+):
     if fila is not None:
         return _turno(fila), "guardado"
     if not usa_horario_habitual:
@@ -76,7 +78,9 @@ def resolver_turno(fecha, fila, versiones, noche_inicio, noche_fin, usa_horario_
             return _domingo_libre()
         return None, None
     inicio, fin = horas
-    planificadas, nocturnas = horas_de_turno(inicio, fin, noche_inicio, noche_fin)
+    planificadas, nocturnas = horas_de_turno(
+        inicio, fin, noche_inicio, noche_fin, pausa_minutos
+    )
     return {
         "ausencia": None,
         "hora_inicio": hora_texto(inicio),
@@ -113,8 +117,12 @@ def turno_efectivo(usuario, fecha):
         agrupadas = _agrupar_versiones(cur.fetchall())
         versiones = next(iter(agrupadas.values()), [])
         noche_inicio, noche_fin = _franja(cur)
-        habitual = _habituales(cur, [usuario]).get(usuario, True)
-    return resolver_turno(fecha, None, versiones, noche_inicio, noche_fin, habitual)[0]
+        habituales, pausas = _habituales(cur, [usuario])
+        habitual = habituales.get(usuario, True)
+        pausa = pausas.get(usuario, 0)
+    return resolver_turno(
+        fecha, None, versiones, noche_inicio, noche_fin, habitual, pausa
+    )[0]
 
 
 def _material_rango(cur, ids, inicio, fin):
@@ -147,19 +155,26 @@ def _material_rango(cur, ids, inicio, fin):
         )
         versiones = _agrupar_versiones(cur.fetchall())
     noche_inicio, noche_fin = _franja(cur)
-    return turnos, versiones, noche_inicio, noche_fin, _habituales(cur, ids)
+    habituales, pausas = _habituales(cur, ids)
+    return turnos, versiones, noche_inicio, noche_fin, habituales, pausas
 
 
 def _habituales(cur, ids):
     if not ids:
-        return {}
+        return {}, {}
     cur.execute(
         """
-        SELECT u.id, d.usa_horario_habitual
+        SELECT u.id, d.usa_horario_habitual, u.pausa_minutos
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
         WHERE u.id = ANY(%s)
         """,
         (list(ids),),
     )
-    return {fila["id"]: fila["usa_horario_habitual"] for fila in cur.fetchall()}
+    habituales = {}
+    pausas = {}
+    for fila in cur.fetchall():
+        habituales[fila["id"]] = fila["usa_horario_habitual"]
+        pausa = fila.get("pausa_minutos")
+        pausas[fila["id"]] = 0 if pausa is None else int(pausa)
+    return habituales, pausas

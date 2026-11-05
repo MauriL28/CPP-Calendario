@@ -54,10 +54,19 @@ def _festivos_semana(cur, dias):
 
 
 def _dias_resueltos(
-    usuario_id, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales=None
+    usuario_id,
+    dias,
+    turnos,
+    versiones,
+    noche_inicio,
+    noche_fin,
+    festivos,
+    habituales=None,
+    pausas=None,
 ):
     suyas = versiones.get(usuario_id, [])
     habitual = True if habituales is None else habituales.get(usuario_id, True)
+    pausa = 0 if pausas is None else pausas.get(usuario_id, 0)
     resultado = []
     for dia in dias:
         turno, origen = resolver_turno(
@@ -67,6 +76,7 @@ def _dias_resueltos(
             noche_inicio,
             noche_fin,
             habitual,
+            pausa,
         )
         entrada = {"fecha": dia.isoformat(), "turno": turno, "festivo": dia in festivos}
         if origen is not None:
@@ -95,7 +105,15 @@ def _mes(anio_texto, mes_texto):
 
 
 def _trabajadores_resueltos(
-    trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales=None
+    trabajadores,
+    dias,
+    turnos,
+    versiones,
+    noche_inicio,
+    noche_fin,
+    festivos,
+    habituales=None,
+    pausas=None,
 ):
     return [
         {
@@ -111,6 +129,7 @@ def _trabajadores_resueltos(
                 noche_fin,
                 festivos,
                 habituales,
+                pausas,
             ),
         }
         for trabajador in trabajadores
@@ -153,7 +172,7 @@ def listar_turnos():
                 (departamento_id,),
             )
             trabajadores = cur.fetchall()
-            turnos, versiones, noche_inicio, noche_fin, habituales = _material_semana(
+            turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_semana(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias
             )
             festivos = _festivos_semana(cur, dias)
@@ -185,6 +204,7 @@ def listar_turnos():
                     noche_fin,
                     festivos,
                     habituales,
+                    pausas,
                 ),
             }
             for trabajador in trabajadores
@@ -215,7 +235,7 @@ def listar_turnos_mios():
             trabajador = cur.fetchone()
             if trabajador is None:
                 return jsonify(error="No autorizado"), 403
-            turnos, versiones, noche_inicio, noche_fin, habituales = _material_semana(
+            turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_semana(
                 cur, [trabajador["id"]], dias
             )
             festivos = _festivos_semana(cur, dias)
@@ -242,6 +262,7 @@ def listar_turnos_mios():
                     noche_fin,
                     festivos,
                     habituales,
+                    pausas,
                 ),
             }
         )
@@ -282,9 +303,11 @@ def _dias_departamento(
     propio,
     habituales=None,
     con_origen=False,
+    pausas=None,
 ):
     suyas = versiones.get(usuario_id, [])
     habitual = True if habituales is None else habituales.get(usuario_id, True)
+    pausa = 0 if pausas is None else pausas.get(usuario_id, 0)
     resultado = []
     for dia in dias:
         turno, origen = resolver_turno(
@@ -294,6 +317,7 @@ def _dias_departamento(
             noche_inicio,
             noche_fin,
             habitual,
+            pausa,
         )
         entrada = {
             "fecha": dia.isoformat(),
@@ -346,7 +370,7 @@ def listar_turnos_departamento():
                 (propio["departamento_id"],),
             )
             trabajadores = cur.fetchall()
-            turnos, versiones, noche_inicio, noche_fin, habituales = _material_semana(
+            turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_semana(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias
             )
     except SinBaseDeDatos:
@@ -372,6 +396,7 @@ def listar_turnos_departamento():
                     noche_fin,
                     str(trabajador["id"]) == yo,
                     habituales,
+                    pausas=pausas,
                 ),
             }
             for trabajador in trabajadores
@@ -404,7 +429,7 @@ def listar_turnos_mes():
                 (departamento_id,),
             )
             trabajadores = cur.fetchall()
-            turnos, versiones, noche_inicio, noche_fin, habituales = _material_rango(
+            turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_rango(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
             )
             festivos = _festivos_rango(cur, dias[0], dias[-1])
@@ -419,7 +444,7 @@ def listar_turnos_mes():
         return error_bd(exc)
 
     personas = _trabajadores_resueltos(
-        trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales
+        trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales, pausas
     )
     for persona, trabajador in zip(personas, trabajadores):
         persona["seccion"] = trabajador["seccion"]
@@ -452,7 +477,7 @@ def listar_turnos_mios_mes():
             trabajador = cur.fetchone()
             if trabajador is None:
                 return jsonify(error="No autorizado"), 403
-            turnos, versiones, noche_inicio, noche_fin, habituales = _material_rango(
+            turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_rango(
                 cur, [trabajador["id"]], dias[0], dias[-1]
             )
             festivos = _festivos_rango(cur, dias[0], dias[-1])
@@ -466,7 +491,7 @@ def listar_turnos_mios_mes():
     personas = []
     if trabajador is not None:
         personas = _trabajadores_resueltos(
-            [trabajador], dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales
+            [trabajador], dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales, pausas
         )
     return jsonify(
         desde=dias[0].isoformat(),
@@ -528,7 +553,7 @@ def _cuadrante_mandos(cur, yo, dias):
     if delegacion_id is None:
         return None
     personas = _personas_mandos(cur, delegacion_id)
-    turnos, versiones, noche_inicio, noche_fin, habituales = _material_rango(
+    turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_rango(
         cur, [persona["id"] for persona in personas], dias[0], dias[-1]
     )
     return [
@@ -547,6 +572,7 @@ def _cuadrante_mandos(cur, yo, dias):
                 str(persona["id"]) == str(yo),
                 habituales,
                 con_origen=str(persona["id"]) == str(yo),
+                pausas=pausas,
             ),
         }
         for persona in personas
@@ -934,8 +960,14 @@ def _insertar_turno(cur, usuario_id, fecha, pedido):
         else:
             noche_inicio = franja["noche_inicio"]
             noche_fin = franja["noche_fin"]
+        cur.execute(
+            "SELECT pausa_minutos FROM usuario WHERE id = %s",
+            (usuario_id,),
+        )
+        persona = cur.fetchone()
+        pausa = 0 if persona is None else int(persona.get("pausa_minutos") or 0)
         planificadas, nocturnas = horas_de_turno(
-            hora_inicio, hora_fin, noche_inicio, noche_fin
+            hora_inicio, hora_fin, noche_inicio, noche_fin, pausa
         )
     cur.execute(
         """
@@ -1271,7 +1303,7 @@ def exportar_turnos():
                 (departamento_id,),
             )
             trabajadores = cur.fetchall()
-            turnos, versiones, noche_inicio, noche_fin, habituales = _material_rango(
+            turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_rango(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
             )
             festivos = _festivos_rango(cur, dias[0], dias[-1])
@@ -1281,7 +1313,7 @@ def exportar_turnos():
                 if _visible_en_semana(trabajador, dias, turnos)
             ]
             resueltos = _trabajadores_resueltos(
-                trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales
+                trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales, pausas
             )
             codigo = departamento["codigo"]
     except SinBaseDeDatos:

@@ -28,12 +28,13 @@ def minutos(valor):
     return valor.hour * 60 + valor.minute
 
 
-def horas_de_turno(inicio, fin, noche_inicio, noche_fin):
+def horas_de_turno(inicio, fin, noche_inicio, noche_fin, pausa_minutos=0):
     start = minutos(inicio)
     end = minutos(fin)
     if end <= start:
         end += 24 * 60
-    planificadas = (end - start) / 60
+    pausa = 0 if not pausa_minutos else int(pausa_minutos)
+    planificadas = (end - start - pausa) / 60
     ni = minutos(noche_inicio)
     nf = minutos(noche_fin)
     if nf < ni:
