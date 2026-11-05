@@ -8,7 +8,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from db import SinBaseDeDatos, cursor
 from errores import error_bd
 from mandos import departamento_permitido, departamentos_del_mando
-from horas import hora_texto, parse_hora
+from horas import convenio_anual, hora_texto, horas_computables, parse_hora
 from rutas.turnos import _texto_celda
 from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
 from vacaciones import dias_v_usados
@@ -434,7 +434,7 @@ def cambiar_horario_propio():
 @jwt_required()
 def ficha(login_nombre):
     rol = get_jwt().get("rol")
-    if rol not in ("mando", "trabajador"):
+    if rol not in ("mando", "trabajador", "admin"):
         return jsonify(error="No autorizado"), 403
     anio, error = _anio(request.args.get("anio"))
     if error:
@@ -447,6 +447,7 @@ def ficha(login_nombre):
             cur.execute(
                 """
                 SELECT u.id, u.nombre, u.grupo, u.departamento_id,
+                       u.horas_convenio, u.horas_contrato,
                        d.nombre AS departamento
                 FROM usuario u
                 JOIN departamento d ON d.id = u.departamento_id
@@ -458,6 +459,9 @@ def ficha(login_nombre):
             if rol == "trabajador":
                 if trabajador is None or str(trabajador["id"]) != get_jwt_identity():
                     return jsonify(error="No autorizado"), 403
+            elif rol == "admin":
+                if trabajador is None:
+                    return jsonify(error="No se ha encontrado el trabajador"), 404
             elif trabajador is None or not departamento_permitido(
                 cur, get_jwt_identity(), trabajador["departamento_id"]
             ):
@@ -514,6 +518,7 @@ def ficha(login_nombre):
         return error_bd(exc)
 
     horas_mes = [0.0] * 12
+    realizadas_mes = [0.0] * 12
     ausencias = {"V": 0, "B": 0, "P": 0, "F": 0}
     festivos_trabajados = 0
     sabados_trabajados = 0
@@ -539,20 +544,38 @@ def ficha(login_nombre):
                 festivos_trabajados += 1
             if dia.weekday() == 5:
                 sabados_trabajados += 1
+        if turno is not None:
+            realizadas_mes[dia.month - 1] += horas_computables(
+                turno["ausencia"], turno["horas_planificadas"]
+            )
         dia += timedelta(days=1)
     ausencias["V"] = usados_v
+    for ajuste in ajustes:
+        fecha = date.fromisoformat(ajuste["fecha"])
+        realizadas_mes[fecha.month - 1] += ajuste["horas"]
 
-    return jsonify(
-        nombre=trabajador["nombre"],
-        departamento=trabajador["departamento"],
-        grupo=trabajador["grupo"],
-        horas_por_mes=[round(valor, 2) for valor in horas_mes],
-        ausencias=ausencias,
-        festivos_trabajados=festivos_trabajados,
-        sabados_trabajados=sabados_trabajados,
-        ajustes=ajustes,
-        dias=dias,
-    )
+    respuesta = {
+        "nombre": trabajador["nombre"],
+        "departamento": trabajador["departamento"],
+        "grupo": trabajador["grupo"],
+        "horas_por_mes": [round(valor, 2) for valor in horas_mes],
+        "ausencias": ausencias,
+        "festivos_trabajados": festivos_trabajados,
+        "sabados_trabajados": sabados_trabajados,
+        "ajustes": ajustes,
+        "dias": dias,
+    }
+    if rol in ("mando", "admin"):
+        realizadas = round(sum(realizadas_mes), 2)
+        convenio = round(
+            convenio_anual(trabajador["horas_convenio"], trabajador["horas_contrato"]),
+            2,
+        )
+        respuesta["horas_realizadas_por_mes"] = [round(valor, 2) for valor in realizadas_mes]
+        respuesta["horas_realizadas"] = realizadas
+        respuesta["convenio_anual"] = convenio
+        respuesta["saldo"] = round(realizadas - convenio, 2)
+    return jsonify(respuesta)
 
 
 def _anio(texto):

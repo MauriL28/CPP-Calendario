@@ -1,5 +1,28 @@
 from datetime import datetime
 
+JORNADA_DIA = 7.5
+HORAS_CONVENIO_ANO = 1770
+JORNADA_COMPLETA_SEM = 37.5
+
+
+def horas_computables(ausencia, horas_planificadas):
+    """Horas que cuenta la ficha. Las planificadas pueden ser 0."""
+    if ausencia in (None, "", "ST", "FT"):
+        if horas_planificadas is None:
+            return 0.0
+        return float(horas_planificadas)
+    if ausencia in ("B", "HS", "PEND"):
+        return JORNADA_DIA
+    return 0.0
+
+
+def convenio_anual(horas_convenio, horas_contrato):
+    """Horas de convenio del año. Si no hay cifra, se prorratea la jornada."""
+    if horas_convenio is not None:
+        return float(horas_convenio)
+    contrato = 0.0 if horas_contrato is None else float(horas_contrato)
+    return HORAS_CONVENIO_ANO * contrato / JORNADA_COMPLETA_SEM
+
 
 def minutos(valor):
     return valor.hour * 60 + valor.minute

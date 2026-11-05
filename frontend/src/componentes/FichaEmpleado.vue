@@ -7,6 +7,7 @@ const props = defineProps({
   token: { type: String, required: true },
   login: { type: String, required: true },
   volver: { type: Boolean, default: false },
+  textoVolver: { type: String, default: "← Mi horario" },
 });
 
 const emit = defineEmits(["volver"]);
@@ -66,6 +67,15 @@ const contadores = [
   { clave: "sabados", texto: "Sábados trabajados" },
 ];
 
+const AUSENCIAS_EXTRA = [
+  { codigo: "SR", texto: "Sábado recuperado" },
+  { codigo: "FR", texto: "Festivo recuperado" },
+  { codigo: "HS", texto: "Horas sindicales" },
+  { codigo: "PEND", texto: "Pendientes año anterior" },
+  { codigo: "ST", texto: "Sábado trabajado" },
+  { codigo: "FT", texto: "Festivo trabajado" },
+];
+
 function horasVisibles(valor) {
   return Number(valor).toLocaleString("es-ES", {
     minimumFractionDigits: 0,
@@ -95,13 +105,63 @@ function totalAnual() {
   return ficha.value.horas_por_mes.reduce((suma, horas) => suma + Number(horas), 0);
 }
 
+function serieMes() {
+  const realizadas = ficha.value?.horas_realizadas_por_mes;
+  if (Array.isArray(realizadas) && realizadas.length) {
+    return realizadas;
+  }
+  return ficha.value.horas_por_mes;
+}
+
 function anchoMes(horas) {
-  const maximo = Math.max(...ficha.value.horas_por_mes.map(Number));
+  const maximo = Math.max(...serieMes().map(Number));
   if (maximo <= 0) {
     return "0%";
   }
   return `${(Number(horas) / maximo) * 100}%`;
 }
+
+const muestraConvenio = computed(() => ficha.value?.horas_realizadas != null);
+
+const claseSaldo = computed(() => {
+  const saldo = Number(ficha.value?.saldo);
+  if (saldo > 0) {
+    return "ficha-saldo-exceso";
+  }
+  if (saldo < 0) {
+    return "ficha-saldo-pendiente";
+  }
+  return "";
+});
+
+const notaSaldo = computed(() => {
+  const saldo = Number(ficha.value?.saldo);
+  if (saldo > 0) {
+    return "Exceso";
+  }
+  if (saldo < 0) {
+    return "Pendiente";
+  }
+  return "";
+});
+
+const contadoresExtra = computed(() => {
+  const dias = ficha.value?.dias;
+  if (!dias?.length) {
+    return [];
+  }
+  const cuentas = Object.fromEntries(AUSENCIAS_EXTRA.map((item) => [item.codigo, 0]));
+  for (const dia of dias) {
+    const codigo = String(dia.texto || "").trim().split(/\s+/)[0];
+    if (codigo in cuentas) {
+      cuentas[codigo] += 1;
+    }
+  }
+  return AUSENCIAS_EXTRA.filter((item) => cuentas[item.codigo] > 0).map((item) => ({
+    ...item,
+    numero: cuentas[item.codigo],
+  }));
+});
 
 function fechaImpresion() {
   return new Date().toLocaleDateString("es-ES", {
@@ -233,7 +293,7 @@ onMounted(cargar);
       <span>{{ fechaImpresion() }}</span>
     </p>
     <header class="ficha-cabecera">
-      <button v-if="volver" type="button" class="primario ficha-volver" @click="emit('volver')">← Mi horario</button>
+      <button v-if="volver" type="button" class="primario ficha-volver" @click="emit('volver')">{{ textoVolver }}</button>
       <div>
         <h1>{{ ficha?.nombre || "Ficha" }}</h1>
         <p v-if="ficha">{{ ficha.departamento }} · {{ ficha.grupo }}</p>
@@ -253,15 +313,30 @@ onMounted(cargar);
         Total anual
         <strong>{{ horasVisibles(totalAnual()) }}</strong>
       </p>
+      <div v-if="muestraConvenio" class="ficha-convenio">
+        <article class="tarjeta analisis-kpi">
+          <span class="ficha-mes-nombre">Horas realizadas</span>
+          <strong class="ficha-mes-horas">{{ horasVisibles(ficha.horas_realizadas) }}</strong>
+        </article>
+        <article class="tarjeta analisis-kpi">
+          <span class="ficha-mes-nombre">Convenio</span>
+          <strong class="ficha-mes-horas">{{ horasVisibles(ficha.convenio_anual) }}</strong>
+        </article>
+        <article class="tarjeta analisis-kpi">
+          <span class="ficha-mes-nombre">Saldo</span>
+          <strong class="ficha-mes-horas" :class="claseSaldo">{{ horasConSigno(ficha.saldo) }}</strong>
+          <span v-if="notaSaldo" class="ficha-saldo-nota" :class="claseSaldo">{{ notaSaldo }}</span>
+        </article>
+      </div>
       <div class="ficha-meses">
         <article v-for="(mes, indice) in MESES" :key="mes" class="tarjeta analisis-kpi ficha-mes">
           <span class="ficha-mes-nombre">{{ mes }}</span>
-          <strong class="ficha-mes-horas">{{ horasVisibles(ficha.horas_por_mes[indice]) }}</strong>
+          <strong class="ficha-mes-horas">{{ horasVisibles(serieMes()[indice]) }}</strong>
           <span class="ficha-mes-pista">
             <span
-              v-if="Number(ficha.horas_por_mes[indice]) > 0"
+              v-if="Number(serieMes()[indice]) > 0"
               class="ficha-mes-barra"
-              :style="{ width: anchoMes(ficha.horas_por_mes[indice]) }"
+              :style="{ width: anchoMes(serieMes()[indice]) }"
             ></span>
           </span>
         </article>
@@ -269,6 +344,10 @@ onMounted(cargar);
       <div class="ficha-contadores">
         <div v-for="item in contadores" :key="item.clave" class="tarjeta analisis-kpi">
           <span class="tarjeta-nombre">{{ numeroDe(item.clave) }}</span>
+          <span class="tarjeta-recuento">{{ item.texto }}</span>
+        </div>
+        <div v-for="item in contadoresExtra" :key="item.codigo" class="tarjeta analisis-kpi">
+          <span class="tarjeta-nombre">{{ item.numero }}</span>
           <span class="tarjeta-recuento">{{ item.texto }}</span>
         </div>
       </div>
