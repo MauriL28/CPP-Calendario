@@ -232,3 +232,35 @@ def test_la_clave_nueva_permite_entrar():
     assert "clave = crypt(%s, gen_salt('bf'))" in texto
     assert params == ("nueva", "id-nerea.lago")
     assert entrada.status_code == 200
+
+
+def test_el_mando_guarda_y_borra_horas_convenio():
+    app = create_app()
+    cursor = Cursor([trabajador()])
+    cliente = app.test_client()
+    cabecera = {"Authorization": f"Bearer {token(app, 'mando', MANDO)}"}
+    with patch("rutas.trabajadores.cursor", return_value=Conexion(cursor)):
+        guardado = cliente.put(
+            "/trabajadores/nerea.lago",
+            json={"horas_convenio": 1600},
+            headers=cabecera,
+        )
+        borrado = cliente.put(
+            "/trabajadores/nerea.lago",
+            json={"horas_convenio": ""},
+            headers=cabecera,
+        )
+        negativo = cliente.put(
+            "/trabajadores/nerea.lago",
+            json={"horas_convenio": -1},
+            headers=cabecera,
+        )
+
+    assert guardado.status_code == 200
+    assert guardado.get_json()["horas_convenio"] == 1600.0
+    assert cursor.updates[0][1] == (1600.0, "id-nerea.lago")
+    assert borrado.status_code == 200
+    assert borrado.get_json()["horas_convenio"] is None
+    assert cursor.updates[1][1] == (None, "id-nerea.lago")
+    assert negativo.status_code == 400
+    assert len(cursor.updates) == 2

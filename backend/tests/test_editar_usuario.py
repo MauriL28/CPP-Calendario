@@ -164,6 +164,52 @@ def test_un_admin_edita_grupo_vacaciones_y_seccion_de_un_trabajador():
     assert params[3] == "trab-1"
 
 
+def test_el_admin_guarda_y_borra_horas_convenio():
+    app = create_app()
+    cursor = Cursor(
+        [
+            {
+                "id": "trab-1",
+                "login": "nerea.lago",
+                "rol": "trabajador",
+                "nombre": "Nerea Lago",
+                "numero_sap": "200",
+                "departamento_id": DEPARTAMENTO,
+                "clave": "secreta",
+                "activo": True,
+            }
+        ]
+    )
+    cliente = app.test_client()
+    cabecera = {"Authorization": f"Bearer {token(app, 'admin')}"}
+    with patch("rutas.usuarios.cursor", return_value=Conexion(cursor)):
+        guardado = cliente.put(
+            "/usuarios/nerea.lago",
+            json={"horas_convenio": 1600},
+            headers=cabecera,
+        )
+        borrado = cliente.put(
+            "/usuarios/nerea.lago",
+            json={"horas_convenio": None},
+            headers=cabecera,
+        )
+        negativo = cliente.put(
+            "/usuarios/nerea.lago",
+            json={"horas_convenio": -1},
+            headers=cabecera,
+        )
+
+    assert guardado.status_code == 200
+    assert guardado.get_json()["horas_convenio"] == 1600.0
+    assert cursor.updates[0][1] == (1600.0, "trab-1")
+    assert "horas_convenio = %s" in cursor.updates[0][0]
+    assert borrado.status_code == 200
+    assert borrado.get_json()["horas_convenio"] is None
+    assert cursor.updates[1][1] == (None, "trab-1")
+    assert negativo.status_code == 400
+    assert len(cursor.updates) == 2
+
+
 def test_grupo_en_un_mando_da_400_y_no_guarda():
     app = create_app()
     cursor = Cursor(

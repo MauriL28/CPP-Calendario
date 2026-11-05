@@ -22,6 +22,7 @@ const clave = ref("");
 const grupo = ref("STEF");
 const vacaciones = ref("");
 const horasContrato = ref("");
+const horasConvenio = ref("");
 const seccionId = ref("");
 const error = ref("");
 
@@ -34,6 +35,7 @@ function rellenar() {
   grupo.value = props.persona.grupo || "STEF";
   vacaciones.value = props.persona.vacaciones ?? "";
   horasContrato.value = props.persona.horas_contrato ?? "";
+  horasConvenio.value = props.persona.horas_convenio ?? "";
   seccionId.value = props.persona.seccion_id || "";
   error.value = "";
 }
@@ -73,6 +75,11 @@ function cambiosHechos() {
   const horasActuales = numeroDe(props.persona.horas_contrato);
   if (horasNuevas !== horasActuales) {
     cambios.horas_contrato = horasNuevas;
+  }
+  const convenioNuevo = numeroDe(horasConvenio.value);
+  const convenioActual = numeroDe(props.persona.horas_convenio);
+  if (convenioNuevo !== convenioActual) {
+    cambios.horas_convenio = convenioNuevo;
   }
   if (props.secciones.length) {
     const seccionNueva = seccionId.value || null;
@@ -166,6 +173,11 @@ onMounted(async () => {
               <input v-model="horasContrato" name="horas-contrato-usuario" type="number" min="0" step="0.5" />
             </label>
           </div>
+          <label class="ancho">
+            Horas de convenio al año
+            <input v-model="horasConvenio" name="horas-convenio-usuario" type="number" min="0" step="0.5" />
+          </label>
+          <p class="ancho campo-pista">Vacío = automático (1770 × horas de contrato / 37,5)</p>
           <label v-if="secciones.length" class="ancho">
             Sección
             <select v-model="seccionId" name="seccion-usuario">

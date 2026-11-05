@@ -4,7 +4,7 @@ import validaciones
 from validaciones import comprobar_seccion, sap_ocupado
 
 CAMPOS_COMUNES = {"nombre", "numero_sap", "clave"}
-CAMPOS_TRABAJADOR = {"grupo", "vacaciones", "horas_contrato", "seccion_id"}
+CAMPOS_TRABAJADOR = {"grupo", "vacaciones", "horas_contrato", "horas_convenio", "seccion_id"}
 CAMPOS_USUARIO = CAMPOS_COMUNES | CAMPOS_TRABAJADOR
 ORDEN_USUARIO = (
     "nombre",
@@ -13,6 +13,7 @@ ORDEN_USUARIO = (
     "grupo",
     "vacaciones",
     "horas_contrato",
+    "horas_convenio",
     "seccion_id",
 )
 
@@ -70,6 +71,11 @@ def _cambios_usuario(cuerpo):
         if valor is None or valor == "mal":
             return None, (jsonify(error="Faltan datos"), 400)
         cambios[campo] = valor
+    if "horas_convenio" in cuerpo:
+        valor = validaciones.numero(cuerpo["horas_convenio"])
+        if valor == "mal":
+            return None, (jsonify(error="Faltan datos"), 400)
+        cambios["horas_convenio"] = valor
     if "seccion_id" in cuerpo:
         seccion_id, error = validaciones.leer_seccion_id(cuerpo, opcional=False)
         if error:
