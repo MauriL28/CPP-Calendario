@@ -16,7 +16,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 from db import SinBaseDeDatos, cursor
 from errores import error_bd
 from mandos import departamento_lectura
-from fichajes import _segundos, agrupar_dias, cargar, segundos_pausa_con_huecos
+from fichajes import _segundos, agrupar_dias, cargar, horas_netas, segundos_pausa_con_huecos
 from horas import hora_texto
 from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
 
@@ -381,7 +381,7 @@ def _planes_analisis(cur, filas):
     )
     versiones = _agrupar_versiones(cur.fetchall())
     noche_inicio, noche_fin = _franja(cur)
-    habituales = _habituales(cur, ids)
+    habituales, pausas = _habituales(cur, ids)
     planes = {}
     for fila in utiles:
         guardado = turnos.get((fila["usuario_id"], fila["fecha"]))
@@ -392,12 +392,16 @@ def _planes_analisis(cur, filas):
             noche_inicio,
             noche_fin,
             habituales.get(fila["usuario_id"], True),
+            pausas.get(fila["usuario_id"], 0),
         )
-        planes[(fila["usuario_id"], fila["fecha"])] = turno
+        planes[(fila["usuario_id"], fila["fecha"])] = (
+            turno,
+            pausas.get(fila["usuario_id"], 0),
+        )
     return planes
 
 
-def _detalle_fila(fila, dia, turno):
+def _detalle_fila(fila, dia, turno, pausa_minutos=0):
     lista = dia["eventos"] if dia else []
     llegadas = [evento for evento in lista if evento["tipo"] == "Llegada"]
     salidas = [evento for evento in lista if evento["tipo"] == "Salida"]
@@ -407,7 +411,8 @@ def _detalle_fila(fila, dia, turno):
     offset = 0
     if salida_ev is not None and salida_ev.get("fecha") is not None and fila["fecha"] is not None:
         offset = 1 if (salida_ev["fecha"] - fila["fecha"]).days >= 1 else 0
-    fichado = _minutos(dia["segundos_trabajo"]) if dia else None
+    neto = horas_netas(dia, pausa_minutos, turno)
+    fichado = None if neto is None else int((neto * Decimal(60)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     pausa = _minutos(segundos_pausa_con_huecos(lista)) if lista else None
     inicio = turno.get("hora_inicio") if turno else None
     fin = turno.get("hora_fin") if turno else None
@@ -415,6 +420,8 @@ def _detalle_fila(fila, dia, turno):
         datetime.strptime(inicio, "%H:%M").time() if isinstance(inicio, str) else inicio,
         datetime.strptime(fin, "%H:%M").time() if isinstance(fin, str) else fin,
     ) if inicio and fin else None
+    if previsto is not None:
+        previsto = max(0, previsto - int(pausa_minutos or 0))
     diferencia = None if previsto is None or fichado is None else fichado - previsto
     return {
         "previsto_min": previsto,
@@ -427,6 +434,23 @@ def _detalle_fila(fila, dia, turno):
         "entrada_prevista": _hhmm(inicio) if inicio else None,
         "salida_prevista": _hhmm(fin) if fin else None,
     }
+
+
+def _diferencia_listado(fila, jornada, turno, pausa):
+    if fila["horas_planificadas"] is None:
+        return None
+    origen = jornada
+    if origen is None:
+        if fila["horas_trabajadas"] is None:
+            return None
+        origen = {"horas_trabajadas": fila["horas_trabajadas"], "eventos": []}
+    neto = horas_netas(origen, pausa, turno)
+    if neto is None:
+        return None
+    plan = fila["horas_planificadas"]
+    if not isinstance(plan, Decimal):
+        plan = Decimal(str(plan))
+    return neto - plan
 
 
 def _filas_analisis(cur, donde, params):
@@ -448,10 +472,6 @@ def _filas_analisis(cur, donde, params):
             f.horas_planificadas,
             f.horas_trabajadas,
             f.horas_pausa,
-            CASE
-                WHEN f.horas_planificadas IS NULL THEN NULL
-                ELSE f.horas_trabajadas - f.horas_planificadas
-            END AS diferencia,
             f.coincide::text AS coincide
         FROM fichaje f
         LEFT JOIN usuario u ON u.id = f.usuario_id
@@ -469,11 +489,10 @@ def _filas_analisis(cur, donde, params):
     filas = []
     for fila in leidas:
         clave = (fila["usuario_id"] or fila["numero_sap"], fila["fecha"])
-        detalle = _detalle_fila(
-            fila,
-            _tomar_jornada(pendientes.setdefault(clave, []), fila),
-            planes.get((fila["usuario_id"], fila["fecha"])),
-        )
+        jornada = _tomar_jornada(pendientes.setdefault(clave, []), fila)
+        plan = planes.get((fila["usuario_id"], fila["fecha"]))
+        turno, pausa = (None, 0) if plan is None else plan
+        detalle = _detalle_fila(fila, jornada, turno, pausa)
         filas.append(
             {
                 "nombre": fila["nombre"],
@@ -482,7 +501,7 @@ def _filas_analisis(cur, donde, params):
                 "horas_planificadas": _numero(fila["horas_planificadas"]),
                 "horas_trabajadas": _numero(fila["horas_trabajadas"]),
                 "horas_pausa": _numero(fila["horas_pausa"]),
-                "diferencia": _numero(fila["diferencia"]),
+                "diferencia": _numero(_diferencia_listado(fila, jornada, turno, pausa)),
                 "coincide": fila["coincide"],
                 **detalle,
             }

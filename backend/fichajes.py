@@ -212,8 +212,8 @@ def _desde_medianoche(hora):
     return Decimal(entero) + Decimal(hora.microsecond) / Decimal(1000000)
 
 
-def segundos_pausa_con_huecos(eventos):
-    """Pausas fichadas más huecos Salida→Llegada de la misma lista, sin solapar.
+def _intervalos_jornada(eventos):
+    """Presencias, pausas fichadas y huecos Salida→Llegada, en segundos desde el primer evento.
 
     La lista es una jornada: un hueco que abre otra jornada no entra aquí.
     """
@@ -236,36 +236,68 @@ def segundos_pausa_con_huecos(eventos):
             + Decimal(delta.microseconds) / Decimal(1000000)
         )
 
+    presencias = []
     pausas = []
     huecos = []
+    trabajo_desde = None
     pausa_desde = None
     salida = None
     for ev in ordenados:
         tipo = ev["tipo"]
-        if tipo == "Inicio Pausa" and pausa_desde is None:
+        if tipo == "Llegada":
+            if salida is not None and a_segundos(ev) >= a_segundos(salida):
+                huecos.append((a_segundos(salida), a_segundos(ev)))
+            salida = None
+            if trabajo_desde is None:
+                trabajo_desde = ev
+        elif tipo == "Salida":
+            if trabajo_desde is not None and a_segundos(ev) >= a_segundos(trabajo_desde):
+                presencias.append((a_segundos(trabajo_desde), a_segundos(ev)))
+            trabajo_desde = None
+            salida = ev
+        elif tipo == "Inicio Pausa" and pausa_desde is None:
             pausa_desde = ev
         elif tipo == "Final Pausa" and pausa_desde is not None:
             if a_segundos(ev) >= a_segundos(pausa_desde):
-                pausas.append((pausa_desde, ev))
+                pausas.append((a_segundos(pausa_desde), a_segundos(ev)))
             pausa_desde = None
-        elif tipo == "Salida":
-            salida = ev
-        elif tipo == "Llegada" and salida is not None:
-            if a_segundos(ev) >= a_segundos(salida):
-                huecos.append((salida, ev))
-            salida = None
-    total = sum((a_segundos(fin) - a_segundos(inicio) for inicio, fin in pausas), Decimal(0))
-    for inicio, fin in huecos:
-        desde = a_segundos(inicio)
-        hasta = a_segundos(fin)
-        cubierto = Decimal(0)
-        for pausa_inicio, pausa_fin in pausas:
-            cubierto += max(
-                Decimal(0),
-                min(hasta, a_segundos(pausa_fin)) - max(desde, a_segundos(pausa_inicio)),
-            )
-        total += max(Decimal(0), (hasta - desde) - cubierto)
+    return presencias, pausas, huecos
+
+
+def _solape(desde, hasta, intervalos):
+    cubierto = Decimal(0)
+    for inicio, fin in intervalos:
+        cubierto += max(Decimal(0), min(hasta, fin) - max(desde, inicio))
+    return cubierto
+
+
+def segundos_pausa_con_huecos(eventos):
+    """Pausas fichadas más huecos Salida→Llegada de la misma lista, sin solapar."""
+    partes = _intervalos_jornada(eventos)
+    if partes is None:
+        return None
+    _presencias, pausas, huecos = partes
+    total = sum((fin - inicio for inicio, fin in pausas), Decimal(0))
+    for desde, hasta in huecos:
+        total += max(Decimal(0), (hasta - desde) - _solape(desde, hasta, pausas))
     return total
+
+
+def _pausa_dentro_y_huecos(eventos):
+    """Horas de pausa fichada dentro de la presencia, y huecos Salida→Llegada.
+
+    El hueco ya no está en horas_trabajadas. La pausa que cae en ese hueco
+    se queda en el hueco y no se resta otra vez.
+    """
+    partes = _intervalos_jornada(eventos)
+    if partes is None:
+        return Decimal(0), Decimal(0)
+    presencias, pausas, huecos = partes
+    dentro = Decimal(0)
+    for desde, hasta in pausas:
+        dentro += _solape(desde, hasta, presencias)
+    hueco = sum((hasta - desde for desde, hasta in huecos), Decimal(0))
+    return dentro / Decimal(3600), hueco / Decimal(3600)
 
 
 def _momento(ev):
@@ -571,13 +603,48 @@ def _margen():
     return Decimal(MARGEN_DESCUADRE_MINUTOS) / Decimal(60)
 
 
-def _coincide_con_turno(horas_trabajadas, turno):
+def _ausencia_sin_horas(turno):
+    return bool(turno.get("ausencia")) and turno.get("hora_inicio") is None and turno.get("hora_fin") is None
+
+
+def _neto_fichado(dia, pausa_minutos):
+    """horas_trabajadas ya excluye los huecos. Resta la pausa fichada que sigue dentro.
+
+    Si lo fichado (pausa + huecos) no llega a la pausa del usuario, resta el resto.
+    """
+    trabajadas = dia["horas_trabajadas"]
+    if not isinstance(trabajadas, Decimal):
+        trabajadas = Decimal(str(trabajadas))
+    dentro, huecos = _pausa_dentro_y_huecos(dia.get("eventos") or [])
+    neto = trabajadas - dentro
+    asignada = Decimal(int(pausa_minutos or 0)) / Decimal(60)
+    if dentro + huecos < asignada:
+        neto -= asignada - (dentro + huecos)
+    if neto < 0:
+        return Decimal(0)
+    return neto
+
+
+def horas_netas(dia, pausa_minutos, turno=None):
+    """Horas que se comparan con el turno. Una ausencia sin horario no se toca."""
+    if dia is None or dia.get("horas_trabajadas") is None:
+        return None
+    if turno is not None and _ausencia_sin_horas(turno):
+        valor = dia["horas_trabajadas"]
+        if not isinstance(valor, Decimal):
+            valor = Decimal(str(valor))
+        return valor
+    return _neto_fichado(dia, pausa_minutos)
+
+
+def _coincide_con_turno(dia, turno, pausa_minutos=0):
     if turno is None:
         return "sin_plan"
     planificadas = turno["horas_planificadas"]
     if not isinstance(planificadas, Decimal):
         planificadas = Decimal(str(planificadas))
-    if abs(horas_trabajadas - planificadas) <= _margen():
+    neto = horas_netas(dia, pausa_minutos, turno)
+    if abs(neto - planificadas) <= _margen():
         return "ok"
     return "descuadre"
 
@@ -617,7 +684,7 @@ def _turnos_resueltos(cur, dias):
     )
     versiones = _agrupar_versiones(cur.fetchall())
     noche_inicio, noche_fin = _franja(cur)
-    habituales = _habituales(cur, ids)
+    habituales, pausas = _habituales(cur, ids)
     resueltos = {}
     for dia in utiles:
         fila = turnos.get((dia["usuario_id"], dia["fecha"]))
@@ -628,8 +695,13 @@ def _turnos_resueltos(cur, dias):
             noche_inicio,
             noche_fin,
             habituales.get(dia["usuario_id"], True),
+            pausas.get(dia["usuario_id"], 0),
         )
-        resueltos[(dia["usuario_id"], dia["fecha"])] = (turno, _origen)
+        resueltos[(dia["usuario_id"], dia["fecha"])] = (
+            turno,
+            _origen,
+            pausas.get(dia["usuario_id"], 0),
+        )
     return resueltos
 
 
@@ -649,8 +721,8 @@ def _cruce(dia, turnos):
         return "sin_emparejar", None
     if dia["incidencia"]:
         return None, None
-    turno, _origen = turnos[(dia["usuario_id"], dia["fecha"])]
-    return _coincide_con_turno(dia["horas_trabajadas"], turno), _horas_plan(turno)
+    turno, _origen, pausa = turnos[(dia["usuario_id"], dia["fecha"])]
+    return _coincide_con_turno(dia, turno, pausa), _horas_plan(turno)
 
 
 def _guardar_fichaje(cur, dia, coincide, planificadas):
