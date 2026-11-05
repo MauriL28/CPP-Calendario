@@ -50,6 +50,7 @@ const claveTrabajador = ref("");
 const grupoTrabajador = ref("STEF");
 const vacacionesTrabajador = ref("");
 const horasContratoTrabajador = ref("");
+const pausaTrabajador = ref(0);
 const numeroSapTrabajador = ref("");
 const seccionTrabajador = ref("");
 const errorTrabajador = ref("");
@@ -375,6 +376,7 @@ function vaciarAltaTrabajador() {
   grupoTrabajador.value = "STEF";
   vacacionesTrabajador.value = "";
   horasContratoTrabajador.value = "";
+  pausaTrabajador.value = 0;
   numeroSapTrabajador.value = "";
   seccionTrabajador.value = "";
   errorTrabajador.value = "";
@@ -401,6 +403,7 @@ async function guardarTrabajador() {
     grupo: grupoTrabajador.value,
     vacaciones: numeroTrabajador(vacacionesTrabajador.value),
     horas_contrato: numeroTrabajador(horasContratoTrabajador.value),
+    pausa_minutos: pausaTrabajador.value,
     numero_sap: numeroSapTrabajador.value,
     departamento_id: sede.id,
   };
@@ -782,6 +785,15 @@ onMounted(cargar);
                 Horas de contrato
                 <input v-model="horasContratoTrabajador" name="horas-contrato-trabajador" type="number" min="0" step="0.5" />
               </label>
+              <label>
+                Pausa
+                <select v-model="pausaTrabajador" name="pausa-trabajador">
+                  <option :value="0">Sin pausa</option>
+                  <option :value="30">30 minutos</option>
+                  <option :value="60">1 hora</option>
+                </select>
+              </label>
+              <p class="campo-pista">Descanso diario no pagado. Se resta de las horas planificadas.</p>
               <label>
                 Número de personal (SAP)
                 <input v-model="numeroSapTrabajador" name="numero-sap-trabajador" autocomplete="off" />

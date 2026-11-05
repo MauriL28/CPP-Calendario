@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import LeyendaTurnos from "./LeyendaTurnos.vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
 import { borrarAusenciaMando, borrarTurno, copiarSemana, exportarCuadrante, guardarAusenciasMando, guardarTurno, guardarTurnos, mes, mesMandos, semana, semanaActual, semanaMandos } from "../api/turnos.js";
 
@@ -31,7 +32,6 @@ const mesesLargos = [
 ];
 const ausencias = [
   { codigo: "L", nombre: "Libranza" },
-  { codigo: "D", nombre: "Domingo" },
   { codigo: "V", nombre: "Vacaciones" },
   { codigo: "B", nombre: "Baja" },
   { codigo: "F", nombre: "Festivo" },
@@ -70,17 +70,6 @@ const franjas = [
   { id: "manana", nombre: "Total mañana" },
   { id: "tarde", nombre: "Total tarde" },
 ];
-const leyenda = [
-  { id: "manana", nombre: "Mañana" },
-  { id: "tarde", nombre: "Tarde" },
-  { id: "noche", nombre: "Noche" },
-  { id: "libranza", nombre: "Libranza" },
-  { id: "domingo", nombre: "Domingo" },
-  { id: "vacaciones", nombre: "Vacaciones" },
-  { id: "baja", nombre: "Baja" },
-  { id: "festivo", nombre: "Festivo" },
-  { id: "permiso", nombre: "Permiso" },
-];
 const modo = ref("semana");
 const semanaDesde = ref("");
 const anioMes = ref(0);
@@ -114,20 +103,6 @@ function claveTrabajador(trabajador) {
 const muestraEquipo = computed(
   () => props.propia && modo.value === "semana" && cuadrante.value?.desde === semanaActual(),
 );
-
-const leyendaVisible = computed(() => {
-  if (!muestraEquipo.value && !props.mandos) {
-    return leyenda;
-  }
-  const items = [];
-  for (const item of leyenda) {
-    items.push(item);
-    if (item.id === "baja") {
-      items.push({ id: "ausente", nombre: "Ausente" });
-    }
-  }
-  return items;
-});
 
 const secciones = computed(() => {
   const nombres = new Set();
@@ -373,7 +348,8 @@ async function abrirCelda(trabajador, dia) {
   copiasMarcadas.value = marcasIniciales(dia.fecha);
   if (turno && turno.ausencia) {
     turnoModo.value = "ausencia";
-    const permitida = !props.mandos || ausenciasPropias.some((item) => item.codigo === turno.ausencia);
+    const lista = props.mandos ? ausenciasPropias : ausencias;
+    const permitida = lista.some((item) => item.codigo === turno.ausencia);
     turnoAusencia.value = permitida ? turno.ausencia : "L";
     if (turno.ausencia === "ST" || turno.ausencia === "FT") {
       turnoInicio.value = turno.hora_inicio || "";
@@ -749,12 +725,7 @@ cargar(lunesDe(new Date()));
       </tfoot>
     </table>
     </div>
-    <ul class="leyenda">
-      <li v-for="item in leyendaVisible" :key="item.id">
-        <span class="muestra" :class="`turno-${item.id}`"></span>
-        {{ item.nombre }}
-      </li>
-    </ul>
+    <LeyendaTurnos />
   </section>
   <p v-else-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
   <dialog ref="dialogo" class="editor-dia" @close="alCerrarCelda" @click="alFondo">

@@ -23,6 +23,7 @@ const grupo = ref("STEF");
 const vacaciones = ref("");
 const horasContrato = ref("");
 const horasConvenio = ref("");
+const pausa = ref(0);
 const seccionId = ref("");
 const error = ref("");
 
@@ -36,8 +37,17 @@ function rellenar() {
   vacaciones.value = props.persona.vacaciones ?? "";
   horasContrato.value = props.persona.horas_contrato ?? "";
   horasConvenio.value = props.persona.horas_convenio ?? "";
+  pausa.value = pausaDe(props.persona.pausa_minutos);
   seccionId.value = props.persona.seccion_id || "";
   error.value = "";
+}
+
+function pausaDe(valor) {
+  const cantidad = Number(valor);
+  if (cantidad === 30 || cantidad === 60) {
+    return cantidad;
+  }
+  return 0;
 }
 
 function numeroDe(valor) {
@@ -80,6 +90,10 @@ function cambiosHechos() {
   const convenioActual = numeroDe(props.persona.horas_convenio);
   if (convenioNuevo !== convenioActual) {
     cambios.horas_convenio = convenioNuevo;
+  }
+  const pausaNueva = pausaDe(pausa.value);
+  if (pausaNueva !== pausaDe(props.persona.pausa_minutos)) {
+    cambios.pausa_minutos = pausaNueva;
   }
   if (props.secciones.length) {
     const seccionNueva = seccionId.value || null;
@@ -178,6 +192,15 @@ onMounted(async () => {
             <input v-model="horasConvenio" name="horas-convenio-usuario" type="number" min="0" step="0.5" />
           </label>
           <p class="ancho campo-pista">Vacío = automático (1770 × horas de contrato / 37,5)</p>
+          <label class="ancho">
+            Pausa
+            <select v-model="pausa" name="pausa-usuario">
+              <option :value="0">Sin pausa</option>
+              <option :value="30">30 minutos</option>
+              <option :value="60">1 hora</option>
+            </select>
+          </label>
+          <p class="ancho campo-pista">Descanso diario no pagado. Se resta de las horas planificadas.</p>
           <label v-if="secciones.length" class="ancho">
             Sección
             <select v-model="seccionId" name="seccion-usuario">

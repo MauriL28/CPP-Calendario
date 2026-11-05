@@ -20,6 +20,8 @@ import FichaEmpleado from "./FichaEmpleado.vue";
 
 const props = defineProps({
   token: { type: String, required: true },
+  nombreSesion: { type: String, required: true },
+  departamento: { type: String, default: "" },
 });
 
 const vista = ref("cuadrante");
@@ -39,6 +41,7 @@ const letras = ["L", "M", "X", "J", "V", "S", "D"];
 const horarioAlta = ref(null);
 const vacaciones = ref("");
 const horasContrato = ref("");
+const pausa = ref(0);
 const seccionId = ref("");
 const errorTrabajador = ref("");
 const dialogo = ref(null);
@@ -178,6 +181,7 @@ function vaciarAlta() {
   clave.value = "";
   numeroSap.value = "";
   grupo.value = "STEF";
+  pausa.value = 0;
   reiniciarHorario();
   vacaciones.value = "";
   horasContrato.value = "";
@@ -494,6 +498,7 @@ async function guardar() {
       numero_sap: numeroSap.value,
       vacaciones: numero(vacaciones.value),
       horas_contrato: numero(horasContrato.value),
+      pausa_minutos: pausa.value,
       seccion_id: seccionId.value || null,
     };
     if (muestraHorario.value) {
@@ -753,6 +758,12 @@ onUnmounted(() => {
       Análisis
     </button>
   </nav>
+  <section v-if="vista === 'cuadrante'" class="bienvenida">
+    <p class="bienvenida-titulo">Bienvenido, {{ nombreSesion }}</p>
+    <p class="bienvenida-detalle">
+      Gestiona el cuadrante y el equipo de {{ departamento || "tu departamento" }}.
+    </p>
+  </section>
   <label v-if="variosDepartamentos" class="analisis-filtro departamento-mando">
     Departamento
     <select v-model="departamentoId" class="equipo-grupo">
@@ -927,6 +938,15 @@ onUnmounted(() => {
               <input v-model="vacaciones" name="vacaciones" type="number" min="0" step="0.5" />
             </label>
           </div>
+          <label class="ancho">
+            Pausa
+            <select v-model="pausa" name="pausa-trabajador">
+              <option :value="0">Sin pausa</option>
+              <option :value="30">30 minutos</option>
+              <option :value="60">1 hora</option>
+            </select>
+          </label>
+          <p class="ancho campo-pista">Descanso diario no pagado. Se resta de las horas planificadas.</p>
           <HorarioHabitual v-if="muestraHorario" ref="horarioAlta" />
         </div>
         <p v-if="errorTrabajador" class="error" role="alert">{{ errorTrabajador }}</p>

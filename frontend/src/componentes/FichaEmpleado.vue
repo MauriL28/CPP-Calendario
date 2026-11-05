@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { fichaTrabajador } from "../api/usuarios.js";
 import { fechaVisible } from "../fechas.js";
+import LeyendaTurnos from "./LeyendaTurnos.vue";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -47,18 +48,6 @@ const AUSENCIAS = {
   ST: "festivo",
   FT: "festivo",
 };
-const leyenda = [
-  { id: "manana", nombre: "Mañana" },
-  { id: "tarde", nombre: "Tarde" },
-  { id: "noche", nombre: "Noche" },
-  { id: "libranza", nombre: "Libranza" },
-  { id: "domingo", nombre: "Domingo" },
-  { id: "vacaciones", nombre: "Vacaciones" },
-  { id: "baja", nombre: "Baja" },
-  { id: "festivo", nombre: "Festivo" },
-  { id: "permiso", nombre: "Permiso" },
-];
-
 const contadores = [
   { clave: "vacaciones", texto: "Vacaciones" },
   { clave: "bajas", texto: "Bajas" },
@@ -102,7 +91,7 @@ function totalAnual() {
   if (!ficha.value) {
     return 0;
   }
-  return ficha.value.horas_por_mes.reduce((suma, horas) => suma + Number(horas), 0);
+  return serieMes().reduce((suma, horas) => suma + Number(horas), 0);
 }
 
 function serieMes() {
@@ -201,6 +190,14 @@ function isoLocal(fecha) {
   return `${fecha.getFullYear()}-${mes}-${dia}`;
 }
 
+function lineasHorario(texto) {
+  const corte = String(texto).indexOf("-");
+  if (corte < 1 || corte >= texto.length - 1) {
+    return null;
+  }
+  return [`${texto.slice(0, corte)}-`, texto.slice(corte + 1)];
+}
+
 function familiaTexto(texto) {
   if (!texto) {
     return "";
@@ -253,6 +250,7 @@ const mesesCalendario = computed(() => {
                 fecha,
                 numero: cursor.getDate(),
                 texto: dato?.texto || "",
+                lineas: lineasHorario(dato?.texto || ""),
               }
             : null,
         );
@@ -310,14 +308,10 @@ onMounted(cargar);
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <template v-else-if="ficha">
       <p class="ficha-anual">
-        Total anual
+        {{ muestraConvenio ? "Total anual (con ausencias computables y ajustes)" : "Total anual (solo turnos)" }}
         <strong>{{ horasVisibles(totalAnual()) }}</strong>
       </p>
       <div v-if="muestraConvenio" class="ficha-convenio">
-        <article class="tarjeta analisis-kpi">
-          <span class="ficha-mes-nombre">Horas realizadas</span>
-          <strong class="ficha-mes-horas">{{ horasVisibles(ficha.horas_realizadas) }}</strong>
-        </article>
         <article class="tarjeta analisis-kpi">
           <span class="ficha-mes-nombre">Convenio</span>
           <strong class="ficha-mes-horas">{{ horasVisibles(ficha.convenio_anual) }}</strong>
@@ -402,10 +396,18 @@ onMounted(cargar);
                     v-for="(dia, columna) in semana.dias"
                     :key="`${mes.nombre}-${indice}-${columna}`"
                     :class="dia && familiaTexto(dia.texto) ? `turno-${familiaTexto(dia.texto)}` : ''"
+                    :title="dia?.texto || undefined"
                   >
                     <template v-if="dia">
                       <span class="ficha-dia-num">{{ dia.numero }}</span>
-                      <span v-if="dia.texto" class="ficha-dia-texto">{{ dia.texto }}</span>
+                      <span
+                        v-if="dia.texto"
+                        class="ficha-dia-texto"
+                        :class="{ 'ficha-dia-horario': dia.lineas }"
+                      >
+                        <template v-if="dia.lineas">{{ dia.lineas[0] }}<br>{{ dia.lineas[1] }}</template>
+                        <template v-else>{{ dia.texto }}</template>
+                      </span>
                     </template>
                   </td>
                 </tr>
@@ -413,12 +415,7 @@ onMounted(cargar);
             </table>
           </article>
         </div>
-        <ul class="leyenda">
-          <li v-for="item in leyenda" :key="item.id">
-            <span class="muestra" :class="`turno-${item.id}`"></span>
-            {{ item.nombre }}
-          </li>
-        </ul>
+        <LeyendaTurnos />
       </div>
     </template>
   </section>

@@ -152,20 +152,21 @@ button.marca:not(.tarjeta):not(.celda):focus-visible {
 }
 
 .marca-logo {
-  height: 28px;
+  height: 36px;
   width: auto;
   object-fit: contain;
 }
 
 .marca-sep {
   width: 1px;
-  height: 20px;
+  height: 28px;
   background: var(--border);
 }
 
 .marca h1 {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .sesion {
@@ -300,8 +301,9 @@ button.marca:not(.tarjeta):not(.celda):focus-visible {
 
 .login-marca h1 {
   margin: 0 0 8px;
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   color: #fff;
 }
 
@@ -1453,6 +1455,26 @@ table.cuadrante.mensual tfoot td:first-child {
   font-weight: 600;
 }
 
+.bienvenida {
+  max-width: 1100px;
+  margin-bottom: 20px;
+  padding: 22px 24px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.bienvenida-titulo {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.bienvenida-detalle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
 .mi-horario {
   margin-bottom: 20px;
 }
@@ -1521,6 +1543,27 @@ table.cuadrante.mensual tfoot td:first-child {
   font-size: 32px;
   font-weight: 700;
   color: var(--accent);
+}
+
+.ficha-convenio {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ficha-saldo-exceso {
+  color: var(--alerta);
+}
+
+.ficha-saldo-pendiente {
+  color: var(--warn);
+}
+
+.ficha-saldo-nota {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .ficha-meses {
@@ -1609,6 +1652,7 @@ table.cuadrante.mensual tfoot td:first-child {
     vertical-align: top;
     font-size: 12px;
     line-height: 1.2;
+    overflow: hidden;
   }
 
   .ficha-calendario thead th {
@@ -1633,6 +1677,14 @@ table.cuadrante.mensual tfoot td:first-child {
     font-variant-numeric: tabular-nums;
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  .ficha-dia-texto.ficha-dia-horario {
+    margin-top: 0;
+    font-size: 8px;
+    line-height: 1.05;
+    white-space: nowrap;
+    overflow: hidden;
   }
 
   .ficha-calendario td.turno-manana {
@@ -1709,7 +1761,8 @@ table.cuadrante.mensual tfoot td:first-child {
   }
 
   .ficha-meses,
-  .ficha-contadores {
+  .ficha-contadores,
+  .ficha-convenio {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1718,6 +1771,7 @@ table.cuadrante.mensual tfoot td:first-child {
   .cabecera,
   .pie,
   nav.vistas,
+  .bienvenida,
   .mi-horario,
   .ficha-imprimir,
   .cuadrante-imprimir,
@@ -1747,6 +1801,7 @@ table.cuadrante.mensual tfoot td:first-child {
   .ficha-impresion,
   .ficha-cabecera,
   .ficha-anual,
+  .ficha-convenio,
   .ficha-meses,
   .ficha-contadores,
   .ficha > .panel {
@@ -1834,6 +1889,7 @@ table.cuadrante.mensual tfoot td:first-child {
     font-weight: 600;
     line-height: 1.1;
     color: #111;
+    overflow: hidden;
   }
 
   .ficha-calendario thead th {
@@ -1858,6 +1914,13 @@ table.cuadrante.mensual tfoot td:first-child {
   .ficha-dia-texto {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  .ficha-dia-texto.ficha-dia-horario {
+    font-size: 5.5px;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
   }
 
   .ficha-calendario td {
@@ -2405,26 +2468,7 @@ table.cuadrante td[class*="turno-"] .celda {
 }
 
 .leyenda {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
   margin: 0 0 1rem;
-  padding: 0;
-  list-style: none;
-}
-
-.leyenda li {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8125rem;
-}
-
-.muestra {
-  width: 1rem;
-  height: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.15rem;
 }
 
 .celda {
