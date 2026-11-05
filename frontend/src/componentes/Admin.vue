@@ -4,6 +4,7 @@ import { listar } from "../api/departamentos.js";
 import { importarFichajes, listarImportaciones } from "../api/fichajes.js";
 import Analisis from "./Analisis.vue";
 import EditarUsuario from "./EditarUsuario.vue";
+import FichaEmpleado from "./FichaEmpleado.vue";
 import HorarioHabitual from "./HorarioHabitual.vue";
 import Festivos from "./Festivos.vue";
 import {
@@ -59,6 +60,7 @@ const clave = ref("");
 const numeroSap = ref("");
 const errorMando = ref("");
 const personaEditar = ref(null);
+const fichaLogin = ref("");
 const dialogoHorario = ref(null);
 const horarioMando = ref(null);
 const horarioMandoForm = ref(null);
@@ -250,6 +252,16 @@ function verSede(codigo) {
 function abrirEdicion(persona, rol, sede) {
   personaEditar.value = { ...persona, rol };
   seccionesEditar.value = sede.secciones ?? [];
+}
+
+function abrirFicha(trabajador) {
+  fichaLogin.value = trabajador.login;
+  vista.value = "ficha";
+}
+
+function cerrarFicha() {
+  fichaLogin.value = "";
+  vista.value = "departamentos";
 }
 
 function cerrarEdicion() {
@@ -805,6 +817,7 @@ onMounted(cargar);
                       <span>{{ trabajador.login }}</span>
                     </span>
                     <span class="mando-acciones">
+                      <button type="button" @click="abrirFicha(trabajador)">Ficha</button>
                       <button type="button" @click="abrirEdicion(trabajador, 'trabajador', sede)">Editar</button>
                     </span>
                   </li>
@@ -1000,6 +1013,14 @@ onMounted(cargar);
       </template>
     </section>
   </section>
+  <FichaEmpleado
+    v-else-if="vista === 'ficha'"
+    :token="token"
+    :login="fichaLogin"
+    volver
+    texto-volver="← Departamento"
+    @volver="cerrarFicha"
+  />
   <Analisis v-else-if="vista === 'analisis'" :token="token" />
   <Festivos v-else-if="vista === 'festivos'" :token="token" />
   <dialog ref="dialogoHorario" class="alta-dialogo" @close="alCerrarHorario" @click="alFondoHorario">
@@ -1042,26 +1063,6 @@ onMounted(cargar);
 </template>
 
 <style scoped>
-.bienvenida {
-  max-width: 1100px;
-  margin-bottom: 20px;
-  padding: 22px 24px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.bienvenida-titulo {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.bienvenida-detalle {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--text-2);
-}
-
 .rejilla-deptos {
   max-width: 1100px;
   grid-template-columns: repeat(3, 1fr);
