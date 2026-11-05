@@ -1,10 +1,55 @@
 from datetime import date, time
 from decimal import Decimal
 
+import pytest
+
+from horas import horas_de_turno
 from turnos_base import resolver_turno
 
 NOCHE_INICIO = time(22, 0)
 NOCHE_FIN = time(6, 0)
+
+
+@pytest.mark.parametrize(
+    "tramos",
+    [
+        pytest.param(
+            [(time(8, 0), time(16, 0), 0, 8.0, 0.0)],
+            id="turno-de-dia",
+        ),
+        pytest.param(
+            [(time(20, 21), time(4, 0), 0, 7.65, 6.0)],
+            id="cruza-medianoche",
+        ),
+        pytest.param(
+            [(time(22, 0), time(6, 0), 0, 8.0, 8.0)],
+            id="franja-nocturna",
+        ),
+        pytest.param(
+            [(time(8, 0), time(8, 0), 0, 24.0, 8.0)],
+            id="misma-hora",
+        ),
+        pytest.param(
+            [
+                (time(10, 0), time(19, 0), 60, 8.0, 0.0),
+                (time(22, 0), time(6, 0), 60, 7.0, 8.0),
+            ],
+            id="pausa-60",
+        ),
+        pytest.param(
+            [(time(10, 0), time(19, 0), 0, 9.0, 0.0)],
+            id="pausa-0",
+        ),
+    ],
+)
+def test_horas_de_turno(tramos):
+    for inicio, fin, pausa, planificadas, nocturnas in tramos:
+        assert horas_de_turno(inicio, fin, NOCHE_INICIO, NOCHE_FIN, pausa) == (
+            planificadas,
+            nocturnas,
+        )
+
+
 LUNES = date(2026, 10, 26)
 DOMINGO = date(2026, 10, 25)
 
@@ -26,6 +71,14 @@ def test_un_turno_guardado_no_usa_el_horario_habitual():
     assert origen == "guardado"
     assert turno["ausencia"] == "L"
     assert turno["horas_planificadas"] == 0.0
+
+
+def test_el_horario_habitual_resta_la_pausa():
+    habitual = versiones(date(2026, 1, 1), {0: (time(10, 0), time(19, 0))})
+    turno, origen = resolver_turno(LUNES, None, habitual, NOCHE_INICIO, NOCHE_FIN, True, 60)
+    assert origen == "habitual"
+    assert turno["horas_planificadas"] == 8.0
+    assert turno["horas_nocturnas"] == 0.0
 
 
 def test_sin_turno_guardado_usa_el_horario_de_ese_dia():

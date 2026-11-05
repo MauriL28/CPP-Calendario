@@ -1,5 +1,7 @@
 from uuid import UUID
 
+import pytest
+
 from mandos import departamento_permitido
 
 PROPIO = UUID("bdc0a198-ac3a-47ef-84f3-d834f2adf608")
@@ -23,32 +25,59 @@ class Cursor:
         return self.departamentos
 
 
-def test_el_departamento_propio_esta_permitido_aunque_no_este_en_la_tabla():
-    cursor = Cursor({"rol": "mando", "departamento_id": PROPIO}, [])
-    assert departamento_permitido(cursor, "mando", str(PROPIO)) is True
-
-
-def test_un_departamento_de_la_tabla_esta_permitido():
-    cursor = Cursor({"rol": "mando", "departamento_id": PROPIO}, [CHOFERES])
-    assert departamento_permitido(cursor, "mando", CHOFERES) is True
-
-
-def test_un_departamento_ajeno_no_esta_permitido():
-    cursor = Cursor({"rol": "mando", "departamento_id": PROPIO}, [CHOFERES])
-    assert departamento_permitido(cursor, "mando", MUELLE) is False
-
-
-def test_un_usuario_inexistente_no_tiene_departamentos():
-    cursor = Cursor(None)
-    assert departamento_permitido(cursor, "nadie", PROPIO) is False
-    assert cursor.consultas == 1
-
-
-def test_un_usuario_que_no_es_mando_no_tiene_departamentos():
-    cursor = Cursor({"rol": "trabajador", "departamento_id": PROPIO}, [PROPIO])
-    assert departamento_permitido(cursor, "trabajador", PROPIO) is False
-
-
-def test_departamento_nulo_no_esta_permitido():
-    cursor = Cursor({"rol": "mando", "departamento_id": PROPIO})
-    assert departamento_permitido(cursor, "mando", None) is False
+@pytest.mark.parametrize(
+    ("usuario", "departamentos", "rol", "departamento", "permitido", "consultas"),
+    [
+        pytest.param(
+            {"rol": "mando", "departamento_id": PROPIO},
+            [],
+            "mando",
+            str(PROPIO),
+            True,
+            None,
+            id="propio-sin-tabla",
+        ),
+        pytest.param(
+            {"rol": "mando", "departamento_id": PROPIO},
+            [CHOFERES],
+            "mando",
+            CHOFERES,
+            True,
+            None,
+            id="de-la-tabla",
+        ),
+        pytest.param(
+            {"rol": "mando", "departamento_id": PROPIO},
+            [CHOFERES],
+            "mando",
+            MUELLE,
+            False,
+            None,
+            id="ajeno",
+        ),
+        pytest.param(None, [], "nadie", PROPIO, False, 1, id="usuario-inexistente"),
+        pytest.param(
+            {"rol": "trabajador", "departamento_id": PROPIO},
+            [PROPIO],
+            "trabajador",
+            PROPIO,
+            False,
+            None,
+            id="no-es-mando",
+        ),
+        pytest.param(
+            {"rol": "mando", "departamento_id": PROPIO},
+            [],
+            "mando",
+            None,
+            False,
+            None,
+            id="departamento-nulo",
+        ),
+    ],
+)
+def test_departamento_permitido(usuario, departamentos, rol, departamento, permitido, consultas):
+    cursor = Cursor(usuario, departamentos)
+    assert departamento_permitido(cursor, rol, departamento) is permitido
+    if consultas is not None:
+        assert cursor.consultas == consultas

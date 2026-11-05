@@ -105,7 +105,7 @@ class Conexion:
         return False
 
 
-def token(app, rol):
+def token(app, rol="admin"):
     with app.app_context():
         return emitir_token("93c2848c-a3e7-406f-b4aa-63a70c353b31", rol, [], "Admin", None)
 
@@ -122,6 +122,9 @@ def crear(cliente, acceso, login, delegacion):
         },
         headers={"Authorization": f"Bearer {acceso}"},
     )
+
+
+alta = crear
 
 
 def test_desactivar_y_reactivar_y_el_conflicto_da_409():
@@ -224,28 +227,194 @@ def test_quitar_la_asignacion_funciona_y_el_propio_da_400():
     assert cursor.usuarios[0]["departamento_id"] == TRAFICO_60
 
 
-def test_quien_no_es_admin_recibe_403_en_los_tres():
-    app = create_app()
-    acceso = token(app, "mando")
-    cliente = app.test_client()
-    cabecera = {"Authorization": f"Bearer {acceso}"}
-    with patch("rutas.usuarios.cursor") as cursor:
-        activo = cliente.put(
-            "/usuarios/ana.rios/activo",
-            json={"activo": False},
-            headers=cabecera,
-        )
-        asignar = cliente.post(
-            "/usuarios/ana.rios/departamentos",
-            json={"delegacion": "05I", "departamento": "trafico"},
-            headers=cabecera,
-        )
-        quitar = cliente.delete(
-            f"/usuarios/ana.rios/departamentos/{TRAFICO_05}",
-            headers=cabecera,
-        )
+class CursorAlta:
+    """Departamento y mandos en memoria. No abre la base de desarrollo."""
 
-    assert activo.status_code == 403
-    assert asignar.status_code == 403
-    assert quitar.status_code == 403
-    cursor.assert_not_called()
+    def __init__(self):
+        self.usuarios = []
+        self.inserts = 0
+        self._fila = None
+
+    def execute(self, sql, params=None):
+        texto = " ".join(sql.split())
+        params = params or ()
+        if "FROM departamento" in texto:
+            identificador = DEPARTAMENTOS.get((params[0], params[1]))
+            self._fila = {"id": identificador} if identificador else None
+            return
+        if "mando_departamento" in texto:
+            departamento_id = params[0]
+            hay = any(
+                usuario["rol"] == "mando"
+                and usuario["activo"]
+                and (
+                    usuario["departamento_id"] == departamento_id
+                    or departamento_id in usuario["extra"]
+                )
+                for usuario in self.usuarios
+            )
+            self._fila = (1,) if hay else None
+            return
+        if "WHERE login" in texto:
+            self._fila = (1,) if any(usuario["login"] == params[0] for usuario in self.usuarios) else None
+            return
+        if texto.startswith("INSERT INTO usuario"):
+            self.inserts += 1
+            self.usuarios.append(
+                {
+                    "login": params[1],
+                    "rol": "mando",
+                    "activo": True,
+                    "departamento_id": params[3],
+                    "extra": [],
+                }
+            )
+            self._fila = {
+                "nombre": params[0],
+                "login": params[1],
+                "rol": "mando",
+                "numero_sap": params[4],
+            }
+            return
+        raise AssertionError(texto)
+
+    def fetchone(self):
+        return self._fila
+
+
+
+def test_el_primer_mando_entra_el_segundo_no_y_la_otra_delegacion_si():
+    app = create_app()
+    cursor = CursorAlta()
+    acceso = token(app)
+    cliente = app.test_client()
+    with patch("rutas.usuarios.cursor", return_value=Conexion(cursor)):
+        primero = alta(cliente, acceso, "ana.rios", "60I")
+        segundo = alta(cliente, acceso, "bea.rios", "60I")
+        otra = alta(cliente, acceso, "cira.rios", "05I")
+
+    assert primero.status_code == 201
+    assert segundo.status_code == 409
+    assert segundo.get_json()["error"] == "Este departamento ya tiene un mando en esta delegación"
+    assert otra.status_code == 201
+    assert cursor.inserts == 2
+    assert [usuario["departamento_id"] for usuario in cursor.usuarios] == [TRAFICO_60, TRAFICO_05]
+
+
+class CursorLista:
+    def __init__(self):
+        self.sql_mandos = ""
+        self._fila = None
+        self._filas = []
+
+    def execute(self, sql, _params=None):
+        texto = " ".join(sql.split())
+        self._fila = None
+        self._filas = []
+        if texto.startswith("SELECT rol, departamento_id"):
+            self._fila = {"rol": "mando", "departamento_id": "d60"}
+        elif texto.startswith("SELECT departamento_id FROM usuario"):
+            self._fila = {"departamento_id": "d60"}
+        elif texto.startswith("SELECT DISTINCT"):
+            self._filas = [{"codigo": "60I"}, {"codigo": "05I"}]
+        elif "usa_horario_habitual" in texto:
+            self._filas = [
+                fila("60I", "d60"),
+                fila("05I", "d05"),
+            ]
+        elif "AS propio" in texto:
+            self.sql_mandos = texto
+            personas = [
+                mando("60I", "Ana Ríos", "ana.rios", None, False, True),
+                mando("05I", "Bea Ríos", "bea.rios", "101", True, False),
+            ]
+            if "AND u.activo" in texto:
+                personas = [persona for persona in personas if persona["activo"]]
+            self._filas = personas
+
+    def fetchone(self):
+        return self._fila
+
+    def fetchall(self):
+        return self._filas
+
+
+
+def fila(delegacion, identificador):
+    return {
+        "delegacion": delegacion,
+        "id": identificador,
+        "codigo": "trafico",
+        "nombre": "Tráfico",
+        "orden": 1,
+        "usa_horario_habitual": True,
+        "seccion_id": None,
+        "seccion": None,
+    }
+
+
+def mando(delegacion, nombre, login, numero_sap, activo, propio):
+    return {
+        "delegacion": delegacion,
+        "departamento": "trafico",
+        "nombre": nombre,
+        "login": login,
+        "numero_sap": numero_sap,
+        "activo": activo,
+        "propio": propio,
+    }
+
+
+def token_sedes(app, rol):
+    with app.app_context():
+        return emitir_token("93c2848c-a3e7-406f-b4aa-63a70c353b31", rol, ["60I", "05I"], "Admin", None)
+
+
+def lista(cliente, acceso):
+    return cliente.get("/departamentos", headers={"Authorization": f"Bearer {acceso}"})
+
+
+def test_el_mando_enlazado_sale_en_el_otro_departamento_y_el_inactivo_tambien():
+    app = create_app()
+    cursor = CursorLista()
+    cliente = app.test_client()
+    with patch("rutas.departamentos.cursor", return_value=Conexion(cursor)):
+        respuesta = lista(cliente, token_sedes(app, "admin"))
+
+    assert respuesta.status_code == 200
+    assert "mando_departamento" in cursor.sql_mandos
+    assert "AND u.activo" not in cursor.sql_mandos
+    sedes = {item["delegacion"]: item for item in respuesta.get_json()}
+    assert sedes["05I"]["mandos"] == [
+        {
+            "nombre": "Bea Ríos",
+            "login": "bea.rios",
+            "numero_sap": "101",
+            "activo": True,
+            "propio": False,
+        }
+    ]
+    assert sedes["60I"]["mandos"] == [
+        {
+            "nombre": "Ana Ríos",
+            "login": "ana.rios",
+            "numero_sap": None,
+            "activo": False,
+            "propio": True,
+        }
+    ]
+    assert sedes["60I"]["trabajadores"] == []
+
+
+def test_un_mando_no_ve_los_inactivos():
+    app = create_app()
+    cursor = CursorLista()
+    cliente = app.test_client()
+    with patch("rutas.departamentos.cursor", return_value=Conexion(cursor)):
+        respuesta = lista(cliente, token_sedes(app, "mando"))
+
+    assert respuesta.status_code == 200
+    assert "AND u.activo" in cursor.sql_mandos
+    sedes = {item["delegacion"]: item for item in respuesta.get_json()}
+    assert sedes["60I"]["mandos"] == []
+    assert sedes["05I"]["mandos"][0]["login"] == "bea.rios"

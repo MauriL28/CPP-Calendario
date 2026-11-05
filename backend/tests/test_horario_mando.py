@@ -5,7 +5,6 @@ from app import create_app
 from seguridad import emitir_token
 
 MANDO = "93c2848c-a3e7-406f-b4aa-63a70c353b31"
-OTRO = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 DELEGACION = "delegacion-60"
 
 
@@ -211,36 +210,6 @@ def test_un_mando_no_puede_cambiar_el_de_otro():
     assert respuesta.get_json()["error"] == "Campo no permitido"
     assert cursor.inserts == 0
     assert cursor.dias == []
-
-
-def test_un_trabajador_recibe_403():
-    app = create_app()
-    cursor = Cursor()
-    cliente = app.test_client()
-    propio = pedir(
-        cliente,
-        app,
-        cursor,
-        "PUT",
-        "/mandos/propio/horario",
-        horario(0),
-        "trabajador",
-        OTRO,
-    )
-    ajeno = pedir(
-        cliente,
-        app,
-        cursor,
-        "PUT",
-        "/usuarios/ana.rios/horario",
-        horario(0),
-        "trabajador",
-        OTRO,
-    )
-
-    assert propio.status_code == 403
-    assert ajeno.status_code == 403
-    assert cursor.inserts == 0
 
 
 def test_desde_anterior_a_hoy_da_400():

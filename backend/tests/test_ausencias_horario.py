@@ -12,8 +12,9 @@ LUNES = date(2026, 11, 2)
 
 
 class Cursor:
-    def __init__(self, cupo=0):
+    def __init__(self, cupo=0, pausa=0):
         self.cupo = cupo
+        self.pausa = pausa
         self.turnos = {}
         self.inserts = 0
         self.rowcount = 0
@@ -63,6 +64,8 @@ class Cursor:
             self._fila = {"usados": usados}
         elif texto.startswith("SELECT noche_inicio"):
             self._fila = {"noche_inicio": time(22, 0), "noche_fin": time(6, 0)}
+        elif texto.startswith("SELECT pausa_minutos"):
+            self._fila = {"pausa_minutos": self.pausa}
         elif texto.startswith("DELETE FROM turno"):
             desde, hasta = params[1], params[2]
             for clave, fila in list(self.turnos.items()):
@@ -222,37 +225,26 @@ def test_copiar_semana_conserva_st():
     assert cursor.turnos[(TRABAJADOR, LUNES)] == origen
 
 
-def test_el_limite_de_vacaciones_ignora_sr_fr_y_pend():
-    cursor = Cursor(cupo=1)
-    for codigo, dia in (
-        ("SR", "2026-11-02"),
-        ("FR", "2026-11-03"),
-        ("PEND", "2026-11-04"),
-    ):
-        respuesta = pedir(
-            "put",
-            "/turnos",
-            {"login": "nerea.lago", "fecha": dia, "ausencia": codigo},
-            cursor,
-        )
-        assert respuesta.status_code == 200
-
-    primera = pedir(
+def test_st_con_pausa_resta_las_horas_planificadas():
+    cursor = Cursor(pausa=60)
+    respuesta = pedir(
         "put",
         "/turnos",
-        {"login": "nerea.lago", "fecha": "2026-11-05", "ausencia": "V"},
+        {
+            "login": "nerea.lago",
+            "fecha": "2026-11-02",
+            "ausencia": "ST",
+            "hora_inicio": "10:00",
+            "hora_fin": "19:00",
+        },
         cursor,
     )
-    assert primera.status_code == 200
 
-    segunda = pedir(
-        "put",
-        "/turnos",
-        {"login": "nerea.lago", "fecha": "2026-11-06", "ausencia": "V"},
-        cursor,
-    )
-    assert segunda.status_code == 409
-    assert (TRABAJADOR, date(2026, 11, 6)) not in cursor.turnos
+    assert respuesta.status_code == 200
+    fila = cursor.turnos[(TRABAJADOR, LUNES)]
+    assert fila["ausencia"] == "ST"
+    assert fila["horas_planificadas"] == 8
+    assert fila["horas_nocturnas"] == 0
 
 
 def test_turno_visible_conserva_codigo_y_horario_de_st_y_ft():

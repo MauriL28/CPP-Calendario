@@ -1,27 +1,54 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from unittest.mock import patch
+
+import psycopg
 
 from app import create_app
 from rutas.turnos import _dias_departamento
 from seguridad import emitir_token
 
 MANDO = "93c2848c-a3e7-406f-b4aa-63a70c353b31"
+DEPARTAMENTO = "bdc0a198-ac3a-47ef-84f3-d834f2adf608"
+OTRO = "f655754e-7511-41bf-8188-f11ef2ed928f"
 LUNES = date(2026, 11, 2)
-NOCHE = time(22, 0)
 
 
 class Cursor:
-    def __init__(self):
+    def __init__(self, departamento_id=DEPARTAMENTO, fallar_en=None):
+        self.departamento_id = departamento_id
+        self.fallar_en = fallar_en
         self.turnos = {}
         self.inserts = 0
         self._fila = None
+        self._filas = []
 
     def execute(self, sql, params=None):
         texto = " ".join(sql.split())
         params = params or ()
         self._fila = None
-        if texto.startswith("INSERT INTO turno"):
+        self._filas = []
+        if texto.startswith("SELECT rol, departamento_id"):
+            self._fila = {"rol": "mando", "departamento_id": DEPARTAMENTO}
+        elif texto.startswith("SELECT departamento_id"):
+            self._filas = []
+        elif texto.startswith("SELECT id, departamento_id"):
+            self._fila = {
+                "id": "trab-1",
+                "departamento_id": self.departamento_id,
+            }
+        elif texto.startswith("SELECT vacaciones"):
+            self._fila = {"vacaciones": None}
+        elif texto.startswith("SELECT pausa_minutos"):
+            self._fila = {"pausa_minutos": 0}
+        elif texto.startswith("SELECT noche_inicio"):
+            self._fila = {
+                "noche_inicio": datetime.strptime("22:00", "%H:%M").time(),
+                "noche_fin": datetime.strptime("06:00", "%H:%M").time(),
+            }
+        elif texto.startswith("INSERT INTO turno"):
             self.inserts += 1
+            if self.fallar_en is not None and self.inserts == self.fallar_en:
+                raise psycopg.Error("fallo")
             fila = {
                 "usuario_id": params[0],
                 "fecha": params[1],
@@ -35,18 +62,14 @@ class Cursor:
             self._fila = fila
         elif texto.startswith("DELETE FROM turno"):
             self._fila = self.turnos.pop((params[0], params[1]), None)
-        elif texto.startswith("SELECT vacaciones"):
-            self._fila = {"vacaciones": None}
-        elif texto.startswith("SELECT noche_inicio"):
-            self._fila = {
-                "noche_inicio": time(22, 0),
-                "noche_fin": time(6, 0),
-            }
         else:
             raise AssertionError(texto)
 
     def fetchone(self):
         return self._fila
+
+    def fetchall(self):
+        return self._filas
 
 
 class Conexion:
@@ -59,7 +82,12 @@ class Conexion:
 
     def __exit__(self, tipo, *_args):
         self.confirmada = tipo is None
+        if tipo is not None:
+            self.cursor.turnos.clear()
         return False
+
+
+NOCHE = time(22, 0)
 
 
 def token(app, rol="mando", usuario=MANDO):
@@ -67,16 +95,164 @@ def token(app, rol="mando", usuario=MANDO):
         return emitir_token(usuario, rol, ["60I"], "Mando", "Tráfico")
 
 
-def pedir(cliente, app, cursor, metodo, cuerpo, rol="mando"):
+def pedir(cliente, app, cursor, cuerpo_o_metodo, cuerpo=None, rol="mando"):
     conexion = Conexion(cursor)
     with patch("rutas.turnos.cursor", return_value=conexion):
-        respuesta = cliente.open(
-            "/turnos/mandos/propio",
-            method=metodo,
-            json=cuerpo,
-            headers={"Authorization": f"Bearer {token(app, rol)}"},
-        )
+        if isinstance(cuerpo_o_metodo, str):
+            respuesta = cliente.open(
+                "/turnos/mandos/propio",
+                method=cuerpo_o_metodo,
+                json=cuerpo,
+                headers={"Authorization": f"Bearer {token(app, rol)}"},
+            )
+        else:
+            respuesta = cliente.put(
+                "/turnos/varios",
+                json=cuerpo_o_metodo,
+                headers={"Authorization": f"Bearer {token(app)}"},
+            )
     return respuesta, conexion
+
+
+def test_guarda_varios_dias_con_horario():
+    app = create_app()
+    cursor = Cursor()
+    fechas = ["2026-11-02", "2026-11-03", "2026-11-04"]
+    respuesta, conexion = pedir(
+        app.test_client(),
+        app,
+        cursor,
+        {
+            "login": "nerea.lago",
+            "fechas": fechas,
+            "hora_inicio": "08:00",
+            "hora_fin": "16:00",
+        },
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.get_json() == {"guardados": 3}
+    assert conexion.confirmada
+    assert len(cursor.turnos) == 3
+    for texto in fechas:
+        fila = cursor.turnos[("trab-1", date.fromisoformat(texto))]
+        assert fila["ausencia"] is None
+        assert fila["hora_inicio"].strftime("%H:%M") == "08:00"
+        assert fila["hora_fin"].strftime("%H:%M") == "16:00"
+        assert fila["horas_planificadas"] == 8
+
+
+def test_guarda_varios_dias_con_ausencia():
+    app = create_app()
+    cursor = Cursor()
+    respuesta, _conexion = pedir(
+        app.test_client(),
+        app,
+        cursor,
+        {
+            "login": "nerea.lago",
+            "fechas": ["2026-11-02", "2026-11-03"],
+            "ausencia": "V",
+        },
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.get_json() == {"guardados": 2}
+    for fila in cursor.turnos.values():
+        assert fila["ausencia"] == "V"
+        assert fila["hora_inicio"] is None
+        assert fila["hora_fin"] is None
+        assert fila["horas_planificadas"] == 0
+        assert fila["horas_nocturnas"] == 0
+
+
+def test_sustituye_un_dia_que_ya_tenia_turno():
+    app = create_app()
+    cursor = Cursor()
+    cursor.turnos[("trab-1", LUNES)] = {
+        "ausencia": "L",
+        "hora_inicio": None,
+        "hora_fin": None,
+    }
+    respuesta, _conexion = pedir(
+        app.test_client(),
+        app,
+        cursor,
+        {
+            "login": "nerea.lago",
+            "fechas": ["2026-11-02"],
+            "hora_inicio": "09:00",
+            "hora_fin": "17:00",
+        },
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.get_json() == {"guardados": 1}
+    fila = cursor.turnos[("trab-1", LUNES)]
+    assert fila["ausencia"] is None
+    assert fila["hora_inicio"].strftime("%H:%M") == "09:00"
+    assert len(cursor.turnos) == 1
+
+
+def test_fechas_de_dos_semanas_da_400():
+    app = create_app()
+    cursor = Cursor()
+    respuesta, _conexion = pedir(
+        app.test_client(),
+        app,
+        cursor,
+        {
+            "login": "nerea.lago",
+            "fechas": ["2026-11-02", "2026-11-09"],
+            "hora_inicio": "08:00",
+            "hora_fin": "16:00",
+        },
+    )
+
+    assert respuesta.status_code == 400
+    assert cursor.inserts == 0
+    assert cursor.turnos == {}
+
+
+def test_trabajador_de_otro_departamento_da_404():
+    app = create_app()
+    cursor = Cursor(departamento_id=OTRO)
+    respuesta, conexion = pedir(
+        app.test_client(),
+        app,
+        cursor,
+        {
+            "login": "nerea.lago",
+            "fechas": ["2026-11-02"],
+            "hora_inicio": "08:00",
+            "hora_fin": "16:00",
+        },
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.get_json()["error"] == "Ese trabajador no es de tu departamento"
+    assert cursor.inserts == 0
+    assert conexion.confirmada
+
+
+def test_si_una_fecha_falla_no_se_guarda_ninguna():
+    app = create_app()
+    cursor = Cursor(fallar_en=2)
+    respuesta, conexion = pedir(
+        app.test_client(),
+        app,
+        cursor,
+        {
+            "login": "nerea.lago",
+            "fechas": ["2026-11-02", "2026-11-03"],
+            "hora_inicio": "08:00",
+            "hora_fin": "16:00",
+        },
+    )
+
+    assert respuesta.status_code == 503
+    assert not conexion.confirmada
+    assert cursor.turnos == {}
 
 
 def test_guarda_v_en_varios_dias():
@@ -137,37 +313,6 @@ def test_ausencia_no_permitida_da_400():
     assert respuesta.status_code == 400
     assert respuesta.get_json()["error"] == "La ausencia no es válida"
     assert cursor.inserts == 0
-
-
-def test_horas_dan_400():
-    app = create_app()
-    cursor = Cursor()
-    respuesta, _conexion = pedir(
-        app.test_client(),
-        app,
-        cursor,
-        "PUT",
-        {"fechas": ["2026-11-02"], "ausencia": "V", "hora_inicio": "08:00", "hora_fin": "16:00"},
-    )
-
-    assert respuesta.status_code == 400
-    assert cursor.inserts == 0
-
-
-def test_fechas_de_dos_semanas_da_400():
-    app = create_app()
-    cursor = Cursor()
-    respuesta, _conexion = pedir(
-        app.test_client(),
-        app,
-        cursor,
-        "PUT",
-        {"fechas": ["2026-11-02", "2026-11-09"], "ausencia": "V"},
-    )
-
-    assert respuesta.status_code == 400
-    assert cursor.inserts == 0
-    assert cursor.turnos == {}
 
 
 def test_borrar_funciona_y_404_si_no_hay_fila():

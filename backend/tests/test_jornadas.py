@@ -1,6 +1,8 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+import pytest
+
 from fichajes import _partir_jornadas, calcular_dia, segundos_pausa_con_huecos
 
 
@@ -65,34 +67,45 @@ def test_noche_de_sap_101882_cruza_medianoche_en_una_jornada():
     assert calculo["horas_trabajadas"] == Decimal("7.65")
 
 
-def test_hueco_de_exactamente_cuatro_horas_sigue_en_la_misma_jornada():
+def marcas_de_cuatro_horas():
     dia = date(2026, 9, 3)
     salida = time(14, 0)
     llegada = (datetime.combine(dia, salida) + timedelta(hours=4)).time()
-    jornadas = _partir_jornadas(
-        [
-            evento("Llegada", time(8, 0), dia, 1),
-            evento("Salida", salida, dia, 2),
-            evento("Llegada", llegada, dia, 3),
-        ]
-    )
-    assert len(jornadas) == 1
-
-
-def test_hueco_de_mas_de_cuatro_horas_abre_otra_jornada():
-    dia = date(2026, 9, 3)
-    jornadas = _partir_jornadas(
-        [
-            evento("Llegada", time(8, 0), dia, 1),
-            evento("Salida", time(12, 0), dia, 2),
-            evento("Llegada", time(16, 0, 1), dia, 3),
-            evento("Salida", time(20, 0), dia, 4),
-        ]
-    )
-    assert [tipos(jornada) for jornada in jornadas] == [
-        ["Llegada", "Salida"],
-        ["Llegada", "Salida"],
+    return [
+        evento("Llegada", time(8, 0), dia, 1),
+        evento("Salida", salida, dia, 2),
+        evento("Llegada", llegada, dia, 3),
     ]
+
+
+def marcas_de_mas_de_cuatro_horas():
+    dia = date(2026, 9, 3)
+    return [
+        evento("Llegada", time(8, 0), dia, 1),
+        evento("Salida", time(12, 0), dia, 2),
+        evento("Llegada", time(16, 0, 1), dia, 3),
+        evento("Salida", time(20, 0), dia, 4),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("marcas", "esperadas"),
+    [
+        pytest.param(marcas_de_cuatro_horas(), None, id="exactamente-cuatro-horas"),
+        pytest.param(
+            marcas_de_mas_de_cuatro_horas(),
+            [["Llegada", "Salida"], ["Llegada", "Salida"]],
+            id="mas-de-cuatro-horas",
+        ),
+    ],
+)
+def test_el_hueco_de_cuatro_horas(marcas, esperadas):
+    jornadas = _partir_jornadas(marcas)
+    if esperadas is None:
+        assert len(jornadas) == 1
+    else:
+        assert [tipos(jornada) for jornada in jornadas] == esperadas
+
 
 
 def test_llegada_sin_salida_a_mas_de_dieciseis_horas():

@@ -2,7 +2,7 @@ from datetime import date, time
 from unittest.mock import patch
 
 from app import create_app
-from horas import convenio_anual, horas_computables
+from horas import convenio_anual
 from seguridad import emitir_token
 
 TRABAJADOR = "11111111-1111-1111-1111-111111111111"
@@ -10,13 +10,6 @@ MANDO = "93c2848c-a3e7-406f-b4aa-63a70c353b31"
 ADMIN = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 DEPARTAMENTO = "22222222-2222-2222-2222-222222222222"
 OTRO = "33333333-3333-3333-3333-333333333333"
-
-
-def test_horas_computables_de_turno_ft_baja_y_vacaciones():
-    assert horas_computables(None, 8) == 8
-    assert horas_computables("FT", 6) == 6
-    assert horas_computables("B", 0) == 7.5
-    assert horas_computables("V", 0) == 0
 
 
 def test_convenio_informado_y_vacio():

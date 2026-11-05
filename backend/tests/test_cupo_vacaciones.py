@@ -1,6 +1,8 @@
 from datetime import date, time
 from unittest.mock import patch
 
+import pytest
+
 from app import create_app
 from seguridad import emitir_token
 
@@ -59,6 +61,8 @@ class Cursor:
                 and inicio <= fecha <= fin
             )
             self._fila = {"usados": usados}
+        elif texto.startswith("SELECT pausa_minutos"):
+            self._fila = {"pausa_minutos": 0}
         elif texto.startswith("SELECT noche_inicio"):
             self._fila = {"noche_inicio": time(22, 0), "noche_fin": time(6, 0)}
         elif texto.startswith("INSERT INTO turno"):
@@ -112,7 +116,7 @@ def pedir(metodo, ruta, cuerpo, cursor, rol="mando"):
     return respuesta
 
 
-def test_asignar_hasta_el_cupo_exacto_funciona_y_uno_mas_no_cambia_nada():
+def test_asignar_hasta_el_cupo_exacto_funciona():
     cursor = Cursor(cupo=2)
     fechas = ["2026-11-02", "2026-11-03"]
     respuesta = pedir(
@@ -125,47 +129,57 @@ def test_asignar_hasta_el_cupo_exacto_funciona_y_uno_mas_no_cambia_nada():
     assert respuesta.status_code == 200
     assert cursor.inserts == 2
 
+
+@pytest.mark.parametrize(
+    ("cupo", "previas", "ruta", "cuerpo", "mensaje", "inserts"),
+    [
+        pytest.param(
+            2,
+            ["2026-11-02", "2026-11-03"],
+            "/turnos",
+            {"login": "nerea.lago", "fecha": "2026-11-04", "ausencia": "V"},
+            "Solo quedan 0 días de vacaciones y intentas asignar 1",
+            2,
+            id="uno-mas-no-cambia-nada",
+        ),
+        pytest.param(
+            3,
+            [],
+            "/turnos/varios",
+            {
+                "login": "nerea.lago",
+                "fechas": [
+                    "2026-11-02",
+                    "2026-11-03",
+                    "2026-11-04",
+                    "2026-11-05",
+                    "2026-11-06",
+                ],
+                "ausencia": "V",
+            },
+            "Solo quedan 3 días de vacaciones y intentas asignar 5",
+            0,
+            id="cinco-dias-con-tres-restantes",
+        ),
+    ],
+)
+def test_el_exceso_de_vacaciones_da_409(cupo, previas, ruta, cuerpo, mensaje, inserts):
+    cursor = Cursor(cupo=cupo)
+    if previas:
+        alta = pedir(
+            "put",
+            "/turnos/varios",
+            {"login": "nerea.lago", "fechas": previas, "ausencia": "V"},
+            cursor,
+        )
+        assert alta.status_code == 200
     antes = dict(cursor.turnos)
-    respuesta = pedir(
-        "put",
-        "/turnos",
-        {"login": "nerea.lago", "fecha": "2026-11-04", "ausencia": "V"},
-        cursor,
-    )
+    respuesta = pedir("put", ruta, cuerpo, cursor)
 
     assert respuesta.status_code == 409
-    assert respuesta.get_json()["error"] == (
-        "Solo quedan 0 días de vacaciones y intentas asignar 1"
-    )
+    assert respuesta.get_json()["error"] == mensaje
     assert cursor.turnos == antes
-    assert cursor.inserts == 2
-
-
-def test_varios_con_cinco_dias_y_tres_restantes_no_guarda_ninguno():
-    cursor = Cursor(cupo=3)
-    respuesta = pedir(
-        "put",
-        "/turnos/varios",
-        {
-            "login": "nerea.lago",
-            "fechas": [
-                "2026-11-02",
-                "2026-11-03",
-                "2026-11-04",
-                "2026-11-05",
-                "2026-11-06",
-            ],
-            "ausencia": "V",
-        },
-        cursor,
-    )
-
-    assert respuesta.status_code == 409
-    assert respuesta.get_json()["error"] == (
-        "Solo quedan 3 días de vacaciones y intentas asignar 5"
-    )
-    assert cursor.turnos == {}
-    assert cursor.inserts == 0
+    assert cursor.inserts == inserts
 
 
 def test_reescribir_un_v_existente_no_cuenta():
@@ -234,3 +248,36 @@ def test_una_semana_que_cruza_de_ano_cuenta_cada_ano_por_separado():
     assert respuesta.status_code == 200
     assert cursor.inserts == 4
     assert {fecha.year for _, fecha in cursor.turnos} == {2026, 2027}
+
+
+def test_el_limite_de_vacaciones_ignora_sr_fr_y_pend():
+    cursor = Cursor(cupo=1)
+    for codigo, dia in (
+        ("SR", "2026-11-02"),
+        ("FR", "2026-11-03"),
+        ("PEND", "2026-11-04"),
+    ):
+        respuesta = pedir(
+            "put",
+            "/turnos",
+            {"login": "nerea.lago", "fecha": dia, "ausencia": codigo},
+            cursor,
+        )
+        assert respuesta.status_code == 200
+
+    primera = pedir(
+        "put",
+        "/turnos",
+        {"login": "nerea.lago", "fecha": "2026-11-05", "ausencia": "V"},
+        cursor,
+    )
+    assert primera.status_code == 200
+
+    segunda = pedir(
+        "put",
+        "/turnos",
+        {"login": "nerea.lago", "fecha": "2026-11-06", "ausencia": "V"},
+        cursor,
+    )
+    assert segunda.status_code == 409
+    assert (TRABAJADOR, date(2026, 11, 6)) not in cursor.turnos

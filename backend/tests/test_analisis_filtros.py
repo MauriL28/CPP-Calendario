@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from app import create_app
 from seguridad import emitir_token
 
@@ -64,50 +66,52 @@ def filtro(cursor):
     return texto, params
 
 
-def test_delegacion_sola_deja_fuera_los_fichajes_sin_usuario():
-    respuesta, cursor = pedir("/fichajes/analisis", {"delegacion": "60I"})
+@pytest.mark.parametrize(
+    ("consulta", "incluye", "excluye", "final"),
+    [
+        (
+            {"delegacion": "60I"},
+            ("g.codigo = %s",),
+            ("d.codigo = %s",),
+            ("60I",),
+        ),
+        (
+            {"codigo": "trafico"},
+            ("d.codigo = %s", "g.codigo = ANY(%s)"),
+            ("g.codigo = %s",),
+            ("trafico",),
+        ),
+        (
+            {
+                "delegacion": "60I",
+                "codigo": "trafico",
+                "coincide": "descuadre",
+                "desde": "2026-09-01",
+                "hasta": "2026-09-30",
+            },
+            (
+                "g.codigo = %s",
+                "d.codigo = %s",
+                "f.coincide = %s",
+                "f.fecha >= %s",
+                "f.fecha <= %s",
+            ),
+            (),
+            ("60I", "trafico", "descuadre", "2026-09-01", "2026-09-30"),
+        ),
+    ],
+)
+def test_delegacion_y_codigo_se_combinan_con_estado_y_fechas(consulta, incluye, excluye, final):
+    respuesta, cursor = pedir("/fichajes/analisis", consulta)
 
     assert respuesta.status_code == 200
     texto, params = filtro(cursor)
-    assert "g.codigo = %s" in texto
+    for fragmento in incluye:
+        assert fragmento in texto
+    for fragmento in excluye:
+        assert fragmento not in texto
     assert "f.usuario_id IS NULL OR" not in texto
-    assert params[-1] == "60I"
-
-
-def test_codigo_solo_filtra_por_la_columna_del_departamento():
-    respuesta, cursor = pedir("/fichajes/analisis", {"codigo": "trafico"})
-
-    assert respuesta.status_code == 200
-    texto, params = filtro(cursor)
-    assert "d.codigo = %s" in texto
-    assert "f.usuario_id IS NULL OR" not in texto
-    assert "g.codigo = ANY(%s)" in texto
-    assert params[-1] == "trafico"
-
-
-def test_delegacion_y_codigo_se_combinan_con_estado_y_fechas():
-    respuesta, cursor = pedir(
-        "/fichajes/analisis",
-        {
-            "delegacion": "60I",
-            "codigo": "trafico",
-            "coincide": "descuadre",
-            "desde": "2026-09-01",
-            "hasta": "2026-09-30",
-        },
-    )
-
-    assert respuesta.status_code == 200
-    texto, params = filtro(cursor)
-    assert "g.codigo = %s" in texto
-    assert "d.codigo = %s" in texto
-    assert "f.coincide = %s" in texto
-    assert "f.fecha >= %s" in texto
-    assert "f.fecha <= %s" in texto
-    assert "f.usuario_id IS NULL OR" not in texto
-    assert params[-5:] == ["60I", "trafico", "descuadre", params[-2], params[-1]]
-    assert str(params[-2]) == "2026-09-01"
-    assert str(params[-1]) == "2026-09-30"
+    assert tuple(str(valor) for valor in params[-len(final) :]) == final
 
 
 def test_delegacion_fuera_del_token_es_404():
