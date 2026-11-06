@@ -25,7 +25,7 @@ async function enviar() {
       <div class="login-logo">
         <img :src="logo" alt="STEF" />
       </div>
-      <h1>Stef365</h1>
+      <h1>STEF365</h1>
       <p>Calendario de turnos de delegación</p>
     </aside>
     <section class="login-panel">

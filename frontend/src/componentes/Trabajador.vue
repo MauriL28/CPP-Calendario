@@ -6,12 +6,20 @@ import FichaEmpleado from "./FichaEmpleado.vue";
 defineProps({
   token: { type: String, required: true },
   login: { type: String, required: true },
+  nombreSesion: { type: String, required: true },
+  departamento: { type: String, default: "" },
 });
 
 const ficha = ref(false);
 </script>
 
 <template>
+  <section v-if="!ficha" class="bienvenida">
+    <p class="bienvenida-titulo">Bienvenido, {{ nombreSesion }}</p>
+    <p class="bienvenida-detalle">
+      Consulta tu horario y tu ficha<span v-if="departamento"> en {{ departamento }}</span>.
+    </p>
+  </section>
   <header v-if="!ficha" class="mi-horario">
     <div class="mi-horario-fila">
       <h1>Mi horario</h1>

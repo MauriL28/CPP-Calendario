@@ -1,0 +1,63 @@
+server {
+    listen ${PORT};
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Resuelve el host de BACKEND_URL en cada petición, no solo al arrancar.
+    resolver 1.1.1.1 8.8.8.8 valid=30s ipv6=off;
+    resolver_timeout 10s;
+
+    # Sin path: con proxy_pass variable, nginx reenvía la URI original tal cual.
+    set $backend_upstream "${BACKEND_URL}";
+
+    proxy_ssl_server_name on;
+    proxy_ssl_name ${BACKEND_HOST};
+    proxy_set_header Host ${BACKEND_HOST};
+    proxy_connect_timeout 120s;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+
+    location /login {
+        proxy_pass $backend_upstream;
+    }
+
+    location /turnos {
+        proxy_pass $backend_upstream;
+    }
+
+    location /trabajadores {
+        proxy_pass $backend_upstream;
+    }
+
+    location /usuarios {
+        proxy_pass $backend_upstream;
+    }
+
+    location /departamentos {
+        proxy_pass $backend_upstream;
+    }
+
+    location /ajustes {
+        proxy_pass $backend_upstream;
+    }
+
+    location /festivos {
+        proxy_pass $backend_upstream;
+    }
+
+    location /mandos {
+        proxy_pass $backend_upstream;
+    }
+
+    location /fichajes {
+        client_max_body_size 12m;
+        proxy_connect_timeout 180s;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+        proxy_pass $backend_upstream;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
