@@ -13,6 +13,7 @@ import {
   listarAjustes,
 } from "../api/usuarios.js";
 import Analisis from "./Analisis.vue";
+import Cobertura from "./Cobertura.vue";
 import HorarioHabitual from "./HorarioHabitual.vue";
 import Cuadrante from "./Cuadrante.vue";
 import EditarUsuario from "./EditarUsuario.vue";
@@ -751,6 +752,9 @@ onUnmounted(() => {
     <button type="button" :class="{ activo: vista === 'cuadrante' }" @click="vista = 'cuadrante'">
       Cuadrante
     </button>
+    <button type="button" :class="{ activo: vista === 'cobertura' }" @click="vista = 'cobertura'">
+      Cobertura
+    </button>
     <button type="button" :class="{ activo: vista === 'equipo' }" @click="vista = 'equipo'">
       Equipo
     </button>
@@ -797,6 +801,12 @@ onUnmounted(() => {
       @cambiar-horario="abrirHorarioPropio"
     />
   </div>
+  <Cobertura
+    v-if="vista === 'cobertura' && departamentosCargados"
+    :key="departamentoId || 'propio'"
+    :token="token"
+    :departamento-id="departamentoId"
+  />
   <Analisis
     v-if="vista === 'analisis'"
     :key="departamentoId || 'propio'"

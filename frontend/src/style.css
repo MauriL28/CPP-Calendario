@@ -2588,3 +2588,81 @@ span.celda {
   gap: 10px;
   margin-left: auto;
 }
+
+.cobertura {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cobertura-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+table.cuadrante.cobertura {
+  width: max-content;
+  min-width: 100%;
+}
+
+table.cuadrante.cobertura th.hora,
+table.cuadrante.cobertura td.hora {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  padding-right: 0;
+  padding-left: 0;
+  font-size: 11px;
+}
+
+table.cuadrante.cobertura thead th:first-child,
+table.cuadrante.cobertura tbody th,
+table.cuadrante.cobertura tfoot td:first-child {
+  position: sticky;
+  left: 0;
+}
+
+table.cuadrante.cobertura thead th:first-child {
+  z-index: 2;
+  min-width: 11rem;
+  background: var(--libranza-bg);
+}
+
+table.cuadrante.cobertura tbody th {
+  z-index: 1;
+  min-width: 11rem;
+  background: var(--panel);
+}
+
+table.cuadrante.cobertura tbody tr.grupo-fila th {
+  position: static;
+  z-index: auto;
+}
+
+table.cuadrante.cobertura tfoot td:first-child {
+  z-index: 1;
+  min-width: 11rem;
+  background: #fafbfc;
+  white-space: nowrap;
+}
+
+table.cuadrante.cobertura td.cubre-completa {
+  background: #b7e0b4;
+}
+
+table.cuadrante.cobertura td.cubre-parcial {
+  background: #e7f6e4;
+}
+
+table.cuadrante.cobertura td.cobertura-ausencia {
+  font-weight: 700;
+}
+
+table.cuadrante.cobertura tfoot td.hueco {
+  background: #fdecea;
+  color: var(--alerta);
+}
+
+.cobertura-nota {
+  margin: 0.35rem 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
