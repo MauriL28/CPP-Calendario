@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias } from "../fechas.js";
 import { semana, semanaActual } from "../api/turnos.js";
 
@@ -17,8 +17,11 @@ const grupos = [
 ];
 
 const cuadrante = ref(null);
+const semanaPrevia = ref(null);
+const avisoPrevia = ref(false);
 const error = ref("");
 const diaIndice = ref(indiceDeHoy());
+let previaPedida = "";
 
 function indiceDeHoy() {
   const texto = new Intl.DateTimeFormat("en-CA", {
@@ -41,26 +44,49 @@ function textoNumero(valor) {
   return Number(valor.toFixed(1)).toLocaleString("es-ES");
 }
 
-function celdasDe(inicio, fin) {
-  const desde = minutosReloj(inicio);
-  let hasta = minutosReloj(fin);
-  if (hasta <= desde) {
-    hasta += 24 * 60;
-  }
+function solape(desde, hasta, hora) {
+  const bloque = hora * 60;
+  return Math.max(0, Math.min(hasta, bloque + 60) - Math.max(desde, bloque));
+}
+
+function celdasDe(tramos) {
   return horasDia.map((hora) => {
-    const bloque = hora * 60;
-    let solape = Math.max(0, Math.min(hasta, bloque + 60) - Math.max(desde, bloque));
-    if (hasta > 24 * 60) {
-      solape += Math.max(0, Math.min(hasta - 24 * 60, bloque + 60) - bloque);
-    }
-    if (solape >= 60) {
+    const minutos = tramos.reduce((total, [desde, hasta]) => total + solape(desde, hasta, hora), 0);
+    if (minutos >= 60) {
       return "completa";
     }
-    if (solape > 0) {
+    if (minutos > 0) {
       return "parcial";
     }
     return "";
   });
+}
+
+function cubreHoras(turno) {
+  if (!turno?.hora_inicio || !turno?.hora_fin) {
+    return false;
+  }
+  return turno.ausencia == null || turno.ausencia === "ST" || turno.ausencia === "FT";
+}
+
+function tramosDelDia(turno, turnoAnterior) {
+  const tramos = [];
+  if (cubreHoras(turnoAnterior)) {
+    const desde = minutosReloj(turnoAnterior.hora_inicio);
+    const hasta = minutosReloj(turnoAnterior.hora_fin);
+    if (hasta <= desde) {
+      tramos.push([0, hasta]);
+    }
+  }
+  if (cubreHoras(turno)) {
+    const desde = minutosReloj(turno.hora_inicio);
+    let hasta = minutosReloj(turno.hora_fin);
+    if (hasta <= desde) {
+      hasta = 24 * 60;
+    }
+    tramos.push([desde, hasta]);
+  }
+  return tramos;
 }
 
 function horasDeCeldas(celdas) {
@@ -75,25 +101,43 @@ function horasDeCeldas(celdas) {
   }, 0);
 }
 
+function turnoEnFecha(trabajador, fecha) {
+  const dia = trabajador?.dias?.find((item) => item.fecha === fecha);
+  return dia?.turno || null;
+}
+
+function turnoAnterior(trabajador, fecha) {
+  const ayer = sumarDias(fecha, -1);
+  const enSemana = turnoEnFecha(trabajador, ayer);
+  if (trabajador?.dias?.some((item) => item.fecha === ayer)) {
+    return enSemana;
+  }
+  const clave = trabajador.login || trabajador.id;
+  const previo = (semanaPrevia.value?.trabajadores || []).find(
+    (item) => (item.login || item.id) === clave,
+  );
+  return turnoEnFecha(previo, ayer);
+}
+
 function filaPersona(trabajador) {
-  const turno = trabajador.dias?.[diaIndice.value]?.turno;
+  const fecha = cuadrante.value?.dias?.[diaIndice.value] || "";
+  const turno = fecha ? turnoEnFecha(trabajador, fecha) : null;
+  const celdas = celdasDe(tramosDelDia(turno, fecha ? turnoAnterior(trabajador, fecha) : null));
+  const cubiertas = horasDeCeldas(celdas);
   const base = {
     tipo: "persona",
     clave: trabajador.login || trabajador.id,
     nombre: trabajador.nombre,
     inicio: "",
     fin: "",
-    horas: "",
-    celdas: horasDia.map(() => ""),
+    horas: cubiertas ? textoNumero(cubiertas) : "",
+    celdas,
   };
   if (turno?.hora_inicio && turno?.hora_fin) {
-    const celdas = celdasDe(turno.hora_inicio, turno.hora_fin);
     return {
       ...base,
       inicio: turno.hora_inicio,
       fin: turno.hora_fin,
-      horas: textoNumero(horasDeCeldas(celdas)),
-      celdas,
     };
   }
   if (turno?.ausencia) {
@@ -172,6 +216,13 @@ const tituloSemana = computed(() => {
   return rangoSemana(cuadrante.value.desde, cuadrante.value.dias[6]);
 });
 
+const lunesPrevio = computed(() => {
+  if (diaIndice.value !== 0 || !cuadrante.value?.desde) {
+    return "";
+  }
+  return sumarDias(cuadrante.value.desde, -7);
+});
+
 function numeroDia(indice) {
   const iso = cuadrante.value?.dias?.[indice];
   return iso ? Number(iso.slice(8)) : "";
@@ -185,6 +236,37 @@ async function cargar(desde) {
     error.value = causa instanceof Error ? causa.message : "No se pudo cargar la semana";
   }
 }
+
+async function cargarPrevia(desde) {
+  previaPedida = desde;
+  try {
+    const datos = await semana(props.token, desde, false, props.departamentoId);
+    if (previaPedida !== desde || lunesPrevio.value !== desde) {
+      return;
+    }
+    semanaPrevia.value = datos;
+    avisoPrevia.value = false;
+  } catch {
+    if (previaPedida === desde && lunesPrevio.value === desde) {
+      semanaPrevia.value = null;
+      avisoPrevia.value = true;
+    }
+  }
+}
+
+watch(lunesPrevio, (desde) => {
+  if (!desde) {
+    avisoPrevia.value = false;
+    return;
+  }
+  if (semanaPrevia.value?.desde !== desde) {
+    semanaPrevia.value = null;
+  }
+  if (semanaPrevia.value?.desde === desde) {
+    return;
+  }
+  cargarPrevia(desde);
+});
 
 function moverSemana(delta) {
   const desde = cuadrante.value?.desde || semanaActual();
@@ -229,6 +311,9 @@ cargar(semanaActual());
       </button>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="diaIndice === 0 && avisoPrevia" class="cobertura-nota" role="status">
+      No se pudo cargar la semana anterior: la madrugada del lunes puede estar incompleta.
+    </p>
     <div class="cobertura-scroll">
       <table class="cuadrante cobertura">
         <thead>
