@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { fichaTrabajador } from "../api/usuarios.js";
-import { fechaVisible } from "../fechas.js";
+import { fechaVisible, isoFecha } from "../fechas.js";
 import LeyendaTurnos from "./LeyendaTurnos.vue";
 
 const props = defineProps({
@@ -184,12 +184,6 @@ function numeroDe(clave) {
   return datos.sabados_trabajados;
 }
 
-function isoLocal(fecha) {
-  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
-  const dia = String(fecha.getDate()).padStart(2, "0");
-  return `${fecha.getFullYear()}-${mes}-${dia}`;
-}
-
 function lineasHorario(texto) {
   const corte = String(texto).indexOf("-");
   if (corte < 1 || corte >= texto.length - 1) {
@@ -238,7 +232,7 @@ const mesesCalendario = computed(() => {
       const dias = [];
       let semana = null;
       for (let columna = 0; columna < 7; columna += 1) {
-        const fecha = isoLocal(cursor);
+        const fecha = isoFecha(cursor);
         const dato = porFecha.get(fecha);
         if (dato) {
           semana = dato.semana;

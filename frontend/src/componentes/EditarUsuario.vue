@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from "vue";
 import { editarTrabajador, editarUsuario } from "../api/usuarios.js";
+import { numeroFormulario as numeroDe } from "../personas.js";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -50,14 +51,6 @@ function pausaDe(valor) {
     return cantidad;
   }
   return 0;
-}
-
-function numeroDe(valor) {
-  if (valor === "" || valor === null || valor === undefined) {
-    return null;
-  }
-  const cantidad = Number(valor);
-  return Number.isNaN(cantidad) ? null : cantidad;
 }
 
 function cambiosHechos() {

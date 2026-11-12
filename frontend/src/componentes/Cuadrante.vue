@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import LeyendaTurnos from "./LeyendaTurnos.vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
+import { GRUPOS } from "../personas.js";
 import { borrarAusenciaMando, borrarTurno, copiarSemana, exportarCuadrante, guardarAusenciasMando, guardarTurno, guardarTurnos, mes, mesMandos, semana, semanaActual, semanaMandos } from "../api/turnos.js";
 
 const emit = defineEmits(["cambiar-horario"]);
@@ -96,10 +97,7 @@ const ausenciasConCoste = new Set([null, "ST", "FT"]);
 const euros = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
 
 const tituloMes = computed(() => `${mesesLargos[numeroMes.value - 1] || ""} ${anioMes.value}`.trim());
-const gruposCuadrante = [
-  { id: "STEF", titulo: "Personal STEF" },
-  { id: "ETT", titulo: "ETT" },
-];
+const gruposCuadrante = GRUPOS;
 function claveTrabajador(trabajador) {
   return trabajador.login || trabajador.id;
 }

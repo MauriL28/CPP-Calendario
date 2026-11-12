@@ -17,7 +17,8 @@ import {
   crearTrabajador,
   quitarDepartamentoMando,
 } from "../api/usuarios.js";
-import { delegacionVisible } from "../fechas.js";
+import { delegacionVisible, hoyIso, lunesQueViene } from "../fechas.js";
+import { agruparPersonas, iniciales, numeroFormulario as numeroTrabajador } from "../personas.js";
 
 const COLORES_DEPARTAMENTO = {
   trafico: { fondo: "#e5f0fb", texto: "#2e78c9" },
@@ -130,14 +131,6 @@ function colorDepartamento(codigo) {
   return COLORES_DEPARTAMENTO[codigo] || COLORES_DEPARTAMENTO.defecto;
 }
 
-function iniciales(nombre) {
-  const palabras = nombre.split(/\s+/).filter((parte) => /\p{L}/u.test(parte));
-  return palabras
-    .slice(0, 2)
-    .map((parte) => parte[0].toLocaleUpperCase("es"))
-    .join("");
-}
-
 function cifra(total, uno, varios) {
   return total === 1 ? `1 ${uno}` : `${total} ${varios}`;
 }
@@ -148,22 +141,6 @@ function mandosActivos(sede) {
 
 function personasSede(sede) {
   return mandosActivos(sede).length + (sede?.trabajadores?.length ?? 0);
-}
-
-function gruposTrabajadores(sede) {
-  const lista = sede?.trabajadores ?? [];
-  return [
-    {
-      id: "STEF",
-      titulo: "Personal STEF",
-      personas: lista.filter((trabajador) => trabajador.grupo === "STEF"),
-    },
-    {
-      id: "ETT",
-      titulo: "ETT",
-      personas: lista.filter((trabajador) => trabajador.grupo === "ETT"),
-    },
-  ].filter((grupo) => grupo.personas.length);
 }
 
 function cuentaTrabajadores(total) {
@@ -269,24 +246,6 @@ async function alGuardarUsuario() {
   await cargar();
 }
 
-function fechaLocal(dia) {
-  const mes = String(dia.getMonth() + 1).padStart(2, "0");
-  const numero = String(dia.getDate()).padStart(2, "0");
-  return `${dia.getFullYear()}-${mes}-${numero}`;
-}
-
-function hoyIso() {
-  return fechaLocal(new Date());
-}
-
-function lunesQueViene() {
-  const hoy = new Date();
-  hoy.setHours(12, 0, 0, 0);
-  const salto = hoy.getDay() === 1 ? 0 : (8 - hoy.getDay()) % 7;
-  hoy.setDate(hoy.getDate() + salto);
-  return fechaLocal(hoy);
-}
-
 function abrirHorario(mando) {
   horarioMando.value = mando;
   desdeHorario.value = lunesQueViene();
@@ -355,14 +314,6 @@ function volver() {
 function abrirAltaTrabajador() {
   errorTrabajador.value = "";
   altaTrabajadorAbierta.value = true;
-}
-
-function numeroTrabajador(valor) {
-  if (valor === "" || valor === null) {
-    return null;
-  }
-  const cantidad = Number(valor);
-  return Number.isNaN(cantidad) ? null : cantidad;
 }
 
 function vaciarAltaTrabajador() {
@@ -723,7 +674,7 @@ onMounted(cargar);
               Aún no hay trabajadores. Los crea el mando del departamento.
             </p>
             <div v-else class="equipo-grupos">
-              <section v-for="grupoEquipo in gruposTrabajadores(sede)" :key="grupoEquipo.id" class="panel">
+              <section v-for="grupoEquipo in agruparPersonas(sede?.trabajadores)" :key="grupoEquipo.id" class="panel">
                 <header class="panel-cabecera">
                   <h2>{{ grupoEquipo.titulo }}</h2>
                   <span class="panel-cuenta">{{ cuentaTrabajadores(grupoEquipo.personas.length) }}</span>

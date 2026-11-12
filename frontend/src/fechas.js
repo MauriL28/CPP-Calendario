@@ -12,6 +12,22 @@ export function lunesDe(fecha) {
   return isoFecha(copia);
 }
 
+export function fechaLocal(dia) {
+  return isoFecha(dia);
+}
+
+export function hoyIso() {
+  return fechaLocal(new Date());
+}
+
+export function lunesQueViene() {
+  const hoy = new Date();
+  hoy.setHours(12, 0, 0, 0);
+  const salto = hoy.getDay() === 1 ? 0 : (8 - hoy.getDay()) % 7;
+  hoy.setDate(hoy.getDate() + salto);
+  return fechaLocal(hoy);
+}
+
 export function sumarDias(iso, dias) {
   const [anio, mes, dia] = iso.split("-").map(Number);
   const fecha = new Date(anio, mes - 1, dia);

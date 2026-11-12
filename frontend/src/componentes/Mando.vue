@@ -1,7 +1,8 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
-import { delegacionVisible } from "../fechas.js";
+import { delegacionVisible, hoyIso, lunesQueViene } from "../fechas.js";
+import { agruparPersonas, iniciales, numeroFormulario as numero } from "../personas.js";
 import {
   borrarAjuste,
   cambiarHorario,
@@ -125,32 +126,11 @@ const filtrados = computed(() => {
     return nombreVisible.includes(texto) || loginVisible.includes(texto);
   });
 });
-const gruposEquipo = computed(() =>
-  [
-    {
-      id: "STEF",
-      titulo: "Personal STEF",
-      personas: filtrados.value.filter((trabajador) => trabajador.grupo === "STEF"),
-    },
-    {
-      id: "ETT",
-      titulo: "ETT",
-      personas: filtrados.value.filter((trabajador) => trabajador.grupo === "ETT"),
-    },
-  ].filter((grupo) => grupo.personas.length),
-);
+const gruposEquipo = computed(() => agruparPersonas(filtrados.value));
 
 function abrirFicha(trabajador) {
   fichaLogin.value = trabajador.login;
   vista.value = "ficha";
-}
-
-function iniciales(texto) {
-  const palabras = texto.split(/\s+/).filter((parte) => /\p{L}/u.test(parte));
-  return palabras
-    .slice(0, 2)
-    .map((parte) => parte[0].toLocaleUpperCase("es"))
-    .join("");
 }
 
 function etiquetaDepartamento(item) {
@@ -301,24 +281,6 @@ async function alGuardarTrabajador() {
 
 function cuenta(total) {
   return total === 1 ? "1 trabajador" : `${total} trabajadores`;
-}
-
-function fechaLocal(dia) {
-  const mes = String(dia.getMonth() + 1).padStart(2, "0");
-  const numero = String(dia.getDate()).padStart(2, "0");
-  return `${dia.getFullYear()}-${mes}-${numero}`;
-}
-
-function hoyIso() {
-  return fechaLocal(new Date());
-}
-
-function lunesQueViene() {
-  const hoy = new Date();
-  hoy.setHours(12, 0, 0, 0);
-  const salto = hoy.getDay() === 1 ? 0 : (8 - hoy.getDay()) % 7;
-  hoy.setDate(hoy.getDate() + salto);
-  return fechaLocal(hoy);
 }
 
 function abrirHorario(trabajador) {
@@ -692,14 +654,6 @@ async function eliminarAjuste(ajuste) {
   } catch (causa) {
     errorAjuste.value = causa instanceof Error ? causa.message : "No se pudo eliminar el ajuste";
   }
-}
-
-function numero(valor) {
-  if (valor === "" || valor === null) {
-    return null;
-  }
-  const cantidad = Number(valor);
-  return Number.isNaN(cantidad) ? null : cantidad;
 }
 
 watch(departamentoId, () => {

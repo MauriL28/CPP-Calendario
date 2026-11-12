@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias } from "../fechas.js";
+import { GRUPOS } from "../personas.js";
 import { semana, semanaActual } from "../api/turnos.js";
 
 const props = defineProps({
@@ -11,10 +12,7 @@ const props = defineProps({
 const letras = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 const diasNombre = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const horasDia = Array.from({ length: 24 }, (_, hora) => hora);
-const grupos = [
-  { id: "STEF", titulo: "Personal STEF" },
-  { id: "ETT", titulo: "ETT" },
-];
+const grupos = GRUPOS;
 
 const cuadrante = ref(null);
 const semanaPrevia = ref(null);
