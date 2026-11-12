@@ -9,7 +9,7 @@ from db import SinBaseDeDatos, cursor
 from errores import error_bd
 from mandos import departamento_permitido, departamentos_del_mando
 from horas import convenio_anual, hora_texto, horas_computables, parse_hora
-from rutas.turnos import _texto_celda
+from exportar_turnos import _texto_celda
 from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
 from vacaciones import dias_v_usados
 import validaciones
