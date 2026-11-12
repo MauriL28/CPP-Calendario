@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
 import { importarFichajes, listarImportaciones } from "../api/fichajes.js";
 import Analisis from "./Analisis.vue";
+import Cobertura from "./Cobertura.vue";
+import Cuadrante from "./Cuadrante.vue";
 import EditarUsuario from "./EditarUsuario.vue";
 import FichaEmpleado from "./FichaEmpleado.vue";
 import HorarioHabitual from "./HorarioHabitual.vue";
@@ -39,6 +41,7 @@ const departamentos = ref([]);
 const error = ref("");
 const elegido = ref(null);
 const sedeVisible = ref("");
+const seccionSede = ref("cuadrante");
 const altaAbierta = ref(false);
 const modoAlta = ref("crear");
 const loginAsignar = ref("");
@@ -48,6 +51,7 @@ const nombreTrabajador = ref("");
 const loginTrabajador = ref("");
 const claveTrabajador = ref("");
 const grupoTrabajador = ref("STEF");
+const costeTrabajador = ref("");
 const vacacionesTrabajador = ref("");
 const horasContratoTrabajador = ref("");
 const pausaTrabajador = ref(0);
@@ -232,6 +236,7 @@ function abrir(tarjeta) {
     (item) => item.codigo === tarjeta.codigo && item.delegacion === sede,
   );
   sedeVisible.value = sede;
+  seccionSede.value = "cuadrante";
   altaAbierta.value = mandosActivos(encontrada).length === 0;
   elegido.value = tarjeta.codigo;
 }
@@ -374,6 +379,7 @@ function vaciarAltaTrabajador() {
   loginTrabajador.value = "";
   claveTrabajador.value = "";
   grupoTrabajador.value = "STEF";
+  costeTrabajador.value = "";
   vacacionesTrabajador.value = "";
   horasContratoTrabajador.value = "";
   pausaTrabajador.value = 0;
@@ -407,6 +413,13 @@ async function guardarTrabajador() {
     numero_sap: numeroSapTrabajador.value,
     departamento_id: sede.id,
   };
+  if (
+    grupoTrabajador.value === "ETT"
+    && costeTrabajador.value !== ""
+    && costeTrabajador.value !== null
+  ) {
+    datos.coste = numeroTrabajador(costeTrabajador.value);
+  }
   if (sede.usa_horario_habitual !== false) {
     const horario = horarioSeleccionado();
     if (!horario?.horario_dias) {
@@ -713,7 +726,36 @@ onMounted(cargar);
         </nav>
         <template v-for="sede in grupo.sedes" :key="sede.delegacion">
         <div v-if="sede.delegacion === sedeVisible" class="detalle-listas">
-          <section class="panel">
+          <nav class="vistas">
+            <button type="button" :class="{ activo: seccionSede === 'cuadrante' }" @click="seccionSede = 'cuadrante'">
+              Cuadrante
+            </button>
+            <button type="button" :class="{ activo: seccionSede === 'cobertura' }" @click="seccionSede = 'cobertura'">
+              Cobertura
+            </button>
+            <button type="button" :class="{ activo: seccionSede === 'equipo' }" @click="seccionSede = 'equipo'">
+              Equipo
+            </button>
+          </nav>
+          <Cuadrante
+            v-if="seccionSede === 'cuadrante' && sede.id"
+            :key="sede.id"
+            :token="token"
+            :departamento-id="sede.id"
+          />
+          <p v-else-if="seccionSede === 'cuadrante'" class="panel-vacio">
+            Este departamento no está en esta sede.
+          </p>
+          <Cobertura
+            v-if="seccionSede === 'cobertura' && sede.id"
+            :key="sede.id"
+            :token="token"
+            :departamento-id="sede.id"
+          />
+          <p v-else-if="seccionSede === 'cobertura'" class="panel-vacio">
+            Este departamento no está en esta sede.
+          </p>
+          <section v-if="seccionSede === 'equipo'" class="panel">
             <header class="panel-cabecera">
               <h2>Mandos</h2>
               <span class="panel-cuenta">{{ sede.mandos.length }}</span>
@@ -751,7 +793,7 @@ onMounted(cargar);
               </li>
             </ul>
           </section>
-          <section class="panel">
+          <section v-if="seccionSede === 'equipo'" class="panel">
             <header class="panel-cabecera">
               <h2>Trabajadores</h2>
               <span class="panel-cuenta">{{ sede.trabajadores.length }}</span>
@@ -776,6 +818,10 @@ onMounted(cargar);
                   <option value="STEF">STEF</option>
                   <option value="ETT">ETT</option>
                 </select>
+              </label>
+              <label v-if="grupoTrabajador === 'ETT'">
+                Coste (€/hora)
+                <input v-model="costeTrabajador" name="coste-trabajador" type="number" min="0" step="0.0001" />
               </label>
               <label>
                 Vacaciones
@@ -1241,6 +1287,10 @@ onMounted(cargar);
 .alta-mando .alta-modos button {
   padding: 5px 10px;
   font-size: 12px;
+}
+
+.detalle-listas > .vistas {
+  justify-self: start;
 }
 
 .detalle-rejilla:not(:has(> .alta-mando)) {

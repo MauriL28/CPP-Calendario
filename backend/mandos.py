@@ -1,8 +1,19 @@
 from flask import jsonify
+from flask_jwt_extended import get_jwt
 
 
 def departamento_lectura(cur, usuario_id, departamento_id_opcional):
     """Departamento del cuadrante. El propio si no llega departamento_id."""
+    if get_jwt().get("rol") == "admin":
+        if departamento_id_opcional in (None, ""):
+            return None, (jsonify(error="Faltan datos"), 400)
+        cur.execute(
+            "SELECT id FROM departamento WHERE id = %s",
+            (departamento_id_opcional,),
+        )
+        if cur.fetchone() is None:
+            return None, (jsonify(error="No se ha encontrado el departamento"), 404)
+        return departamento_id_opcional, None
     if departamento_id_opcional in (None, ""):
         cur.execute(
             """

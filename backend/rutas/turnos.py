@@ -104,6 +104,46 @@ def _mes(anio_texto, mes_texto):
     return [inicio + timedelta(days=i) for i in range(ultimo)], None
 
 
+def _ajustes_del_periodo(cur, ids, inicio, fin):
+    if not ids:
+        return {}
+    cur.execute(
+        """
+        SELECT usuario_afectado_id, fecha, horas, motivo
+        FROM ajuste
+        WHERE usuario_afectado_id = ANY(%s)
+          AND fecha >= %s
+          AND fecha <= %s
+        ORDER BY fecha, id
+        """,
+        (list(ids), inicio, fin),
+    )
+    grupos = {}
+    for fila in cur.fetchall():
+        fecha = fila["fecha"].isoformat() if hasattr(fila["fecha"], "isoformat") else str(fila["fecha"])
+        grupos.setdefault((str(fila["usuario_afectado_id"]), fecha), []).append(
+            {"horas": float(fila["horas"]), "motivo": fila["motivo"]}
+        )
+    return grupos
+
+
+def _anotar_ajustes(personas, trabajadores, ajustes):
+    for persona, trabajador in zip(personas, trabajadores):
+        for dia in persona["dias"]:
+            lista = ajustes.get((str(trabajador["id"]), dia["fecha"]))
+            if lista:
+                dia["ajustes"] = lista
+
+
+def _coste(trabajador):
+    if trabajador.get("grupo") != "ETT":
+        return None
+    valor = trabajador.get("tarifas_ett")
+    if valor is None:
+        return None
+    return float(valor)
+
+
 def _trabajadores_resueltos(
     trabajadores,
     dias,
@@ -149,7 +189,7 @@ def _departamento_lectura(cur):
 @bp.get("/turnos")
 @jwt_required()
 def listar_turnos():
-    if get_jwt().get("rol") != "mando":
+    if get_jwt().get("rol") not in ("mando", "admin"):
         return jsonify(error="No autorizado"), 403
     desde, error = _lunes(request.args.get("desde", ""), False)
     if error:
@@ -163,7 +203,8 @@ def listar_turnos():
                 return error
             cur.execute(
                 """
-                SELECT u.id, u.nombre, u.login, u.grupo, u.activo, s.nombre AS seccion
+                SELECT u.id, u.nombre, u.login, u.grupo, u.activo, u.tarifas_ett,
+                       s.nombre AS seccion
                 FROM usuario u
                 LEFT JOIN seccion s ON s.id = u.seccion_id
                 WHERE u.rol = 'trabajador' AND u.departamento_id = %s
@@ -181,34 +222,40 @@ def listar_turnos():
                 for trabajador in trabajadores
                 if _visible_en_semana(trabajador, dias, turnos)
             ]
+            ajustes = _ajustes_del_periodo(
+                cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
+            )
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
         return error_bd(exc)
 
+    personas = [
+        {
+            "nombre": trabajador["nombre"],
+            "login": trabajador["login"],
+            "grupo": trabajador["grupo"],
+            "seccion": trabajador["seccion"],
+            "coste": _coste(trabajador),
+            "dias": _dias_resueltos(
+                trabajador["id"],
+                dias,
+                turnos,
+                versiones,
+                noche_inicio,
+                noche_fin,
+                festivos,
+                habituales,
+                pausas,
+            ),
+        }
+        for trabajador in trabajadores
+    ]
+    _anotar_ajustes(personas, trabajadores, ajustes)
     return jsonify(
         desde=desde.isoformat(),
         dias=[dia.isoformat() for dia in dias],
-        trabajadores=[
-            {
-                "nombre": trabajador["nombre"],
-                "login": trabajador["login"],
-                "grupo": trabajador["grupo"],
-                "seccion": trabajador["seccion"],
-                "dias": _dias_resueltos(
-                    trabajador["id"],
-                    dias,
-                    turnos,
-                    versiones,
-                    noche_inicio,
-                    noche_fin,
-                    festivos,
-                    habituales,
-                    pausas,
-                ),
-            }
-            for trabajador in trabajadores
-        ],
+        trabajadores=personas,
     )
 
 
@@ -407,7 +454,7 @@ def listar_turnos_departamento():
 @bp.get("/turnos/mes")
 @jwt_required()
 def listar_turnos_mes():
-    if get_jwt().get("rol") != "mando":
+    if get_jwt().get("rol") not in ("mando", "admin"):
         return jsonify(error="No autorizado"), 403
     dias, error = _mes(request.args.get("anio"), request.args.get("mes"))
     if error:
@@ -420,7 +467,8 @@ def listar_turnos_mes():
                 return error
             cur.execute(
                 """
-                SELECT u.id, u.nombre, u.login, u.grupo, u.activo, s.nombre AS seccion
+                SELECT u.id, u.nombre, u.login, u.grupo, u.activo, u.tarifas_ett,
+                       s.nombre AS seccion
                 FROM usuario u
                 LEFT JOIN seccion s ON s.id = u.seccion_id
                 WHERE u.rol = 'trabajador' AND u.departamento_id = %s
@@ -438,6 +486,9 @@ def listar_turnos_mes():
                 for trabajador in trabajadores
                 if _visible_en_semana(trabajador, dias, turnos)
             ]
+            ajustes = _ajustes_del_periodo(
+                cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
+            )
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
@@ -448,6 +499,8 @@ def listar_turnos_mes():
     )
     for persona, trabajador in zip(personas, trabajadores):
         persona["seccion"] = trabajador["seccion"]
+        persona["coste"] = _coste(trabajador)
+    _anotar_ajustes(personas, trabajadores, ajustes)
     return jsonify(
         desde=dias[0].isoformat(),
         dias=[dia.isoformat() for dia in dias],
