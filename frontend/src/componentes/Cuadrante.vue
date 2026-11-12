@@ -75,6 +75,8 @@ const semanaDesde = ref("");
 const anioMes = ref(0);
 const numeroMes = ref(0);
 const cuadrante = ref(null);
+const periodoAnterior = ref(null);
+let solicitudAnterior = 0;
 const errorSemana = ref("");
 const avisoCopia = ref("");
 const celda = ref(null);
@@ -90,6 +92,8 @@ const errorTurno = ref("");
 const seccionElegida = ref("");
 const copiasMarcadas = ref([false, false, false, false, false, false, false]);
 const letrasCopia = ["L", "M", "X", "J", "V", "S", "D"];
+const ausenciasConCoste = new Set([null, "ST", "FT"]);
+const euros = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
 
 const tituloMes = computed(() => `${mesesLargos[numeroMes.value - 1] || ""} ${anioMes.value}`.trim());
 const gruposCuadrante = [
@@ -115,6 +119,7 @@ const secciones = computed(() => {
 });
 
 const muestraSecciones = computed(() => !props.propia && !props.mandos && secciones.value.length > 0);
+const muestraCoste = computed(() => !props.propia && !props.mandos);
 
 const opcionesSeccion = computed(() => {
   const nombres = [...secciones.value];
@@ -125,13 +130,15 @@ const opcionesSeccion = computed(() => {
   return nombres;
 });
 
-const trabajadoresCuadrante = computed(() => {
-  const lista = cuadrante.value?.trabajadores || [];
+function trabajadoresDe(datos) {
+  const lista = datos?.trabajadores || [];
   if (!muestraSecciones.value || !seccionElegida.value) {
     return lista;
   }
   return lista.filter((trabajador) => trabajador.seccion === seccionElegida.value);
-});
+}
+
+const trabajadoresCuadrante = computed(() => trabajadoresDe(cuadrante.value));
 
 const filasCuadrante = computed(() => {
   const lista = trabajadoresCuadrante.value;
@@ -179,6 +186,7 @@ async function cargar(desde) {
       ? await semanaMandos(props.token, desde)
       : await semana(props.token, desde, props.propia, props.departamentoId);
     semanaDesde.value = cuadrante.value.desde;
+    await cargarPeriodoAnterior();
   } catch (causa) {
     errorSemana.value = causa instanceof Error ? causa.message : "No se pudo cargar la semana";
   }
@@ -196,8 +204,41 @@ async function cargarMes(anio, mesNumero) {
       : await mes(props.token, anio, mesNumero, props.propia, props.departamentoId);
     anioMes.value = anio;
     numeroMes.value = mesNumero;
+    await cargarPeriodoAnterior();
   } catch (causa) {
     errorSemana.value = causa instanceof Error ? causa.message : "No se pudo cargar el mes";
+  }
+}
+
+function mesPrevio(anio, mesNumero) {
+  if (mesNumero <= 1) {
+    return { anio: anio - 1, mes: 12 };
+  }
+  return { anio, mes: mesNumero - 1 };
+}
+
+async function cargarPeriodoAnterior() {
+  const solicitud = ++solicitudAnterior;
+  periodoAnterior.value = null;
+  if (props.propia || props.mandos) {
+    return;
+  }
+  try {
+    let datos;
+    if (modo.value === "mes") {
+      const previo = mesPrevio(anioMes.value, numeroMes.value);
+      datos = await mes(props.token, previo.anio, previo.mes, false, props.departamentoId);
+    } else {
+      datos = await semana(props.token, sumarDias(semanaDesde.value, -7), false, props.departamentoId);
+    }
+    if (solicitud !== solicitudAnterior) {
+      return;
+    }
+    periodoAnterior.value = datos;
+  } catch {
+    if (solicitud === solicitudAnterior) {
+      periodoAnterior.value = null;
+    }
   }
 }
 
@@ -269,19 +310,80 @@ function horasNocturnas(indice) {
   return Number(suma.toFixed(2)).toLocaleString("es-ES");
 }
 
-function horasPeriodo(trabajador, campo) {
-  return (trabajador.dias || []).reduce(
-    (total, dia) => total + (Number(dia.turno?.[campo]) || 0),
-    0,
-  );
+function horasPeriodo(trabajador, campo, ausencias) {
+  return (trabajador.dias || []).reduce((total, dia) => {
+    if (ausencias && !ausencias.has(dia.turno?.ausencia ?? null)) {
+      return total;
+    }
+    return total + (Number(dia.turno?.[campo]) || 0);
+  }, 0);
+}
+
+function tieneCoste(trabajador) {
+  if (trabajador.coste === null || trabajador.coste === undefined || trabajador.coste === "") {
+    return false;
+  }
+  return Number.isFinite(Number(trabajador.coste));
+}
+
+function importeEtt(trabajador) {
+  if (trabajador.grupo !== "ETT" || !tieneCoste(trabajador)) {
+    return null;
+  }
+  return horasPeriodo(trabajador, "horas_planificadas", ausenciasConCoste) * Number(trabajador.coste);
+}
+
+function muestraAjuste(dia) {
+  return !props.propia && !props.mandos && Array.isArray(dia?.ajustes) && dia.ajustes.length > 0;
+}
+
+function textoHorasAjuste(valor) {
+  const cantidad = Number(Number(valor).toFixed(2));
+  const signo = cantidad < 0 ? "-" : "+";
+  const absoluto = Math.abs(cantidad).toLocaleString("es-ES", { maximumFractionDigits: 2 });
+  return `${signo}${absoluto} h`;
+}
+
+function textoAjustes(dia) {
+  if (!muestraAjuste(dia)) {
+    return undefined;
+  }
+  const lineas = dia.ajustes.map((ajuste) => {
+    const horas = textoHorasAjuste(ajuste.horas);
+    const motivo = String(ajuste.motivo || "").trim();
+    return motivo ? `Ajuste: ${horas} · ${motivo}` : `Ajuste: ${horas}`;
+  });
+  if (dia.ajustes.length > 1) {
+    const total = dia.ajustes.reduce((suma, ajuste) => suma + Number(ajuste.horas), 0);
+    lineas.push(`Total: ${textoHorasAjuste(total)}`);
+  }
+  return lineas.join("\n");
+}
+
+function textoCostePersona(trabajador) {
+  if (trabajador.grupo !== "ETT") {
+    return "";
+  }
+  const importe = importeEtt(trabajador);
+  return importe === null ? "—" : euros.format(importe);
+}
+
+function costeGrupo(id) {
+  if (id !== "ETT") {
+    return null;
+  }
+  const personas = trabajadoresCuadrante.value.filter((trabajador) => trabajador.grupo === "ETT");
+  return {
+    total: personas.reduce((suma, trabajador) => suma + (importeEtt(trabajador) || 0), 0),
+    sinCoste: personas.filter((trabajador) => !tieneCoste(trabajador)).length,
+  };
 }
 
 function horasVisibles(valor) {
   return `${Number(valor.toFixed(2)).toLocaleString("es-ES")} h`;
 }
 
-const resumenHoras = computed(() => {
-  const lista = trabajadoresCuadrante.value;
+function totalesHoras(lista) {
   const stef = lista
     .filter((trabajador) => trabajador.grupo === "STEF")
     .reduce((total, trabajador) => total + horasPeriodo(trabajador, "horas_planificadas"), 0);
@@ -292,12 +394,46 @@ const resumenHoras = computed(() => {
     (total, trabajador) => total + horasPeriodo(trabajador, "horas_nocturnas"),
     0,
   );
+  return { stef, ett, noche: nocturnas, total: stef + ett };
+}
+
+function textoDelta(valor) {
+  const cantidad = Number(valor.toFixed(2));
+  if (cantidad === 0) {
+    return "(±0 h)";
+  }
+  const signo = cantidad > 0 ? "+" : "-";
+  const absoluto = Math.abs(cantidad).toLocaleString("es-ES", { maximumFractionDigits: 2 });
+  return `(${signo}${absoluto} h)`;
+}
+
+const tituloComparacion = computed(() => {
+  if (modo.value === "mes") {
+    const previo = mesPrevio(anioMes.value, numeroMes.value);
+    return `Frente a ${mesesLargos[previo.mes - 1].toLowerCase()} de ${previo.anio}`;
+  }
+  if (!semanaDesde.value) {
+    return "";
+  }
+  const desde = sumarDias(semanaDesde.value, -7);
+  const hasta = sumarDias(desde, 6);
+  return `Frente a la semana del ${fechaVisible(desde).slice(0, 5)} al ${fechaVisible(hasta).slice(0, 5)}`;
+});
+
+const resumenHoras = computed(() => {
+  const actual = totalesHoras(trabajadoresCuadrante.value);
+  const previo = periodoAnterior.value ? totalesHoras(trabajadoresDe(periodoAnterior.value)) : null;
   return [
-    { id: "stef", nombre: "Horas STEF", valor: horasVisibles(stef) },
-    { id: "ett", nombre: "Horas ETT", valor: horasVisibles(ett) },
-    { id: "noche", nombre: "Horas nocturnas", valor: horasVisibles(nocturnas) },
-    { id: "total", nombre: "Total horas", valor: horasVisibles(stef + ett) },
-  ];
+    { id: "stef", nombre: "Horas STEF", horas: actual.stef },
+    { id: "ett", nombre: "Horas ETT", horas: actual.ett },
+    { id: "noche", nombre: "Horas nocturnas", horas: actual.noche },
+    { id: "total", nombre: "Total horas", horas: actual.total },
+  ].map((tarjeta) => ({
+    id: tarjeta.id,
+    nombre: tarjeta.nombre,
+    valor: horasVisibles(tarjeta.horas),
+    delta: previo ? textoDelta(tarjeta.horas - previo[tarjeta.id]) : null,
+  }));
 });
 
 function idDeSesion() {
@@ -668,7 +804,9 @@ cargar(lunesDe(new Date()));
     <div v-if="!propia && !mandos" class="cuadrante-horas">
       <article v-for="tarjeta in resumenHoras" :key="tarjeta.id" :class="tarjeta.id">
         <p class="lb">{{ tarjeta.nombre }}</p>
-        <p class="vl">{{ tarjeta.valor }}</p>
+        <p class="vl">
+          {{ tarjeta.valor }}<span v-if="tarjeta.delta" class="delta" :title="tituloComparacion">{{ ` ${tarjeta.delta}` }}</span>
+        </p>
       </article>
     </div>
     <div class="cuadrante-scroll" :class="{ mensual: modo === 'mes' }">
@@ -686,12 +824,28 @@ cargar(lunesDe(new Date()));
               :aria-label="nombreFestivo(indice)"
             ></span>
           </th>
+          <th v-if="muestraCoste" class="coste-col">
+            <span class="dia-nombre">Coste</span>
+            <span class="dia-numero">{{ modo === "mes" ? "mes" : "semana" }}</span>
+          </th>
         </tr>
       </thead>
       <tbody>
         <template v-for="fila in filasCuadrante" :key="fila.tipo === 'grupo' ? fila.id : claveTrabajador(fila.trabajador)">
           <tr v-if="fila.tipo === 'grupo'" class="grupo-fila">
             <th :colspan="cuadrante.dias.length + 1">{{ fila.titulo }}</th>
+            <td v-if="muestraCoste" class="coste-col">
+              <template v-if="costeGrupo(fila.id)">
+                <span class="coste-total">{{ euros.format(costeGrupo(fila.id).total) }}</span>
+                <span
+                  v-if="costeGrupo(fila.id).sinCoste"
+                  class="coste-nota"
+                  title="Trabajadores ETT sin coste asignado: no suman en el total"
+                >
+                  ({{ costeGrupo(fila.id).sinCoste }} sin coste)
+                </span>
+              </template>
+            </td>
           </tr>
           <tr v-else>
             <th>{{ fila.trabajador.nombre }}</th>
@@ -704,12 +858,34 @@ cargar(lunesDe(new Date()));
                 v-if="editable || (mandos && esMio(fila.trabajador))"
                 type="button"
                 class="celda"
+                :title="textoAjustes(dia)"
                 @click="abrirCelda(fila.trabajador, dia)"
               >
+                <span v-if="muestraAjuste(dia)" class="ajuste-marca">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M2.2 13.8 5 13.1 13.2 4.9 11.1 2.8 2.9 11Z" />
+                    <path d="M9.4 4.5 11.5 6.6" />
+                    <path d="M3.2 11.4 4.6 12.8" />
+                  </svg>
+                </span>
                 {{ textoCelda(dia.turno) }}
               </button>
-              <span v-else class="celda" :class="{ lectura: !mandos }">{{ textoCelda(dia.turno) }}</span>
+              <span v-else class="celda" :class="{ lectura: !mandos }" :title="textoAjustes(dia)">
+                <span v-if="muestraAjuste(dia)" class="ajuste-marca">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M2.2 13.8 5 13.1 13.2 4.9 11.1 2.8 2.9 11Z" />
+                    <path d="M9.4 4.5 11.5 6.6" />
+                    <path d="M3.2 11.4 4.6 12.8" />
+                  </svg>
+                </span>
+                {{ textoCelda(dia.turno) }}
+              </span>
             </td>
+            <td
+              v-if="muestraCoste"
+              class="coste-col"
+              :class="fila.trabajador.grupo === 'ETT' ? (tieneCoste(fila.trabajador) ? 'coste-importe' : 'coste-vacio') : ''"
+            >{{ textoCostePersona(fila.trabajador) }}</td>
           </tr>
         </template>
       </tbody>
@@ -717,10 +893,12 @@ cargar(lunesDe(new Date()));
         <tr v-for="franja in franjas" :key="franja.id">
           <td>{{ franja.nombre }}</td>
           <td v-for="(dia, indice) in cuadrante.dias" :key="dia">{{ totalFranja(franja.id, indice) }}</td>
+          <td v-if="muestraCoste" class="coste-col"></td>
         </tr>
         <tr>
           <td>Horas nocturnas</td>
           <td v-for="(dia, indice) in cuadrante.dias" :key="`noche-${dia}`">{{ horasNocturnas(indice) }}</td>
+          <td v-if="muestraCoste" class="coste-col"></td>
         </tr>
       </tfoot>
     </table>
@@ -852,5 +1030,87 @@ cargar(lunesDe(new Date()));
 button.copiar-dias-atajo {
   padding: 4px 8px;
   font-size: 12px;
+}
+
+table.cuadrante th.coste-col,
+table.cuadrante td.coste-col {
+  width: 7.5rem;
+  min-width: 7.5rem;
+  max-width: 8rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+table.cuadrante thead th.coste-col .dia-numero {
+  text-transform: none;
+}
+
+table.cuadrante tbody tr.grupo-fila td.coste-col {
+  background: var(--bg);
+}
+
+.coste-total,
+.coste-importe {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.coste-total {
+  display: block;
+  font-weight: 700;
+}
+
+.coste-nota {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--text-3);
+}
+
+.coste-vacio {
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.delta {
+  margin-left: 0.35rem;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.celda {
+  position: relative;
+}
+
+.ajuste-marca {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: var(--accent-darker);
+  color: #fff;
+  pointer-events: none;
+  cursor: default;
+}
+
+.ajuste-marca svg {
+  display: block;
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 </style>
