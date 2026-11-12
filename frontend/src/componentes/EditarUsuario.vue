@@ -20,6 +20,7 @@ const nombre = ref("");
 const numeroSap = ref("");
 const clave = ref("");
 const grupo = ref("STEF");
+const coste = ref("");
 const vacaciones = ref("");
 const horasContrato = ref("");
 const horasConvenio = ref("");
@@ -34,6 +35,7 @@ function rellenar() {
   numeroSap.value = props.persona.numero_sap || "";
   clave.value = "";
   grupo.value = props.persona.grupo || "STEF";
+  coste.value = props.persona.coste ?? "";
   vacaciones.value = props.persona.vacaciones ?? "";
   horasContrato.value = props.persona.horas_contrato ?? "";
   horasConvenio.value = props.persona.horas_convenio ?? "";
@@ -75,6 +77,13 @@ function cambiosHechos() {
   }
   if (grupo.value !== props.persona.grupo) {
     cambios.grupo = grupo.value;
+  }
+  if (grupo.value === "ETT") {
+    const costeNuevo = numeroDe(coste.value);
+    const costeActual = numeroDe(props.persona.coste);
+    if (costeNuevo !== costeActual) {
+      cambios.coste = costeNuevo;
+    }
   }
   const vacacionesNuevas = numeroDe(vacaciones.value);
   const vacacionesActuales = numeroDe(props.persona.vacaciones);
@@ -187,6 +196,10 @@ onMounted(async () => {
               <input v-model="horasContrato" name="horas-contrato-usuario" type="number" min="0" step="0.5" />
             </label>
           </div>
+          <label v-if="grupo === 'ETT'" class="ancho">
+            Coste (€/hora)
+            <input v-model="coste" name="coste-usuario" type="number" min="0" step="0.0001" />
+          </label>
           <label class="ancho">
             Horas de convenio al año
             <input v-model="horasConvenio" name="horas-convenio-usuario" type="number" min="0" step="0.5" />

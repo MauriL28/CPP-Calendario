@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from flask import jsonify
@@ -37,6 +38,31 @@ def error_unico(exc):
     if getattr(exc.diag, "constraint_name", None) == "usuario_numero_sap":
         return jsonify(error="Ese número de personal ya está asignado a otra persona"), 409
     return error_bd(exc)
+
+
+def coste_hora(valor):
+    """Coste por hora. None si viene vacío. 'mal' si no es un número válido."""
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, bool):
+        return "mal"
+    if isinstance(valor, str):
+        texto = valor.strip().replace(",", ".")
+        if not texto:
+            return None
+        try:
+            cantidad = Decimal(texto)
+        except InvalidOperation:
+            return "mal"
+    elif isinstance(valor, int):
+        cantidad = Decimal(valor)
+    elif isinstance(valor, float):
+        cantidad = Decimal(str(valor))
+    else:
+        return "mal"
+    if not cantidad.is_finite() or cantidad < 0 or cantidad.as_tuple().exponent < -4:
+        return "mal"
+    return float(cantidad)
 
 
 def grupo_valido(valor):

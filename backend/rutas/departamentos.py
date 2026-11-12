@@ -94,4 +94,14 @@ def departamentos():
             lista.append(item)
         if fila["seccion"] is not None:
             item["secciones"].append({"id": str(fila["seccion_id"]), "nombre": fila["seccion"]})
-    return jsonify(adjuntar_personas(lista, por_codigo, mandos, trabajadores, turnos, horarios))
+    return jsonify(
+        adjuntar_personas(
+            lista,
+            por_codigo,
+            mandos,
+            trabajadores,
+            turnos,
+            horarios,
+            incluir_coste=get_jwt().get("rol") in ("admin", "mando"),
+        )
+    )

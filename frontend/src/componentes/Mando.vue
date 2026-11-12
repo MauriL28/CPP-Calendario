@@ -38,6 +38,7 @@ const login = ref("");
 const clave = ref("");
 const numeroSap = ref("");
 const grupo = ref("STEF");
+const coste = ref("");
 const letras = ["L", "M", "X", "J", "V", "S", "D"];
 const horarioAlta = ref(null);
 const vacaciones = ref("");
@@ -182,6 +183,7 @@ function vaciarAlta() {
   clave.value = "";
   numeroSap.value = "";
   grupo.value = "STEF";
+  coste.value = "";
   pausa.value = 0;
   reiniciarHorario();
   vacaciones.value = "";
@@ -502,6 +504,9 @@ async function guardar() {
       pausa_minutos: pausa.value,
       seccion_id: seccionId.value || null,
     };
+    if (grupo.value === "ETT" && coste.value !== "" && coste.value !== null) {
+      alta.coste = numero(coste.value);
+    }
     if (muestraHorario.value) {
       const horario = horarioAlta.value?.horarioDias();
       if (!horario?.horario_dias) {
@@ -948,6 +953,10 @@ onUnmounted(() => {
               <input v-model="vacaciones" name="vacaciones" type="number" min="0" step="0.5" />
             </label>
           </div>
+          <label v-if="grupo === 'ETT'" class="ancho">
+            Coste (€/hora)
+            <input v-model="coste" name="coste" type="number" min="0" step="0.0001" />
+          </label>
           <label class="ancho">
             Pausa
             <select v-model="pausa" name="pausa-trabajador">

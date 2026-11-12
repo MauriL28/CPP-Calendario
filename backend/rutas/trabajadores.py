@@ -17,6 +17,7 @@ from usuarios_edicion import campos_desconocidos, editar_campos
 from validaciones import (
     comprobar_seccion,
     error_unico,
+    coste_hora,
     grupo_valido,
     leer_seccion_id,
     numero,
@@ -69,6 +70,16 @@ def crear_trabajador():
     seccion_id, error = leer_seccion_id(cuerpo, opcional=True)
     if error:
         return error
+    if "coste" in cuerpo:
+        coste = coste_hora(cuerpo.get("coste"))
+        if coste == "mal":
+            return jsonify(
+                error="El coste tiene que ser un número mayor o igual que cero, con hasta 4 decimales"
+            ), 400
+    else:
+        coste = None
+    if grupo != "ETT":
+        coste = None
 
     try:
         with cursor() as cur:
@@ -101,9 +112,10 @@ def crear_trabajador():
                 """
                 INSERT INTO usuario (
                     nombre, login, clave, rol, grupo, departamento_id,
-                    vacaciones, horas_contrato, numero_sap, seccion_id, pausa_minutos
+                    vacaciones, horas_contrato, numero_sap, seccion_id, pausa_minutos,
+                    tarifas_ett
                 )
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, nombre, login, rol, grupo, vacaciones, horas_contrato, numero_sap, seccion_id
                 """,
                 (
@@ -117,6 +129,7 @@ def crear_trabajador():
                     numero_sap,
                     seccion_id,
                     pausa,
+                    coste,
                 ),
             )
             creado = cur.fetchone()
@@ -154,6 +167,7 @@ def crear_trabajador():
         horas_contrato=float(creado["horas_contrato"]),
         numero_sap=creado["numero_sap"],
         seccion_id=str(creado["seccion_id"]) if creado["seccion_id"] else None,
+        coste=coste,
     ), 201
 
 
@@ -178,6 +192,7 @@ def editar_trabajador(login_nombre):
                 "id": trabajador["id"],
                 "rol": "trabajador",
                 "departamento_id": trabajador["departamento_id"],
+                "grupo": trabajador.get("grupo"),
             }
             cambios, error = editar_campos(cur, persona, cuerpo)
             if error:
@@ -674,7 +689,7 @@ def _departamento_alta(cur, pedido):
 def _trabajador_permitido(cur, login_nombre):
     cur.execute(
         """
-        SELECT id, departamento_id
+        SELECT id, departamento_id, grupo
         FROM usuario
         WHERE login = %s AND rol = 'trabajador'
         """,

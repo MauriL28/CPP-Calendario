@@ -9,6 +9,7 @@ from validaciones import comprobar_seccion, sap_ocupado
 CAMPOS_COMUNES = {"nombre", "numero_sap", "clave"}
 CAMPOS_TRABAJADOR = {
     "grupo",
+    "coste",
     "vacaciones",
     "horas_contrato",
     "horas_convenio",
@@ -21,6 +22,7 @@ ORDEN_USUARIO = (
     "numero_sap",
     "clave",
     "grupo",
+    "coste",
     "vacaciones",
     "horas_contrato",
     "horas_convenio",
@@ -39,6 +41,9 @@ def editar_campos(cur, persona, cuerpo):
     cambios, error = _cambios_usuario(cuerpo)
     if error:
         return None, error
+    grupo = cambios.get("grupo", persona.get("grupo"))
+    if grupo == "STEF" and ("coste" in cuerpo or "grupo" in cambios):
+        cambios["coste"] = None
     if "seccion_id" in cambios:
         error = comprobar_seccion(cur, persona["departamento_id"], cambios["seccion_id"])
         if error:
@@ -77,6 +82,16 @@ def _cambios_usuario(cuerpo):
         if error:
             return None, error
         cambios["grupo"] = cuerpo["grupo"]
+    if "coste" in cuerpo:
+        coste = validaciones.coste_hora(cuerpo["coste"])
+        if coste == "mal":
+            return None, (
+                jsonify(
+                    error="El coste tiene que ser un número mayor o igual que cero, con hasta 4 decimales"
+                ),
+                400,
+            )
+        cambios["coste"] = coste
     for campo in ("vacaciones", "horas_contrato"):
         if campo not in cuerpo:
             continue
@@ -110,6 +125,8 @@ def _guardar_usuario(cur, usuario_id, cambios):
             continue
         if campo == "clave":
             columnas.append("clave = crypt(%s, gen_salt('bf'))")
+        elif campo == "coste":
+            columnas.append("tarifas_ett = %s")
         else:
             columnas.append(f"{campo} = %s")
         params.append(cambios[campo])

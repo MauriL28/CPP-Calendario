@@ -53,7 +53,7 @@ def listar_del_departamento(cur, filtro, params, solo_mandos_activos=False):
         SELECT g.codigo AS delegacion, d.codigo AS departamento,
                u.nombre, u.login, u.grupo, u.horas_contrato, u.horas_convenio,
                u.pausa_minutos, u.vacaciones, u.numero_sap,
-               u.seccion_id
+               u.seccion_id, u.tarifas_ett
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
         JOIN delegacion g ON g.id = d.delegacion_id
@@ -110,7 +110,9 @@ def listar_del_departamento(cur, filtro, params, solo_mandos_activos=False):
     return mandos, trabajadores, turnos, horarios
 
 
-def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos, horarios):
+def adjuntar_personas(
+    departamentos, por_codigo, mandos, trabajadores, turnos, horarios, incluir_coste=False
+):
     for mando in mandos:
         item = por_codigo.get((mando["delegacion"], mando["departamento"]))
         if item is not None:
@@ -141,6 +143,8 @@ def adjuntar_personas(departamentos, por_codigo, mandos, trabajadores, turnos, h
             "seccion_id": str(trabajador["seccion_id"]) if trabajador["seccion_id"] else None,
             "turnos": [],
         }
+        if incluir_coste:
+            persona["coste"] = _decimal(trabajador.get("tarifas_ett"))
         por_login[trabajador["login"]] = persona
         item["trabajadores"].append(persona)
     for fila in horarios:
@@ -302,7 +306,7 @@ def editar_usuario(login_nombre):
         with cursor() as cur:
             cur.execute(
                 """
-                SELECT id, rol, departamento_id
+                SELECT id, rol, departamento_id, grupo
                 FROM usuario
                 WHERE login = %s AND rol IN ('mando', 'trabajador')
                 """,
