@@ -11,6 +11,7 @@ def _turno(fila):
         "hora_fin": hora_texto(fila["hora_fin"]),
         "horas_planificadas": float(fila["horas_planificadas"]),
         "horas_nocturnas": float(fila["horas_nocturnas"]),
+        "pausa_inicio": hora_texto(fila.get("pausa_inicio")),
     }
 
 
@@ -62,6 +63,7 @@ def _domingo_libre():
         "hora_fin": None,
         "horas_planificadas": 0.0,
         "horas_nocturnas": 0.0,
+        "pausa_inicio": None,
     }, "habitual"
 
 
@@ -87,6 +89,7 @@ def resolver_turno(
         "hora_fin": hora_texto(fin),
         "horas_planificadas": planificadas,
         "horas_nocturnas": nocturnas,
+        "pausa_inicio": None,
     }, "habitual"
 
 
@@ -132,7 +135,8 @@ def _material_rango(cur, ids, inicio, fin):
         cur.execute(
             """
             SELECT usuario_id, fecha, ausencia::text AS ausencia,
-                   hora_inicio, hora_fin, horas_planificadas, horas_nocturnas
+                   hora_inicio, hora_fin, horas_planificadas, horas_nocturnas,
+                   pausa_inicio
             FROM turno
             WHERE usuario_id = ANY(%s)
               AND fecha >= %s

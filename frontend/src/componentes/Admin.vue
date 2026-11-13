@@ -4,6 +4,7 @@ import { listar } from "../api/departamentos.js";
 import Analisis from "./Analisis.vue";
 import Cobertura from "./Cobertura.vue";
 import Cuadrante from "./Cuadrante.vue";
+import DuracionPausa from "./DuracionPausa.vue";
 import EditarUsuario from "./EditarUsuario.vue";
 import FichaEmpleado from "./FichaEmpleado.vue";
 import Fichajes from "./Fichajes.vue";
@@ -57,6 +58,7 @@ const costeTrabajador = ref("");
 const vacacionesTrabajador = ref("");
 const horasContratoTrabajador = ref("");
 const pausaTrabajador = ref(0);
+const horaPausaTrabajador = ref("");
 const numeroSapTrabajador = ref("");
 const seccionTrabajador = ref("");
 const errorTrabajador = ref("");
@@ -326,6 +328,7 @@ function vaciarAltaTrabajador() {
   vacacionesTrabajador.value = "";
   horasContratoTrabajador.value = "";
   pausaTrabajador.value = 0;
+  horaPausaTrabajador.value = "";
   numeroSapTrabajador.value = "";
   seccionTrabajador.value = "";
   errorTrabajador.value = "";
@@ -370,6 +373,9 @@ async function guardarTrabajador() {
       return;
     }
     datos.horario_dias = horario.horario_dias;
+  }
+  if (Number(pausaTrabajador.value) > 0 && horaPausaTrabajador.value) {
+    datos.pausa_habitual = horaPausaTrabajador.value.slice(0, 5);
   }
   if (sede.secciones?.length) {
     datos.seccion_id = seccionTrabajador.value || null;
@@ -646,13 +652,14 @@ onMounted(cargar);
               </label>
               <label>
                 Pausa
-                <select v-model="pausaTrabajador" name="pausa-trabajador">
-                  <option :value="0">Sin pausa</option>
-                  <option :value="30">30 minutos</option>
-                  <option :value="60">1 hora</option>
-                </select>
+                <DuracionPausa v-model="pausaTrabajador" />
               </label>
               <p class="campo-pista">Descanso diario no pagado. Se resta de las horas planificadas.</p>
+              <label v-if="Number(pausaTrabajador) > 0">
+                Hora de pausa
+                <input v-model="horaPausaTrabajador" name="hora-pausa-trabajador" type="time" />
+              </label>
+              <p v-if="Number(pausaTrabajador) > 0" class="campo-pista">Si la indicas, Cobertura la tiene en cuenta.</p>
               <label>
                 Número de personal (SAP)
                 <input v-model="numeroSapTrabajador" name="numero-sap-trabajador" autocomplete="off" />

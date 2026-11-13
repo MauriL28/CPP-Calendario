@@ -1,12 +1,10 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { listar } from "../api/departamentos.js";
-import { delegacionVisible, hoyIso, lunesQueViene } from "../fechas.js";
+import { delegacionVisible } from "../fechas.js";
 import { agruparPersonas, iniciales, numeroFormulario as numero } from "../personas.js";
 import {
   borrarAjuste,
-  cambiarHorario,
-  cambiarHorarioPropio,
   crearAjuste,
   editarAjuste,
   crearTrabajador,
@@ -17,7 +15,8 @@ import Analisis from "./Analisis.vue";
 import Cobertura from "./Cobertura.vue";
 import HorarioHabitual from "./HorarioHabitual.vue";
 import Cuadrante from "./Cuadrante.vue";
-import EditarUsuario from "./EditarUsuario.vue";
+import DuracionPausa from "./DuracionPausa.vue";
+import EditarTrabajador from "./EditarTrabajador.vue";
 import FichaEmpleado from "./FichaEmpleado.vue";
 import TrabajadoresInactivos from "./TrabajadoresInactivos.vue";
 
@@ -47,20 +46,15 @@ const horarioAlta = ref(null);
 const vacaciones = ref("");
 const horasContrato = ref("");
 const pausa = ref(0);
+const horaPausa = ref("");
 const seccionId = ref("");
 const errorTrabajador = ref("");
 const dialogo = ref(null);
 const dialogoHorario = ref(null);
 const horarioPropio = ref(false);
-const horarioPropioForm = ref(null);
+const horarioForm = ref(null);
 const cuadranteMandos = ref(null);
 const trabajadorHorario = ref(null);
-const desdeHorario = ref("");
-const diasHorario = ref([true, true, true, true, true, false, false]);
-const horasHorario = ref(letras.map(() => ({ inicio: "", fin: "" })));
-const plantillaHorario = ref(null);
-const propiosHorario = ref(letras.map(() => false));
-const errorHorario = ref("");
 const dialogoAjustes = ref(null);
 const trabajadorAjuste = ref(null);
 const ajustes = ref([]);
@@ -74,6 +68,8 @@ const formularioAjusteAbierto = ref(false);
 const ajusteEnEdicion = ref(null);
 const fechaAjusteInput = ref(null);
 const personaEditar = ref(null);
+const editorTrabajador = ref(null);
+let recargaEdicion = Promise.resolve();
 const aviso = ref(false);
 const busqueda = ref("");
 const filtroSeccion = ref("");
@@ -167,6 +163,7 @@ function vaciarAlta() {
   grupo.value = "STEF";
   coste.value = "";
   pausa.value = 0;
+  horaPausa.value = "";
   reiniciarHorario();
   vacaciones.value = "";
   horasContrato.value = "";
@@ -277,47 +274,39 @@ function abrirPerfil(trabajador) {
   personaEditar.value = { ...trabajador, rol: "trabajador" };
 }
 
-async function alGuardarTrabajador() {
-  await cargarDepartamentos();
+function trabajadorActual(login) {
+  return (equipo.value?.trabajadores || []).find((item) => item.login === login) || null;
+}
+
+function alGuardarTrabajador(bloque) {
+  recargaEdicion = recargaEdicion.then(() => recargarEdicion(bloque));
+}
+
+async function recargarEdicion(bloque) {
+  try {
+    await cargarDepartamentos();
+    await cuadrante.value?.recargar();
+  } catch {
+    // La recarga fallida no debe impedir el aviso del bloque guardado.
+  }
+  const actual = personaEditar.value;
+  if (!actual) {
+    return;
+  }
+  const fresco = trabajadorActual(actual.login);
+  if (fresco) {
+    Object.assign(actual, fresco, { rol: "trabajador" });
+  }
+  editorTrabajador.value?.aplicar(bloque, Boolean(fresco));
 }
 
 function cuenta(total) {
   return total === 1 ? "1 trabajador" : `${total} trabajadores`;
 }
 
-function abrirHorario(trabajador) {
-  horarioPropio.value = false;
-  trabajadorHorario.value = trabajador;
-  desdeHorario.value = lunesQueViene();
-  errorHorario.value = "";
-  const marcados = letras.map(() => false);
-  const horas = letras.map(() => ({ inicio: "", fin: "" }));
-  const propio = letras.map(() => false);
-  let plantilla = null;
-  for (const dia of trabajador.horario || []) {
-    if (dia.dia_semana < 0 || dia.dia_semana > 6) {
-      continue;
-    }
-    marcados[dia.dia_semana] = true;
-    horas[dia.dia_semana] = { inicio: dia.inicio || "", fin: dia.fin || "" };
-    propio[dia.dia_semana] = true;
-    if (plantilla === null) {
-      plantilla = dia.dia_semana;
-    }
-  }
-  diasHorario.value = marcados;
-  horasHorario.value = horas;
-  propiosHorario.value = propio;
-  plantillaHorario.value = plantilla;
-  dialogoHorario.value?.showModal();
-  dialogoHorario.value?.querySelector("[name='desde-horario']")?.focus();
-}
-
 function abrirHorarioPropio() {
   horarioPropio.value = true;
   trabajadorHorario.value = null;
-  desdeHorario.value = lunesQueViene();
-  errorHorario.value = "";
   dialogoHorario.value?.showModal();
   dialogoHorario.value?.querySelector("[name='desde-horario']")?.focus();
 }
@@ -329,7 +318,6 @@ function cerrarHorario() {
 function alCerrarHorario() {
   trabajadorHorario.value = null;
   horarioPropio.value = false;
-  errorHorario.value = "";
 }
 
 function alFondoHorario(evento) {
@@ -338,100 +326,15 @@ function alFondoHorario(evento) {
   }
 }
 
-function alMarcarHorario(dia, evento) {
-  const marcado = evento.target.checked;
-  diasHorario.value[dia] = marcado;
-  if (!marcado || plantillaHorario.value === null || propiosHorario.value[dia]) {
+async function alGuardarHorario() {
+  const propio = horarioPropio.value;
+  cerrarHorario();
+  if (propio) {
+    await cuadranteMandos.value?.recargar();
     return;
   }
-  const origen = horasHorario.value[plantillaHorario.value];
-  horasHorario.value[dia] = { inicio: origen.inicio, fin: origen.fin };
-}
-
-function alHoraHorario(dia, campo, valor) {
-  const actual = horasHorario.value[dia];
-  horasHorario.value[dia] = { ...actual, [campo]: valor };
-  if (plantillaHorario.value === null) {
-    plantillaHorario.value = dia;
-  } else if (dia !== plantillaHorario.value) {
-    propiosHorario.value[dia] = true;
-    return;
-  }
-  const origen = horasHorario.value[dia];
-  horasHorario.value = horasHorario.value.map((item, indice) => {
-    if (indice === dia) {
-      return origen;
-    }
-    if (!diasHorario.value[indice] || propiosHorario.value[indice]) {
-      return item;
-    }
-    return { inicio: origen.inicio, fin: origen.fin };
-  });
-}
-
-async function guardarHorario() {
-  errorHorario.value = "";
-  if (!desdeHorario.value) {
-    errorHorario.value = "Indica desde qué fecha aplica.";
-    return;
-  }
-  if (desdeHorario.value < hoyIso()) {
-    errorHorario.value = "La fecha no puede ser anterior a hoy.";
-    return;
-  }
-  if (horarioPropio.value) {
-    const horario = horarioPropioForm.value?.horarioDias();
-    if (!horario?.horario_dias) {
-      errorHorario.value = horario?.error || "Marca al menos un día.";
-      return;
-    }
-    try {
-      await cambiarHorarioPropio(props.token, {
-        desde: desdeHorario.value,
-        horario_dias: horario.horario_dias,
-      });
-      cerrarHorario();
-      await cuadranteMandos.value?.recargar();
-    } catch (causa) {
-      errorHorario.value = causa instanceof Error ? causa.message : "No se pudo cambiar el horario";
-    }
-    return;
-  }
-  const persona = trabajadorHorario.value;
-  if (!persona) {
-    return;
-  }
-  const horarioDias = [];
-  for (let dia = 0; dia < letras.length; dia += 1) {
-    if (!diasHorario.value[dia]) {
-      continue;
-    }
-    const horas = horasHorario.value[dia];
-    if (!horas.inicio || !horas.fin) {
-      errorHorario.value = "Indica la hora de inicio y de fin de cada día marcado.";
-      return;
-    }
-    horarioDias.push({
-      dia_semana: dia,
-      hora_inicio: horas.inicio,
-      hora_fin: horas.fin,
-    });
-  }
-  if (!horarioDias.length) {
-    errorHorario.value = "Marca al menos un día.";
-    return;
-  }
-  try {
-    await cambiarHorario(props.token, persona.login, {
-      desde: desdeHorario.value,
-      horario_dias: horarioDias,
-    });
-    cerrarHorario();
-    await cargarDepartamentos();
-    await cuadrante.value?.recargar();
-  } catch (causa) {
-    errorHorario.value = causa instanceof Error ? causa.message : "No se pudo cambiar el horario";
-  }
+  await cargarDepartamentos();
+  await cuadrante.value?.recargar();
 }
 
 async function darDeBaja(trabajador) {
@@ -468,6 +371,9 @@ async function guardar() {
       pausa_minutos: pausa.value,
       seccion_id: seccionId.value || null,
     };
+    if (Number(pausa.value) > 0 && horaPausa.value) {
+      alta.pausa_habitual = horaPausa.value.slice(0, 5);
+    }
     if (grupo.value === "ETT" && coste.value !== "" && coste.value !== null) {
       alta.coste = numero(coste.value);
     }
@@ -843,8 +749,7 @@ onUnmounted(() => {
                   <div class="equipo-mas">
                     <button type="button" aria-haspopup="true" :aria-expanded="menuAbierto === trabajador.login" @click.stop="abrirMenu(trabajador.login)">⋯</button>
                     <div v-if="menuAbierto === trabajador.login" class="equipo-mas-menu" role="menu">
-                      <button v-if="muestraHorario" type="button" role="menuitem" @click="cerrarMenu(); abrirHorario(trabajador)">Cambiar horario</button>
-                      <button type="button" role="menuitem" @click="cerrarMenu(); abrirPerfil(trabajador)">Editar perfil</button>
+                      <button type="button" role="menuitem" @click="cerrarMenu(); abrirPerfil(trabajador)">Editar</button>
                       <button type="button" class="peligro" role="menuitem" @click="cerrarMenu(); darDeBaja(trabajador)">Dar de baja</button>
                     </div>
                   </div>
@@ -923,13 +828,14 @@ onUnmounted(() => {
           </label>
           <label class="ancho">
             Pausa
-            <select v-model="pausa" name="pausa-trabajador">
-              <option :value="0">Sin pausa</option>
-              <option :value="30">30 minutos</option>
-              <option :value="60">1 hora</option>
-            </select>
+            <DuracionPausa v-model="pausa" />
           </label>
           <p class="ancho campo-pista">Descanso diario no pagado. Se resta de las horas planificadas.</p>
+          <label v-if="Number(pausa) > 0" class="ancho">
+            Hora de pausa
+            <input v-model="horaPausa" name="hora-pausa-trabajador" type="time" />
+          </label>
+          <p v-if="Number(pausa) > 0" class="ancho campo-pista">Si la indicas, Cobertura la tiene en cuenta.</p>
           <HorarioHabitual v-if="muestraHorario" ref="horarioAlta" />
         </div>
         <p v-if="errorTrabajador" class="error" role="alert">{{ errorTrabajador }}</p>
@@ -940,7 +846,7 @@ onUnmounted(() => {
       </form>
   </dialog>
   <dialog ref="dialogoHorario" class="alta-dialogo" @close="alCerrarHorario" @click="alFondoHorario">
-    <form @submit.prevent="guardarHorario">
+    <form @submit.prevent="horarioForm?.guardar()">
       <header class="alta-dialogo-cabecera">
         <div>
           <h2>{{ horarioPropio ? "Cambiar mi horario" : "Cambiar horario" }}</h2>
@@ -948,66 +854,26 @@ onUnmounted(() => {
         </div>
         <button type="button" class="dialogo-cerrar" @click="cerrarHorario">✕</button>
       </header>
-      <div class="alta-dialogo-cuerpo">
-        <label class="ancho">
-          Desde
-          <input
-            v-model="desdeHorario"
-            name="desde-horario"
-            type="date"
-            :required="horarioPropio"
-            :min="hoyIso()"
-          />
-        </label>
-        <HorarioHabitual v-if="horarioPropio" ref="horarioPropioForm" />
-        <div v-if="!horarioPropio" class="ancho alta-dias-marcas">
-          <label v-for="(letra, dia) in letras" :key="`cambio-${letra}`" class="alta-casilla">
-            <input
-              type="checkbox"
-              :checked="diasHorario[dia]"
-              @change="alMarcarHorario(dia, $event)"
-            />
-            {{ letra }}
-          </label>
-        </div>
-        <div
-          v-for="(letra, dia) in letras"
-          v-show="!horarioPropio && diasHorario[dia]"
-          :key="`cambio-horas-${letra}`"
-          class="ancho alta-dia-horas"
-        >
-          <span>{{ letra }}</span>
-          <label>
-            Hora de inicio
-            <input
-              :value="horasHorario[dia].inicio"
-              type="time"
-              @input="alHoraHorario(dia, 'inicio', $event.target.value)"
-            />
-          </label>
-          <label>
-            Hora de fin
-            <input
-              :value="horasHorario[dia].fin"
-              type="time"
-              @input="alHoraHorario(dia, 'fin', $event.target.value)"
-            />
-          </label>
-        </div>
-      </div>
-      <p v-if="errorHorario" class="error" role="alert">{{ errorHorario }}</p>
+      <HorarioHabitual
+        ref="horarioForm"
+        :token="token"
+        :persona="trabajadorHorario"
+        :modo="horarioPropio ? 'propio' : 'trabajador'"
+        @guardado="alGuardarHorario"
+      />
       <footer class="alta-dialogo-pie">
         <button type="button" @click="cerrarHorario">Cancelar</button>
         <button class="primario" type="submit">Guardar horario</button>
       </footer>
     </form>
   </dialog>
-  <EditarUsuario
+  <EditarTrabajador
     v-if="personaEditar"
-    modo="mando"
+    ref="editorTrabajador"
     :token="token"
     :persona="personaEditar"
     :secciones="seccionesEquipo"
+    :con-horario="muestraHorario"
     @guardado="alGuardarTrabajador"
     @cerrar="personaEditar = null"
   />

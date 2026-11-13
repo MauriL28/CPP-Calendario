@@ -101,6 +101,7 @@ def test_el_domingo_sin_plan_es_descanso_automatico():
         "hora_fin": None,
         "horas_planificadas": 0.0,
         "horas_nocturnas": 0.0,
+        "pausa_inicio": None,
     }
 
 

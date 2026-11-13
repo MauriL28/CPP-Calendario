@@ -9,7 +9,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from db import SinBaseDeDatos, cursor
 from exportar_turnos import _libro, _nombre_archivo
 from errores import error_bd
-from horas import hora_texto, horas_de_turno, parse_hora
+from horas import hora_texto, horas_de_turno, minutos, parse_hora
 from mandos import departamento_lectura, departamento_permitido
 from turnos_base import _material_rango, resolver_turno
 from vacaciones import error_cupo_vacaciones
@@ -202,7 +202,7 @@ def listar_turnos():
             cur.execute(
                 """
                 SELECT u.id, u.nombre, u.login, u.grupo, u.activo, u.tarifas_ett,
-                       s.nombre AS seccion
+                       u.pausa_habitual, s.nombre AS seccion
                 FROM usuario u
                 LEFT JOIN seccion s ON s.id = u.seccion_id
                 WHERE u.rol = 'trabajador' AND u.departamento_id = %s
@@ -235,6 +235,8 @@ def listar_turnos():
             "grupo": trabajador["grupo"],
             "seccion": trabajador["seccion"],
             "coste": _coste(trabajador),
+            "pausa_minutos": int(pausas.get(trabajador["id"], 0) if pausas else 0),
+            "pausa_habitual": hora_texto(trabajador.get("pausa_habitual")),
             "dias": _dias_resueltos(
                 trabajador["id"],
                 dias,
@@ -466,7 +468,7 @@ def listar_turnos_mes():
             cur.execute(
                 """
                 SELECT u.id, u.nombre, u.login, u.grupo, u.activo, u.tarifas_ett,
-                       s.nombre AS seccion
+                       u.pausa_habitual, s.nombre AS seccion
                 FROM usuario u
                 LEFT JOIN seccion s ON s.id = u.seccion_id
                 WHERE u.rol = 'trabajador' AND u.departamento_id = %s
@@ -498,6 +500,8 @@ def listar_turnos_mes():
     for persona, trabajador in zip(personas, trabajadores):
         persona["seccion"] = trabajador["seccion"]
         persona["coste"] = _coste(trabajador)
+        persona["pausa_minutos"] = int(pausas.get(trabajador["id"], 0) if pausas else 0)
+        persona["pausa_habitual"] = hora_texto(trabajador.get("pausa_habitual"))
     _anotar_ajustes(personas, trabajadores, ajustes)
     return jsonify(
         desde=dias[0].isoformat(),
@@ -793,6 +797,9 @@ def guardar_turno_mando():
 
     try:
         with cursor() as cur:
+            pedido, error = _confirmar_pausa(cur, yo, cuerpo, pedido)
+            if error:
+                return error
             texto = error_cupo_vacaciones(cur, yo, fechas, fechas_v)
             if texto:
                 return jsonify(error=texto), 409
@@ -881,10 +888,10 @@ def copiar_semana():
                 """
                 INSERT INTO turno (
                     usuario_id, fecha, ausencia, hora_inicio, hora_fin,
-                    horas_planificadas, horas_nocturnas
+                    horas_planificadas, horas_nocturnas, pausa_inicio
                 )
                 SELECT t.usuario_id, t.fecha + 7, t.ausencia, t.hora_inicio, t.hora_fin,
-                       t.horas_planificadas, t.horas_nocturnas
+                       t.horas_planificadas, t.horas_nocturnas, t.pausa_inicio
                 FROM turno t
                 JOIN usuario u ON u.id = t.usuario_id
                 WHERE u.rol = 'trabajador'
@@ -896,7 +903,8 @@ def copiar_semana():
                     hora_inicio = EXCLUDED.hora_inicio,
                     hora_fin = EXCLUDED.hora_fin,
                     horas_planificadas = EXCLUDED.horas_planificadas,
-                    horas_nocturnas = EXCLUDED.horas_nocturnas
+                    horas_nocturnas = EXCLUDED.horas_nocturnas,
+                    pausa_inicio = EXCLUDED.pausa_inicio
                 """,
                 (departamento_id, anterior, desde),
             )
@@ -950,13 +958,41 @@ def _error_copia_vacaciones(cur, departamento_id, desde, anterior, hasta):
     return None
 
 
-def _pedido_turno(cuerpo):
+def _pausa_cabe(inicio, fin, pausa_inicio, pausa_minutos):
+    start = minutos(inicio)
+    end = minutos(fin)
+    cruza = end <= start
+    if cruza:
+        end += 24 * 60
+    marca = minutos(pausa_inicio)
+    if cruza and marca < start:
+        marca += 24 * 60
+    final = marca + int(pausa_minutos)
+    return start <= marca and final <= end
+
+
+def _leer_pausa(cur, usuario_id):
+    cur.execute("SELECT pausa_minutos FROM usuario WHERE id = %s", (usuario_id,))
+    persona = cur.fetchone()
+    if persona is None or persona.get("pausa_minutos") is None:
+        return 0
+    return int(persona["pausa_minutos"])
+
+
+def _confirmar_pausa(cur, usuario_id, cuerpo, pedido):
+    if pedido["pausa_inicio"] is None:
+        return pedido, None
+    return _pedido_turno(cuerpo, _leer_pausa(cur, usuario_id))
+
+
+def _pedido_turno(cuerpo, pausa_minutos=None):
     ausencia = cuerpo.get("ausencia")
     if ausencia == "":
         ausencia = None
     hora_inicio = parse_hora(cuerpo.get("hora_inicio"))
     hora_fin = parse_hora(cuerpo.get("hora_fin"))
-    if hora_inicio == "mal" or hora_fin == "mal":
+    pausa_inicio = parse_hora(cuerpo.get("pausa_inicio"))
+    if hora_inicio == "mal" or hora_fin == "mal" or pausa_inicio == "mal":
         return None, (jsonify(error="La hora no es válida"), 400)
     hay_ausencia = ausencia is not None
     if hay_ausencia:
@@ -972,10 +1008,19 @@ def _pedido_turno(cuerpo):
             hora_fin = None
     elif hora_inicio is None or hora_fin is None:
         return None, (jsonify(error="Indica un horario o una ausencia"), 400)
+    if pausa_inicio is not None:
+        if ausencia not in (None, *CON_HORARIO):
+            return None, (jsonify(error="La pausa solo se indica con un horario"), 400)
+        if pausa_minutos is not None:
+            if int(pausa_minutos) <= 0:
+                return None, (jsonify(error="El trabajador no tiene pausa"), 400)
+            if not _pausa_cabe(hora_inicio, hora_fin, pausa_inicio, pausa_minutos):
+                return None, (jsonify(error="La pausa tiene que estar dentro del turno"), 400)
     return {
         "ausencia": ausencia,
         "hora_inicio": hora_inicio,
         "hora_fin": hora_fin,
+        "pausa_inicio": pausa_inicio,
     }, None
 
 
@@ -1024,17 +1069,18 @@ def _insertar_turno(cur, usuario_id, fecha, pedido):
         """
         INSERT INTO turno (
             usuario_id, fecha, ausencia, hora_inicio, hora_fin,
-            horas_planificadas, horas_nocturnas
+            horas_planificadas, horas_nocturnas, pausa_inicio
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (usuario_id, fecha) DO UPDATE SET
             ausencia = EXCLUDED.ausencia,
             hora_inicio = EXCLUDED.hora_inicio,
             hora_fin = EXCLUDED.hora_fin,
             horas_planificadas = EXCLUDED.horas_planificadas,
-            horas_nocturnas = EXCLUDED.horas_nocturnas
+            horas_nocturnas = EXCLUDED.horas_nocturnas,
+            pausa_inicio = EXCLUDED.pausa_inicio
         RETURNING fecha, ausencia::text AS ausencia, hora_inicio, hora_fin,
-                  horas_planificadas, horas_nocturnas
+                  horas_planificadas, horas_nocturnas, pausa_inicio
         """,
         (
             usuario_id,
@@ -1044,6 +1090,7 @@ def _insertar_turno(cur, usuario_id, fecha, pedido):
             hora_fin,
             planificadas,
             nocturnas,
+            pedido.get("pausa_inicio"),
         ),
     )
     return cur.fetchone()
@@ -1090,6 +1137,9 @@ def guardar_turno():
             trabajador = _trabajador_del_turno(cur, login_nombre)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
+            pedido, error = _confirmar_pausa(cur, trabajador["id"], cuerpo, pedido)
+            if error:
+                return error
             fechas_v = [fecha] if pedido["ausencia"] == "V" else []
             texto = error_cupo_vacaciones(cur, trabajador["id"], [fecha], fechas_v)
             if texto:
@@ -1108,6 +1158,7 @@ def guardar_turno():
         hora_fin=hora_texto(guardado["hora_fin"]),
         horas_planificadas=float(guardado["horas_planificadas"]),
         horas_nocturnas=float(guardado["horas_nocturnas"]),
+        pausa_inicio=hora_texto(guardado.get("pausa_inicio")),
     )
 
 
@@ -1133,6 +1184,9 @@ def guardar_turnos():
             trabajador = _trabajador_del_turno(cur, login_nombre)
             if trabajador is None:
                 return jsonify(error="Ese trabajador no es de tu departamento"), 404
+            pedido, error = _confirmar_pausa(cur, trabajador["id"], cuerpo, pedido)
+            if error:
+                return error
             fechas_v = fechas if pedido["ausencia"] == "V" else []
             texto = error_cupo_vacaciones(cur, trabajador["id"], fechas, fechas_v)
             if texto:
@@ -1144,7 +1198,7 @@ def guardar_turnos():
     except psycopg.Error as exc:
         return error_bd(exc)
 
-    return jsonify(guardados=len(fechas))
+    return jsonify(guardados=len(fechas), pausa_inicio=hora_texto(pedido["pausa_inicio"]))
 
 
 @bp.delete("/turnos")

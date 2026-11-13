@@ -47,13 +47,15 @@ function solape(desde, hasta, hora) {
   return Math.max(0, Math.min(hasta, bloque + 60) - Math.max(desde, bloque));
 }
 
-function celdasDe(tramos) {
+function celdasDe(tramos, pausas = []) {
   return horasDia.map((hora) => {
     const minutos = tramos.reduce((total, [desde, hasta]) => total + solape(desde, hasta, hora), 0);
-    if (minutos >= 60) {
+    const descanso = pausas.reduce((total, [desde, hasta]) => total + solape(desde, hasta, hora), 0);
+    const netos = Math.max(0, minutos - descanso);
+    if (netos >= 60) {
       return "completa";
     }
-    if (minutos > 0) {
+    if (netos > 0) {
       return "parcial";
     }
     return "";
@@ -67,13 +69,65 @@ function cubreHoras(turno) {
   return turno.ausencia == null || turno.ausencia === "ST" || turno.ausencia === "FT";
 }
 
-function tramosDelDia(turno, turnoAnterior) {
+function pausaCabe(turno, hora, minutos) {
+  const inicioTurno = minutosReloj(turno.hora_inicio);
+  let finTurno = minutosReloj(turno.hora_fin);
+  const cruza = finTurno <= inicioTurno;
+  if (cruza) {
+    finTurno += 24 * 60;
+  }
+  let inicio = minutosReloj(hora);
+  if (cruza && inicio < inicioTurno) {
+    inicio += 24 * 60;
+  }
+  return inicioTurno <= inicio && inicio + minutos <= finTurno;
+}
+
+function pausaVisible(turno, minutos, habitual, limiteDesde, limiteHasta, base) {
+  if (!(minutos > 0)) {
+    return null;
+  }
+  const hora = turno?.pausa_inicio || habitual || "";
+  if (!hora) {
+    return null;
+  }
+  if (!turno?.pausa_inicio && !pausaCabe(turno, hora, minutos)) {
+    return null;
+  }
+  const inicioTurno = minutosReloj(turno.hora_inicio);
+  let finTurno = minutosReloj(turno.hora_fin);
+  if (finTurno <= inicioTurno) {
+    finTurno += 24 * 60;
+  }
+  let inicio = minutosReloj(hora);
+  if (finTurno > 24 * 60 && inicio < inicioTurno) {
+    inicio += 24 * 60;
+  }
+  const fin = Math.min(inicio + minutos, finTurno);
+  inicio = Math.max(inicio, inicioTurno);
+  if (fin <= inicio) {
+    return null;
+  }
+  const desde = Math.max(inicio, limiteDesde + base) - base;
+  const hasta = Math.min(fin, limiteHasta + base) - base;
+  if (hasta <= desde) {
+    return null;
+  }
+  return [desde, hasta];
+}
+
+function tramosDelDia(turno, turnoAnterior, pausaMinutos, pausaHabitual) {
   const tramos = [];
+  const pausas = [];
   if (cubreHoras(turnoAnterior)) {
     const desde = minutosReloj(turnoAnterior.hora_inicio);
     const hasta = minutosReloj(turnoAnterior.hora_fin);
     if (hasta <= desde) {
       tramos.push([0, hasta]);
+      const pausa = pausaVisible(turnoAnterior, pausaMinutos, pausaHabitual, 0, hasta, 24 * 60);
+      if (pausa) {
+        pausas.push(pausa);
+      }
     }
   }
   if (cubreHoras(turno)) {
@@ -83,8 +137,12 @@ function tramosDelDia(turno, turnoAnterior) {
       hasta = 24 * 60;
     }
     tramos.push([desde, hasta]);
+    const pausa = pausaVisible(turno, pausaMinutos, pausaHabitual, desde, hasta, 0);
+    if (pausa) {
+      pausas.push(pausa);
+    }
   }
-  return tramos;
+  return { tramos, pausas };
 }
 
 function horasDeCeldas(celdas) {
@@ -120,7 +178,13 @@ function turnoAnterior(trabajador, fecha) {
 function filaPersona(trabajador) {
   const fecha = cuadrante.value?.dias?.[diaIndice.value] || "";
   const turno = fecha ? turnoEnFecha(trabajador, fecha) : null;
-  const celdas = celdasDe(tramosDelDia(turno, fecha ? turnoAnterior(trabajador, fecha) : null));
+  const partes = tramosDelDia(
+    turno,
+    fecha ? turnoAnterior(trabajador, fecha) : null,
+    Number(trabajador.pausa_minutos) || 0,
+    trabajador.pausa_habitual || "",
+  );
+  const celdas = celdasDe(partes.tramos, partes.pausas);
   const cubiertas = horasDeCeldas(celdas);
   const base = {
     tipo: "persona",
@@ -361,7 +425,7 @@ cargar(semanaActual());
         </tfoot>
       </table>
     </div>
-    <p class="cobertura-nota">La pausa no se descuenta por hora.</p>
+    <p class="cobertura-nota">La pausa se descuenta cuando se indica su hora, en el turno o como hora habitual de la persona.</p>
   </section>
   <p v-else-if="error" class="error" role="alert">{{ error }}</p>
 </template>

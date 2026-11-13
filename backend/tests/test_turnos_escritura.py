@@ -131,7 +131,7 @@ def test_guarda_varios_dias_con_horario():
     )
 
     assert respuesta.status_code == 200
-    assert respuesta.get_json() == {"guardados": 3}
+    assert respuesta.get_json() == {"guardados": 3, "pausa_inicio": None}
     assert conexion.confirmada
     assert len(cursor.turnos) == 3
     for texto in fechas:
@@ -157,7 +157,7 @@ def test_guarda_varios_dias_con_ausencia():
     )
 
     assert respuesta.status_code == 200
-    assert respuesta.get_json() == {"guardados": 2}
+    assert respuesta.get_json() == {"guardados": 2, "pausa_inicio": None}
     for fila in cursor.turnos.values():
         assert fila["ausencia"] == "V"
         assert fila["hora_inicio"] is None
@@ -187,7 +187,7 @@ def test_sustituye_un_dia_que_ya_tenia_turno():
     )
 
     assert respuesta.status_code == 200
-    assert respuesta.get_json() == {"guardados": 1}
+    assert respuesta.get_json() == {"guardados": 1, "pausa_inicio": None}
     fila = cursor.turnos[("trab-1", LUNES)]
     assert fila["ausencia"] is None
     assert fila["hora_inicio"].strftime("%H:%M") == "09:00"

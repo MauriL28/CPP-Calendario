@@ -7,4 +7,6 @@ ALTER TABLE usuario
 ALTER TABLE usuario DROP CONSTRAINT IF EXISTS usuario_pausa_minutos;
 
 ALTER TABLE usuario
-    ADD CONSTRAINT usuario_pausa_minutos CHECK (pausa_minutos IN (0, 30, 60));
+    ADD CONSTRAINT usuario_pausa_minutos CHECK (
+        pausa_minutos BETWEEN 0 AND 180 AND pausa_minutos % 5 = 0
+    );

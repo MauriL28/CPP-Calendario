@@ -121,7 +121,7 @@ def pausa_minutos(valor):
         if not valor.is_integer():
             return None
         valor = int(valor)
-    if isinstance(valor, int) and valor in (0, 30, 60):
+    if isinstance(valor, int) and 0 <= valor <= 180 and valor % 5 == 0:
         return valor
     return None
 

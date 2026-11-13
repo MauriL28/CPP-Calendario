@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from "vue";
 import { editarTrabajador, editarUsuario } from "../api/usuarios.js";
 import { numeroFormulario as numeroDe } from "../personas.js";
+import DuracionPausa from "./DuracionPausa.vue";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -12,9 +13,13 @@ const props = defineProps({
     default: "admin",
     validator: (valor) => valor === "admin" || valor === "mando",
   },
+  conHorario: { type: Boolean, default: false },
+  conPausa: { type: Boolean, default: true },
+  embebido: { type: Boolean, default: false },
+  aviso: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["guardado", "cerrar"]);
+const emit = defineEmits(["guardado", "cerrar", "horario"]);
 
 const dialogo = ref(null);
 const nombre = ref("");
@@ -26,6 +31,7 @@ const vacaciones = ref("");
 const horasContrato = ref("");
 const horasConvenio = ref("");
 const pausa = ref(0);
+const horaPausa = ref("");
 const seccionId = ref("");
 const error = ref("");
 
@@ -41,13 +47,19 @@ function rellenar() {
   horasContrato.value = props.persona.horas_contrato ?? "";
   horasConvenio.value = props.persona.horas_convenio ?? "";
   pausa.value = pausaDe(props.persona.pausa_minutos);
+  horaPausa.value = horaCorta(props.persona.pausa_habitual);
   seccionId.value = props.persona.seccion_id || "";
   error.value = "";
 }
 
+function horaCorta(valor) {
+  const texto = String(valor || "").trim();
+  return texto.length >= 5 ? texto.slice(0, 5) : "";
+}
+
 function pausaDe(valor) {
   const cantidad = Number(valor);
-  if (cantidad === 30 || cantidad === 60) {
+  if (Number.isInteger(cantidad) && cantidad >= 0 && cantidad <= 180 && cantidad % 5 === 0) {
     return cantidad;
   }
   return 0;
@@ -93,9 +105,17 @@ function cambiosHechos() {
   if (convenioNuevo !== convenioActual) {
     cambios.horas_convenio = convenioNuevo;
   }
-  const pausaNueva = pausaDe(pausa.value);
-  if (pausaNueva !== pausaDe(props.persona.pausa_minutos)) {
-    cambios.pausa_minutos = pausaNueva;
+  if (props.conPausa) {
+    const pausaNueva = pausaDe(pausa.value);
+    if (pausaNueva !== pausaDe(props.persona.pausa_minutos)) {
+      cambios.pausa_minutos = pausaNueva;
+    }
+    if (pausaNueva > 0) {
+      const horaNueva = horaCorta(horaPausa.value);
+      if (horaNueva !== horaCorta(props.persona.pausa_habitual)) {
+        cambios.pausa_habitual = horaNueva || null;
+      }
+    }
   }
   if (props.secciones.length) {
     const seccionNueva = seccionId.value || null;
@@ -108,14 +128,34 @@ function cambiosHechos() {
 }
 
 function cerrar() {
+  if (props.embebido) {
+    return;
+  }
   dialogo.value?.close();
 }
 
+function irAHorario() {
+  if (
+    Object.keys(cambiosHechos()).length
+    && !window.confirm("Hay cambios sin guardar en el perfil. ¿Seguir?")
+  ) {
+    return;
+  }
+  emit("horario");
+  cerrar();
+}
+
 function alCerrar() {
+  if (props.embebido) {
+    return;
+  }
   emit("cerrar");
 }
 
 function alFondo(evento) {
+  if (props.embebido) {
+    return;
+  }
   if (evento.target === dialogo.value) {
     cerrar();
   }
@@ -124,7 +164,9 @@ function alFondo(evento) {
 async function guardar() {
   const cambios = cambiosHechos();
   if (!Object.keys(cambios).length) {
-    cerrar();
+    if (!props.embebido) {
+      cerrar();
+    }
     return;
   }
   error.value = "";
@@ -132,14 +174,26 @@ async function guardar() {
     const guardarEdicion = props.modo === "mando" ? editarTrabajador : editarUsuario;
     const respuesta = await guardarEdicion(props.token, props.persona.login, cambios);
     emit("guardado", respuesta);
-    cerrar();
+    if (!props.embebido) {
+      cerrar();
+    }
   } catch (causa) {
     error.value = causa instanceof Error ? causa.message : "No se pudo guardar";
   }
 }
 
+defineExpose({
+  cambiosPendientes() {
+    return Object.keys(cambiosHechos()).length > 0;
+  },
+  rellenar,
+});
+
 onMounted(async () => {
   rellenar();
+  if (props.embebido) {
+    return;
+  }
   dialogo.value?.showModal();
   await nextTick();
   dialogo.value?.querySelector("[name='nombre-usuario']")?.focus();
@@ -147,9 +201,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <dialog ref="dialogo" class="alta-dialogo" @close="alCerrar" @click="alFondo">
+  <component
+    :is="embebido ? 'div' : 'dialog'"
+    ref="dialogo"
+    :class="{ 'alta-dialogo': !embebido }"
+    @close="alCerrar"
+    @click="alFondo"
+  >
     <form @submit.prevent="guardar">
-      <header class="alta-dialogo-cabecera">
+      <header v-if="!embebido" class="alta-dialogo-cabecera">
         <div>
           <h2>Editar usuario</h2>
           <p v-if="persona" class="alta-dialogo-persona">{{ persona.nombre }}</p>
@@ -198,15 +258,18 @@ onMounted(async () => {
             <input v-model="horasConvenio" name="horas-convenio-usuario" type="number" min="0" step="0.5" />
           </label>
           <p class="ancho campo-pista">Vacío = automático (1770 × horas de contrato / 37,5)</p>
-          <label class="ancho">
-            Pausa
-            <select v-model="pausa" name="pausa-usuario">
-              <option :value="0">Sin pausa</option>
-              <option :value="30">30 minutos</option>
-              <option :value="60">1 hora</option>
-            </select>
-          </label>
-          <p class="ancho campo-pista">Descanso diario no pagado. Se resta de las horas planificadas.</p>
+          <template v-if="conPausa">
+            <label class="ancho">
+              Pausa
+              <DuracionPausa v-model="pausa" />
+            </label>
+            <p class="ancho campo-pista">Descanso diario no pagado. Se resta de las horas planificadas.</p>
+            <label v-if="pausaDe(pausa) > 0" class="ancho">
+              Hora de pausa
+              <input v-model="horaPausa" name="hora-pausa-usuario" type="time" />
+            </label>
+            <p v-if="pausaDe(pausa) > 0" class="ancho campo-pista">Si la indicas, Cobertura la tiene en cuenta.</p>
+          </template>
           <label v-if="secciones.length" class="ancho">
             Sección
             <select v-model="seccionId" name="seccion-usuario">
@@ -219,10 +282,20 @@ onMounted(async () => {
         </template>
       </div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="aviso" class="aviso-linea" role="status">Guardado</p>
       <footer class="alta-dialogo-pie">
-        <button type="button" @click="cerrar">Cancelar</button>
+        <button v-if="conHorario && !embebido" type="button" @click="irAHorario">Horario habitual…</button>
+        <button v-if="!embebido" type="button" @click="cerrar">Cancelar</button>
         <button class="primario" type="submit">Guardar</button>
       </footer>
     </form>
-  </dialog>
+  </component>
 </template>
+
+<style scoped>
+.aviso-linea {
+  margin: 0 20px 12px;
+  color: var(--ok);
+  font-size: 13px;
+}
+</style>

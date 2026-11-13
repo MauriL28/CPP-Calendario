@@ -85,10 +85,33 @@ const dialogo = ref(null);
 const turnoModo = ref("horario");
 const turnoInicio = ref("");
 const turnoFin = ref("");
+const turnoPausa = ref("");
 const turnoAusencia = ref("L");
 const conHorario = computed(
   () => turnoModo.value === "ausencia" && (turnoAusencia.value === "ST" || turnoAusencia.value === "FT"),
 );
+const muestraPausa = computed(() => {
+  if (props.propia || props.mandos || !celda.value) {
+    return false;
+  }
+  const minutos = Number(celda.value.pausaMinutos);
+  if (!(minutos > 0)) {
+    return false;
+  }
+  return turnoModo.value === "horario" || conHorario.value;
+});
+const textoPausa = computed(() => {
+  const minutos = Number(celda.value?.pausaMinutos) || 0;
+  const inicio = horaCorta(turnoPausa.value);
+  if (inicio) {
+    return `${minutos} min · ${inicio}-${finPausa(inicio, minutos)}`;
+  }
+  const habitual = horaCorta(celda.value?.pausaHabitual);
+  if (habitual) {
+    return `habitual ${habitual}-${finPausa(habitual, minutos)}`;
+  }
+  return `${minutos} min de pausa`;
+});
 const errorTurno = ref("");
 const seccionElegida = ref("");
 const copiasMarcadas = ref([false, false, false, false, false, false, false]);
@@ -358,6 +381,107 @@ function textoAjustes(dia) {
   return lineas.join("\n");
 }
 
+function horaCorta(valor) {
+  const texto = String(valor || "").trim();
+  return texto.length >= 5 ? texto.slice(0, 5) : "";
+}
+
+function finPausa(inicio, minutos) {
+  const [hora, minuto] = inicio.split(":").map(Number);
+  const total = (hora * 60 + minuto + minutos) % (24 * 60);
+  const horas = String(Math.floor(total / 60)).padStart(2, "0");
+  const resto = String(total % 60).padStart(2, "0");
+  return `${horas}:${resto}`;
+}
+
+function pausaCabe(turno, inicio, minutos) {
+  if (!turno?.hora_inicio || !turno?.hora_fin || !inicio || !(minutos > 0)) {
+    return false;
+  }
+  if (turno.ausencia && turno.ausencia !== "ST" && turno.ausencia !== "FT") {
+    return false;
+  }
+  const enMinutos = (hora) => {
+    const [horas, minuto] = horaCorta(hora).split(":").map(Number);
+    return horas * 60 + minuto;
+  };
+  const desde = enMinutos(turno.hora_inicio);
+  let hasta = enMinutos(turno.hora_fin);
+  const cruza = hasta <= desde;
+  if (cruza) {
+    hasta += 24 * 60;
+  }
+  let marca = enMinutos(inicio);
+  if (cruza && marca < desde) {
+    marca += 24 * 60;
+  }
+  return desde <= marca && marca + minutos <= hasta;
+}
+
+function pausaEfectiva(trabajador, turno) {
+  const minutos = Number(trabajador?.pausa_minutos);
+  if (!(minutos > 0) || !turno) {
+    return null;
+  }
+  const puntual = horaCorta(turno.pausa_inicio);
+  if (puntual) {
+    return { inicio: puntual, fin: finPausa(puntual, minutos), habitual: false };
+  }
+  const habitual = horaCorta(trabajador.pausa_habitual);
+  if (habitual && pausaCabe(turno, habitual, minutos)) {
+    return { inicio: habitual, fin: finPausa(habitual, minutos), habitual: true };
+  }
+  return null;
+}
+
+function tituloCelda(trabajador, dia) {
+  const lineas = [];
+  const ajustes = textoAjustes(dia);
+  if (ajustes) {
+    lineas.push(ajustes);
+  }
+  const pausa = pausaEfectiva(trabajador, dia.turno);
+  if (pausa) {
+    const sufijo = pausa.habitual ? " (habitual)" : "";
+    lineas.push(`Pausa: ${pausa.inicio}-${pausa.fin}${sufijo}`);
+  }
+  return lineas.length ? lineas.join("\n") : undefined;
+}
+
+function horaVisible(hora) {
+  const texto = textoCelda({ hora_inicio: hora, hora_fin: "00:00" });
+  return texto.slice(0, texto.lastIndexOf("-"));
+}
+
+function pausaEnMadrugada(turno, inicio) {
+  const desde = horaCorta(turno?.hora_inicio).split(":").map(Number);
+  const hasta = horaCorta(turno?.hora_fin).split(":").map(Number);
+  const inicioTurno = desde[0] * 60 + desde[1];
+  const finTurno = hasta[0] * 60 + hasta[1];
+  if (finTurno > inicioTurno) {
+    return false;
+  }
+  const [hora, minuto] = horaCorta(inicio).split(":").map(Number);
+  return hora * 60 + minuto < inicioTurno;
+}
+
+function textoPartido(trabajador, dia) {
+  if (modo.value !== "semana" || props.propia || props.mandos || dia.turno?.ausencia) {
+    return "";
+  }
+  const pausa = pausaEfectiva(trabajador, dia.turno);
+  if (!pausa || pausaEnMadrugada(dia.turno, pausa.inicio)) {
+    return "";
+  }
+  const inicio = horaVisible(dia.turno.hora_inicio);
+  const fin = horaVisible(dia.turno.hora_fin);
+  return `${inicio}-${horaVisible(pausa.inicio)} ${horaVisible(pausa.fin)}-${fin}`;
+}
+
+function textoVisible(trabajador, dia) {
+  return textoPartido(trabajador, dia) || textoCelda(dia.turno);
+}
+
 function textoCostePersona(trabajador) {
   if (trabajador.grupo !== "ETT") {
     return "";
@@ -477,7 +601,10 @@ async function abrirCelda(trabajador, dia) {
     nombre: trabajador.nombre,
     fecha: dia.fecha,
     origen: dia.origen || "",
+    pausaMinutos: Number(trabajador.pausa_minutos) || 0,
+    pausaHabitual: horaCorta(trabajador.pausa_habitual),
   };
+  turnoPausa.value = horaCorta(turno?.pausa_inicio);
   errorTurno.value = "";
   copiasMarcadas.value = marcasIniciales(dia.fecha);
   if (turno && turno.ausencia) {
@@ -649,6 +776,10 @@ async function guardar() {
     cuerpo.hora_inicio = turnoInicio.value;
     cuerpo.hora_fin = turnoFin.value;
   }
+  const pausaEscrita = horaCorta(turnoPausa.value);
+  if (muestraPausa.value && pausaEscrita) {
+    cuerpo.pausa_inicio = pausaEscrita;
+  }
   try {
     const fechas = fechasMarcadas;
     if (fechas.length > 1) {
@@ -665,6 +796,9 @@ async function guardar() {
       } else {
         datos.hora_inicio = turnoInicio.value;
         datos.hora_fin = turnoFin.value;
+      }
+      if (muestraPausa.value && pausaEscrita) {
+        datos.pausa_inicio = pausaEscrita;
       }
       await guardarTurnos(props.token, datos);
     } else {
@@ -856,7 +990,7 @@ cargar(lunesDe(new Date()));
                 v-if="editable || (mandos && esMio(fila.trabajador))"
                 type="button"
                 class="celda"
-                :title="textoAjustes(dia)"
+                :title="tituloCelda(fila.trabajador, dia)"
                 @click="abrirCelda(fila.trabajador, dia)"
               >
                 <span v-if="muestraAjuste(dia)" class="ajuste-marca">
@@ -866,9 +1000,9 @@ cargar(lunesDe(new Date()));
                     <path d="M3.2 11.4 4.6 12.8" />
                   </svg>
                 </span>
-                {{ textoCelda(dia.turno) }}
+                <span :class="{ 'celda-partida': textoPartido(fila.trabajador, dia) }">{{ textoVisible(fila.trabajador, dia) }}</span>
               </button>
-              <span v-else class="celda" :class="{ lectura: !mandos }" :title="textoAjustes(dia)">
+              <span v-else class="celda" :class="{ lectura: !mandos }" :title="tituloCelda(fila.trabajador, dia)">
                 <span v-if="muestraAjuste(dia)" class="ajuste-marca">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path d="M2.2 13.8 5 13.1 13.2 4.9 11.1 2.8 2.9 11Z" />
@@ -876,7 +1010,7 @@ cargar(lunesDe(new Date()));
                     <path d="M3.2 11.4 4.6 12.8" />
                   </svg>
                 </span>
-                {{ textoCelda(dia.turno) }}
+                <span :class="{ 'celda-partida': textoPartido(fila.trabajador, dia) }">{{ textoVisible(fila.trabajador, dia) }}</span>
               </span>
             </td>
             <td
@@ -941,6 +1075,13 @@ cargar(lunesDe(new Date()));
             <input v-model="turnoFin" type="time" required />
           </label>
         </template>
+        <label v-if="muestraPausa" class="ancho pausa-inicio">
+          Pausa (inicio)
+          <span class="pausa-inicio-fila">
+            <input v-model="turnoPausa" type="time" :placeholder="celda.pausaHabitual || undefined" />
+            <span class="pausa-inicio-nota">{{ textoPausa }}</span>
+          </span>
+        </label>
         <div class="ancho copiar-dias">
           <p class="copiar-dias-titulo">Copiar también a:</p>
           <div class="copiar-dias-marcas">
@@ -1077,6 +1218,33 @@ table.cuadrante tbody tr.grupo-fila td.coste-col {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-3);
+}
+
+.pausa-inicio-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.pausa-inicio-fila input {
+  width: 9rem;
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
+.pausa-inicio-nota {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.celda-partida {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11.5px;
+  white-space: nowrap;
 }
 
 .celda {

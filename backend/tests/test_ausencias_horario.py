@@ -78,7 +78,10 @@ class Cursor:
             copiados = 0
             for (usuario, fecha), fila in list(self.turnos.items()):
                 if anterior <= fecha < desde:
-                    self.turnos[(usuario, fecha + timedelta(days=7))] = dict(fila)
+                    copia = dict(fila)
+                    if "pausa_inicio" not in texto:
+                        copia.pop("pausa_inicio", None)
+                    self.turnos[(usuario, fecha + timedelta(days=7))] = copia
                     copiados += 1
             self.rowcount = copiados
         elif texto.startswith("INSERT INTO turno"):
@@ -223,6 +226,24 @@ def test_copiar_semana_conserva_st():
     assert copiado["hora_fin"] == time(16, 0)
     assert copiado["horas_planificadas"] == 8
     assert cursor.turnos[(TRABAJADOR, LUNES)] == origen
+
+
+def test_copiar_semana_copia_pausa_inicio():
+    cursor = Cursor()
+    cursor.turnos[(TRABAJADOR, LUNES)] = {
+        "ausencia": None,
+        "hora_inicio": time(8, 0),
+        "hora_fin": time(16, 0),
+        "horas_planificadas": 7.5,
+        "horas_nocturnas": 0,
+        "pausa_inicio": time(12, 0),
+    }
+
+    respuesta = pedir("post", "/turnos/copiar-semana", {"desde": "2026-11-09"}, cursor)
+
+    assert respuesta.status_code == 200
+    assert cursor.turnos[(TRABAJADOR, date(2026, 11, 9))]["pausa_inicio"] == time(12, 0)
+    assert cursor.turnos[(TRABAJADOR, LUNES)]["pausa_inicio"] == time(12, 0)
 
 
 def test_st_con_pausa_resta_las_horas_planificadas():

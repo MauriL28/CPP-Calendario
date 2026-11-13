@@ -32,6 +32,8 @@ class Cursor:
                     "id": persona["id"],
                     "rol": persona["rol"],
                     "departamento_id": persona["departamento_id"],
+                    "grupo": persona.get("grupo"),
+                    "pausa_minutos": int(persona.get("pausa_minutos") or 0),
                 }
             return
         if texto.startswith("SELECT noche_inicio"):
@@ -50,6 +52,8 @@ class Cursor:
             for fila in self.turnos:
                 if fila["usuario_id"] == usuario_id and fila["fecha"] == fecha:
                     fila["horas_planificadas"] = planificadas
+                    if "pausa_inicio = NULL" in texto:
+                        fila["pausa_inicio"] = None
             return
         if "rol = 'trabajador'" in texto:
             persona = next((usuario for usuario in self.usuarios if usuario["login"] == params[0]), None)
@@ -57,6 +61,8 @@ class Cursor:
                 self._fila = {
                     "id": persona["id"],
                     "departamento_id": persona["departamento_id"],
+                    "grupo": persona.get("grupo"),
+                    "pausa_minutos": int(persona.get("pausa_minutos") or 0),
                 }
             return
         if texto.startswith("SELECT rol, departamento_id"):
@@ -522,7 +528,7 @@ def test_quien_no_es_admin_recibe_403():
     cursor.assert_not_called()
 
 
-def test_pausa_distinta_de_0_30_60_da_400():
+def test_pausa_que_no_es_multiplo_de_5_da_400():
     app = create_app()
     cursor = Cursor(
         [
@@ -541,12 +547,12 @@ def test_pausa_distinta_de_0_30_60_da_400():
     with patch("rutas.usuarios.cursor", return_value=Conexion(cursor)):
         respuesta = app.test_client().put(
             "/usuarios/nerea.lago",
-            json={"pausa_minutos": 45},
+            json={"pausa_minutos": 7},
             headers={"Authorization": f"Bearer {token(app, 'admin')}"},
         )
 
     assert respuesta.status_code == 400
-    assert respuesta.get_json()["error"] == "La pausa tiene que ser 0, 30 o 60"
+    assert respuesta.get_json()["error"] == "La pausa tiene que ser un múltiplo de 5 minutos, de 0 a 180"
     assert cursor.updates == []
 
 
@@ -602,3 +608,86 @@ def test_cambiar_la_pausa_recalcula_el_futuro_y_no_el_pasado():
     assert pasado["horas_nocturnas"] == 3
     assert futuro["horas_planificadas"] == 8
     assert futuro["horas_nocturnas"] == 3
+
+
+def _cursor_pausa():
+    return Cursor(
+        [
+            {
+                "id": "trab-1",
+                "login": "nerea.lago",
+                "rol": "trabajador",
+                "nombre": "Nerea Lago",
+                "numero_sap": "200",
+                "departamento_id": DEPARTAMENTO,
+                "clave": "secreta",
+                "activo": True,
+            }
+        ]
+    )
+
+
+def _turno_pausa(fecha, pausa_inicio, horas=7.5):
+    return {
+        "usuario_id": "trab-1",
+        "fecha": fecha,
+        "hora_inicio": time(8, 0),
+        "hora_fin": time(16, 0),
+        "horas_planificadas": horas,
+        "horas_nocturnas": 0,
+        "pausa_inicio": pausa_inicio,
+    }
+
+
+def _cambiar_pausa(cursor, minutos):
+    app = create_app()
+    with patch("rutas.usuarios.cursor", return_value=Conexion(cursor)):
+        return app.test_client().put(
+            "/usuarios/nerea.lago",
+            json={"pausa_minutos": minutos},
+            headers={"Authorization": f"Bearer {token(app, 'admin')}"},
+        )
+
+
+def test_pausa_cero_borra_pausa_inicio_futura_y_no_la_pasada():
+    cursor = _cursor_pausa()
+    ayer = date.today() - timedelta(days=1)
+    hoy = date.today()
+    cursor.turnos = [
+        _turno_pausa(ayer, time(12, 0)),
+        _turno_pausa(hoy, time(12, 0)),
+    ]
+
+    respuesta = _cambiar_pausa(cursor, 0)
+
+    assert respuesta.status_code == 200
+    pasado = next(fila for fila in cursor.turnos if fila["fecha"] == ayer)
+    futuro = next(fila for fila in cursor.turnos if fila["fecha"] == hoy)
+    assert pasado["pausa_inicio"] == time(12, 0)
+    assert pasado["horas_planificadas"] == 7.5
+    assert futuro["pausa_inicio"] is None
+    assert futuro["horas_planificadas"] == 8
+
+
+def test_si_la_pausa_nueva_no_cabe_se_borra_pausa_inicio():
+    cursor = _cursor_pausa()
+    hoy = date.today()
+    cursor.turnos = [_turno_pausa(hoy, time(15, 30), horas=7.5)]
+
+    respuesta = _cambiar_pausa(cursor, 60)
+
+    assert respuesta.status_code == 200
+    assert cursor.turnos[0]["pausa_inicio"] is None
+    assert cursor.turnos[0]["horas_planificadas"] == 7
+
+
+def test_si_la_pausa_nueva_cabe_se_mantiene_pausa_inicio():
+    cursor = _cursor_pausa()
+    hoy = date.today()
+    cursor.turnos = [_turno_pausa(hoy, time(12, 0), horas=7.5)]
+
+    respuesta = _cambiar_pausa(cursor, 60)
+
+    assert respuesta.status_code == 200
+    assert cursor.turnos[0]["pausa_inicio"] == time(12, 0)
+    assert cursor.turnos[0]["horas_planificadas"] == 7

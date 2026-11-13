@@ -14,6 +14,7 @@ class Cursor:
         self.habitual = habitual
         self.insertados = []
         self.horarios = []
+        self.pausa_habitual = None
         self._fila = None
         self._filas = []
 
@@ -36,6 +37,7 @@ class Cursor:
         elif texto.startswith("SELECT 1 FROM usuario"):
             self._fila = None
         elif texto.startswith("INSERT INTO usuario"):
+            self.pausa_habitual = params[10]
             self.insertados.append({"login": params[1], "departamento_id": str(params[4])})
             self._fila = {
                 "id": "trab-1",

@@ -56,6 +56,7 @@ CREATE TABLE usuario (
     horas_contrato     NUMERIC(8, 2),
     horas_convenio     NUMERIC(8, 2),
     pausa_minutos      SMALLINT     NOT NULL DEFAULT 0,
+    pausa_habitual     TIME,
     tarifas_ett        NUMERIC(10, 4),
     numero_sap         VARCHAR(40),
     activo             BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -64,7 +65,10 @@ CREATE TABLE usuario (
         OR (rol <> 'admin' AND departamento_id IS NOT NULL)
     ),
     CONSTRAINT usuario_seccion_mismo_depto CHECK (seccion_id IS NULL OR departamento_id IS NOT NULL),
-    CONSTRAINT usuario_pausa_minutos CHECK (pausa_minutos IN (0, 30, 60))
+    CONSTRAINT usuario_pausa_minutos CHECK (
+        pausa_minutos BETWEEN 0 AND 180 AND pausa_minutos % 5 = 0
+    ),
+    CONSTRAINT usuario_pausa_habitual CHECK (pausa_habitual IS NULL OR pausa_minutos > 0)
 );
 
 -- Responsable: un departamento, como mucho un jefe. Ese usuario, como mucho un depto.
@@ -111,6 +115,7 @@ CREATE TABLE turno (
     horas_planificadas  NUMERIC(8, 2) NOT NULL DEFAULT 0,
     -- Derivado: se guarda ya calculado (franja de empresa + horario). No lo escribe el mando.
     horas_nocturnas     NUMERIC(8, 2) NOT NULL DEFAULT 0,
+    pausa_inicio        TIME,
     PRIMARY KEY (usuario_id, fecha),
     CONSTRAINT turno_horario_o_ausencia CHECK (
         (
@@ -129,6 +134,10 @@ CREATE TABLE turno (
             AND hora_inicio IS NOT NULL
             AND hora_fin IS NOT NULL
         )
+    ),
+    CONSTRAINT turno_pausa_inicio CHECK (
+        pausa_inicio IS NULL
+        OR (hora_inicio IS NOT NULL AND hora_fin IS NOT NULL)
     )
 );
 

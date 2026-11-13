@@ -61,9 +61,17 @@ def crear_trabajador():
     if "pausa_minutos" in cuerpo and cuerpo.get("pausa_minutos") not in (None, ""):
         pausa = validaciones.pausa_minutos(cuerpo.get("pausa_minutos"))
         if pausa is None:
-            return jsonify(error="La pausa tiene que ser 0, 30 o 60"), 400
+            return jsonify(error="La pausa tiene que ser un múltiplo de 5 minutos, de 0 a 180"), 400
     else:
         pausa = 0
+    if "pausa_habitual" in cuerpo:
+        habitual = parse_hora(cuerpo.get("pausa_habitual"))
+        if habitual == "mal":
+            return jsonify(error="La hora no es válida"), 400
+    else:
+        habitual = None
+    if habitual is not None and pausa <= 0:
+        return jsonify(error="Indica primero la duración de la pausa"), 400
     numero_sap, error = validaciones.numero_sap(cuerpo.get("numero_sap"))
     if error:
         return error
@@ -113,9 +121,9 @@ def crear_trabajador():
                 INSERT INTO usuario (
                     nombre, login, clave, rol, grupo, departamento_id,
                     vacaciones, horas_contrato, numero_sap, seccion_id, pausa_minutos,
-                    tarifas_ett
+                    pausa_habitual, tarifas_ett
                 )
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, nombre, login, rol, grupo, vacaciones, horas_contrato, numero_sap, seccion_id
                 """,
                 (
@@ -129,6 +137,7 @@ def crear_trabajador():
                     numero_sap,
                     seccion_id,
                     pausa,
+                    habitual,
                     coste,
                 ),
             )
@@ -193,6 +202,7 @@ def editar_trabajador(login_nombre):
                 "rol": "trabajador",
                 "departamento_id": trabajador["departamento_id"],
                 "grupo": trabajador.get("grupo"),
+                "pausa_minutos": int(trabajador.get("pausa_minutos") or 0),
             }
             cambios, error = editar_campos(cur, persona, cuerpo)
             if error:
@@ -770,7 +780,7 @@ def _departamento_alta(cur, pedido):
 def _trabajador_permitido(cur, login_nombre):
     cur.execute(
         """
-        SELECT id, departamento_id, grupo
+        SELECT id, departamento_id, grupo, pausa_minutos
         FROM usuario
         WHERE login = %s AND rol = 'trabajador'
         """,

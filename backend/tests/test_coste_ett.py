@@ -1,3 +1,4 @@
+from datetime import time
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -145,6 +146,7 @@ class CursorLista:
                     "numero_sap": None,
                     "seccion_id": None,
                     "tarifas_ett": Decimal("10.5000"),
+                    "pausa_habitual": time(14, 0),
                 }
             ]
         elif "FROM turno" in texto or "horario_dia" in texto:
