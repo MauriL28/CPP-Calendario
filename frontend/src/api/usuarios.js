@@ -124,3 +124,17 @@ export function darDeBaja(token, login) {
     cuerpo: {},
   });
 }
+
+export function listarInactivos(token, departamentoId) {
+  const ruta = departamentoId
+    ? `/trabajadores/inactivos?departamento_id=${encodeURIComponent(departamentoId)}`
+    : "/trabajadores/inactivos";
+  return pedir(ruta, { token });
+}
+
+export function reactivarTrabajador(token, login) {
+  return pedir(`/trabajadores/${encodeURIComponent(login)}/alta`, {
+    method: "PUT",
+    token,
+  });
+}

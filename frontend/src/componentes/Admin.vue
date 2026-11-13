@@ -9,6 +9,7 @@ import FichaEmpleado from "./FichaEmpleado.vue";
 import Fichajes from "./Fichajes.vue";
 import HorarioHabitual from "./HorarioHabitual.vue";
 import Festivos from "./Festivos.vue";
+import TrabajadoresInactivos from "./TrabajadoresInactivos.vue";
 import {
   asignarDepartamentoMando,
   cambiarActivoMando,
@@ -695,6 +696,13 @@ onMounted(cargar);
               </section>
             </div>
           </section>
+          <TrabajadoresInactivos
+            v-if="seccionSede === 'equipo' && sede.id"
+            :token="token"
+            :departamento-id="sede.id"
+            @ver-ficha="(login) => abrirFicha({ login })"
+            @reactivado="cargar"
+          />
         </div>
         </template>
       </div>

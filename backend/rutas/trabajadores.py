@@ -7,7 +7,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from db import SinBaseDeDatos, cursor
 from errores import error_bd
-from mandos import departamento_permitido, departamentos_del_mando
+from mandos import departamento_lectura, departamento_permitido, departamentos_del_mando
 from horas import convenio_anual, hora_texto, horas_computables, parse_hora
 from exportar_turnos import _texto_celda
 from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
@@ -248,6 +248,87 @@ def dar_de_baja(login_nombre):
         return error_bd(exc)
 
     return jsonify(login=login_nombre, activo=False, desde=desde.isoformat())
+
+
+@bp.get("/trabajadores/inactivos")
+@jwt_required()
+def listar_inactivos():
+    if get_jwt().get("rol") not in ("mando", "admin"):
+        return jsonify(error="No autorizado"), 403
+
+    try:
+        with cursor() as cur:
+            departamento_id, error = departamento_lectura(
+                cur, get_jwt_identity(), request.args.get("departamento_id")
+            )
+            if error:
+                return error
+            cur.execute(
+                """
+                SELECT u.nombre, u.login, u.grupo, s.nombre AS seccion
+                FROM usuario u
+                LEFT JOIN seccion s ON s.id = u.seccion_id
+                WHERE u.rol = 'trabajador'
+                  AND u.activo = false
+                  AND u.departamento_id = %s
+                ORDER BY u.nombre
+                """,
+                (departamento_id,),
+            )
+            filas = cur.fetchall()
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
+
+    return jsonify(
+        [
+            {
+                "nombre": fila["nombre"],
+                "login": fila["login"],
+                "grupo": fila["grupo"],
+                "seccion": fila["seccion"],
+            }
+            for fila in filas
+        ]
+    )
+
+
+@bp.put("/trabajadores/<login_nombre>/alta")
+@jwt_required()
+def dar_de_alta(login_nombre):
+    rol = get_jwt().get("rol")
+    if rol not in ("mando", "admin"):
+        return jsonify(error="No autorizado"), 403
+
+    try:
+        with cursor() as cur:
+            if rol == "admin":
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM usuario
+                    WHERE login = %s AND rol = 'trabajador'
+                    """,
+                    (login_nombre,),
+                )
+                trabajador = cur.fetchone()
+                if trabajador is None:
+                    return jsonify(error="No se ha encontrado el trabajador"), 404
+            else:
+                trabajador = _trabajador_permitido(cur, login_nombre)
+                if trabajador is None:
+                    return jsonify(error="Ese trabajador no es de tu departamento"), 404
+            cur.execute(
+                "UPDATE usuario SET activo = true WHERE id = %s",
+                (trabajador["id"],),
+            )
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
+
+    return jsonify(login=login_nombre, activo=True)
 
 
 @bp.put("/trabajadores/<login_nombre>/numero-sap")

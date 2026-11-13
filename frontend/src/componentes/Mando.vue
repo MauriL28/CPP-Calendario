@@ -19,6 +19,7 @@ import HorarioHabitual from "./HorarioHabitual.vue";
 import Cuadrante from "./Cuadrante.vue";
 import EditarUsuario from "./EditarUsuario.vue";
 import FichaEmpleado from "./FichaEmpleado.vue";
+import TrabajadoresInactivos from "./TrabajadoresInactivos.vue";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -30,6 +31,7 @@ const vista = ref("cuadrante");
 const ambito = ref("departamento");
 const fichaLogin = ref("");
 const cuadrante = ref(null);
+const inactivos = ref(null);
 const departamentos = ref([]);
 const departamentoId = ref("");
 const departamentosCargados = ref(false);
@@ -440,13 +442,13 @@ async function darDeBaja(trabajador) {
   try {
     await pedirBaja(props.token, trabajador.login);
     const lista = equipo.value?.trabajadores;
-    if (!lista) {
-      return;
+    if (lista) {
+      const indice = lista.findIndex((item) => item.login === trabajador.login);
+      if (indice >= 0) {
+        lista.splice(indice, 1);
+      }
     }
-    const indice = lista.findIndex((item) => item.login === trabajador.login);
-    if (indice >= 0) {
-      lista.splice(indice, 1);
-    }
+    await inactivos.value?.recargar();
   } catch (causa) {
     error.value = causa instanceof Error ? causa.message : "No se pudo dar de baja";
   }
@@ -854,6 +856,14 @@ onUnmounted(() => {
         </section>
       </div>
     </template>
+    <TrabajadoresInactivos
+      v-if="departamentoId"
+      ref="inactivos"
+      :token="token"
+      :departamento-id="departamentoId"
+      @ver-ficha="(login) => abrirFicha({ login })"
+      @reactivado="cargarDepartamentos"
+    />
   </section>
   <dialog ref="dialogo" class="alta-dialogo" @close="alCerrarAlta" @click="alFondo">
       <form @submit.prevent="guardar">
