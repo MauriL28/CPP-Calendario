@@ -1,9 +1,10 @@
 import psycopg
 from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt, jwt_required
 
 from db import SinBaseDeDatos, cursor
 from errores import error_bd
-from seguridad import emitir_token
+from seguridad import emitir_token, revocar_token
 
 bp = Blueprint("auth", __name__)
 
@@ -20,7 +21,7 @@ def login():
         with cursor() as cur:
             cur.execute(
                 """
-                SELECT u.id, u.nombre, u.rol, d.nombre AS departamento, g.codigo AS delegacion
+                SELECT u.id, u.nombre, u.login, u.rol, d.nombre AS departamento, g.codigo AS delegacion
                 FROM usuario u
                 LEFT JOIN departamento d ON d.id = u.departamento_id
                 LEFT JOIN delegacion g ON g.id = d.delegacion_id
@@ -56,4 +57,20 @@ def login():
     except psycopg.Error as exc:
         return error_bd(exc)
 
-    return jsonify(access_token=emitir_token(usuario_id, rol, delegaciones, nombre, departamento))
+    return jsonify(
+        access_token=emitir_token(
+            usuario_id, rol, delegaciones, nombre, departamento, fila["login"]
+        )
+    )
+
+
+@bp.post("/logout")
+@jwt_required()
+def logout():
+    try:
+        revocar_token(get_jwt())
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
+    return "", 204

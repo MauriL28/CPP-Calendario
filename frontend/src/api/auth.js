@@ -1,4 +1,5 @@
 import { pedir } from "./cliente.js";
+import { datosDelToken } from "../sesion.js";
 
 export async function entrar(login, clave) {
   const cuerpo = await pedir("/login", {
@@ -8,7 +9,7 @@ export async function entrar(login, clave) {
   const carga = datosDelToken(cuerpo.access_token);
   return {
     token: cuerpo.access_token,
-    login,
+    login: carga.login || login,
     rol: carga.rol,
     nombre: carga.nombre,
     departamento: carga.departamento || "",
@@ -16,8 +17,6 @@ export async function entrar(login, clave) {
   };
 }
 
-function datosDelToken(token) {
-  const carga = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-  const padded = carga + "=".repeat((4 - (carga.length % 4)) % 4);
-  return JSON.parse(atob(padded));
+export function salir(token) {
+  return pedir("/logout", { method: "POST", token });
 }

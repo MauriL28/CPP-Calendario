@@ -20,6 +20,7 @@ services:
     environment:
       DATABASE_URL: postgresql://calendario:calendario@db:5432/calendario
       JWT_SECRET_KEY: dev-calendario
+      SESION_HORAS: "12"
     ports:
       - "5001:5000"
     depends_on:

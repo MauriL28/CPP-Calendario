@@ -212,3 +212,11 @@ CREATE TABLE festivo (
     fecha   DATE PRIMARY KEY,
     nombre  VARCHAR(120) NOT NULL
 );
+
+-- JWT cerrados a mano. Se rechazan hasta que expiran.
+CREATE TABLE token_revocado (
+    jti     TEXT PRIMARY KEY,
+    expira  TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX token_revocado_expira ON token_revocado (expira);

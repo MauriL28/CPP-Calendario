@@ -1,3 +1,5 @@
+import { avisarSesionInvalida } from "../sesion.js";
+
 export async function pedir(ruta, { method = "GET", token, cuerpo, formulario, espera = 8000 } = {}) {
   const headers = {};
   if (token) {
@@ -17,7 +19,11 @@ export async function pedir(ruta, { method = "GET", token, cuerpo, formulario, e
     signal: AbortSignal.timeout(espera),
   });
   if (!respuesta.ok) {
-    throw new Error(await mensaje(respuesta));
+    const cuerpoRespuesta = await leerCuerpo(respuesta);
+    if (esFalloDeSesion(respuesta.status, cuerpoRespuesta, Boolean(token))) {
+      avisarSesionInvalida();
+    }
+    throw new Error(textoError(cuerpoRespuesta, respuesta));
   }
   if (respuesta.status === 204) {
     return null;
@@ -25,14 +31,27 @@ export async function pedir(ruta, { method = "GET", token, cuerpo, formulario, e
   return respuesta.json();
 }
 
-async function mensaje(respuesta) {
+export function esFalloDeSesion(status, cuerpo, habiaToken) {
+  if (!habiaToken || status !== 401 || !cuerpo) {
+    return false;
+  }
+  return cuerpo.msg === "Token has expired" || cuerpo.msg === "Token has been revoked";
+}
+
+async function leerCuerpo(respuesta) {
   try {
-    const cuerpo = await respuesta.json();
-    if (cuerpo && cuerpo.error) {
-      return String(cuerpo.error);
-    }
+    return await respuesta.json();
   } catch {
-    // El cuerpo no es JSON.
+    return null;
+  }
+}
+
+function textoError(cuerpo, respuesta) {
+  if (cuerpo && cuerpo.error) {
+    return String(cuerpo.error);
+  }
+  if (cuerpo && cuerpo.msg) {
+    return String(cuerpo.msg);
   }
   return `Error ${respuesta.status}`;
 }

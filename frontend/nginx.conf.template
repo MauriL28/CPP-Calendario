@@ -21,6 +21,10 @@ server {
         proxy_pass $backend_upstream;
     }
 
+    location /logout {
+        proxy_pass $backend_upstream;
+    }
+
     location /turnos {
         proxy_pass $backend_upstream;
     }

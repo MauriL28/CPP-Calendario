@@ -91,6 +91,7 @@ class Cursor:
                 self._fila = {
                     "id": persona["id"],
                     "nombre": persona["nombre"],
+                    "login": persona["login"],
                     "rol": persona["rol"],
                     "departamento": "Tráfico",
                     "delegacion": "60I",

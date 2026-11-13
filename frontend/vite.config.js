@@ -9,6 +9,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/login": "http://127.0.0.1:5001",
+      "/logout": "http://127.0.0.1:5001",
       "/turnos": "http://127.0.0.1:5001",
       "/trabajadores": "http://127.0.0.1:5001",
       "/usuarios": "http://127.0.0.1:5001",

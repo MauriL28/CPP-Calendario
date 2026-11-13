@@ -1,11 +1,21 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import Admin from "./componentes/Admin.vue";
 import Login from "./componentes/Login.vue";
 import Mando from "./componentes/Mando.vue";
 import Trabajador from "./componentes/Trabajador.vue";
 import logo from "./assets/logo.png";
+import { salir as salirRemoto } from "./api/auth.js";
 import { delegacionVisible, rolVisible } from "./fechas.js";
+import {
+  alPerderSesion,
+  borrarToken,
+  cerrarSesion,
+  guardarToken,
+  leerToken,
+  rearmarAvisoSesion,
+  sesionDesdeToken,
+} from "./sesion.js";
 
 const rol = ref("");
 const login = ref("");
@@ -13,6 +23,7 @@ const nombre = ref("");
 const departamento = ref("");
 const token = ref("");
 const delegaciones = ref([]);
+const cargando = ref(true);
 
 const lugares = computed(() => delegaciones.value.map(delegacionVisible).join(" · "));
 const anio = new Date().getFullYear();
@@ -25,20 +36,27 @@ const iniciales = computed(() => {
     .join("");
 });
 
-function alEntrar(sesion) {
+function aplicar(sesion) {
   rol.value = sesion.rol;
   login.value = sesion.login;
   nombre.value = sesion.nombre;
   departamento.value = sesion.departamento;
   token.value = sesion.token;
   delegaciones.value = sesion.delegaciones;
+  guardarToken(sesion.token);
+  rearmarAvisoSesion();
+}
+
+function alEntrar(sesion) {
+  aplicar(sesion);
 }
 
 function alMarca() {
   marcaPaso.value += 1;
 }
 
-function salir() {
+function limpiarLocal() {
+  borrarToken();
   rol.value = "";
   login.value = "";
   nombre.value = "";
@@ -46,10 +64,30 @@ function salir() {
   token.value = "";
   delegaciones.value = [];
 }
+
+alPerderSesion(limpiarLocal);
+
+async function salir() {
+  const actual = token.value;
+  limpiarLocal();
+  await cerrarSesion(actual, salirRemoto);
+}
+
+onMounted(() => {
+  const guardado = leerToken();
+  const sesion = sesionDesdeToken(guardado);
+  if (sesion) {
+    aplicar(sesion);
+  } else if (guardado) {
+    borrarToken();
+  }
+  cargando.value = false;
+});
 </script>
 
 <template>
-  <Login v-if="!rol" @entrada="alEntrar" />
+  <p v-if="cargando" class="cargando-sesion">Cargando…</p>
+  <Login v-else-if="!rol" @entrada="alEntrar" />
   <template v-else>
     <header class="cabecera">
       <div class="cabecera-interior">
@@ -107,3 +145,11 @@ function salir() {
     </footer>
   </template>
 </template>
+
+<style scoped>
+.cargando-sesion {
+  margin: 4rem auto;
+  text-align: center;
+  color: var(--text-2);
+}
+</style>
