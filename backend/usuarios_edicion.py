@@ -10,6 +10,7 @@ CAMPOS_COMUNES = {"nombre", "numero_sap", "clave"}
 CAMPOS_TRABAJADOR = {
     "grupo",
     "coste",
+    "tarifa_nocturna",
     "vacaciones",
     "horas_contrato",
     "horas_convenio",
@@ -24,6 +25,7 @@ ORDEN_USUARIO = (
     "clave",
     "grupo",
     "coste",
+    "tarifa_nocturna",
     "vacaciones",
     "horas_contrato",
     "horas_convenio",
@@ -51,6 +53,8 @@ def editar_campos(cur, persona, cuerpo):
     grupo = cambios.get("grupo", persona.get("grupo"))
     if grupo == "STEF" and ("coste" in cuerpo or "grupo" in cambios):
         cambios["coste"] = None
+    if grupo == "STEF" and ("tarifa_nocturna" in cuerpo or "grupo" in cambios):
+        cambios["tarifa_nocturna"] = None
     if "seccion_id" in cambios:
         error = comprobar_seccion(cur, persona["departamento_id"], cambios["seccion_id"])
         if error:
@@ -99,6 +103,16 @@ def _cambios_usuario(cuerpo):
                 400,
             )
         cambios["coste"] = coste
+    if "tarifa_nocturna" in cuerpo:
+        tarifa = validaciones.coste_hora(cuerpo["tarifa_nocturna"])
+        if tarifa == "mal":
+            return None, (
+                jsonify(
+                    error="La tarifa nocturna tiene que ser un número mayor o igual que cero, con hasta 4 decimales"
+                ),
+                400,
+            )
+        cambios["tarifa_nocturna"] = tarifa
     for campo in ("vacaciones", "horas_contrato"):
         if campo not in cuerpo:
             continue

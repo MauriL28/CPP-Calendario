@@ -88,6 +88,16 @@ def crear_trabajador():
         coste = None
     if grupo != "ETT":
         coste = None
+    if "tarifa_nocturna" in cuerpo:
+        tarifa_nocturna = coste_hora(cuerpo.get("tarifa_nocturna"))
+        if tarifa_nocturna == "mal":
+            return jsonify(
+                error="La tarifa nocturna tiene que ser un número mayor o igual que cero, con hasta 4 decimales"
+            ), 400
+    else:
+        tarifa_nocturna = None
+    if grupo != "ETT":
+        tarifa_nocturna = None
 
     try:
         with cursor() as cur:
@@ -121,9 +131,9 @@ def crear_trabajador():
                 INSERT INTO usuario (
                     nombre, login, clave, rol, grupo, departamento_id,
                     vacaciones, horas_contrato, numero_sap, seccion_id, pausa_minutos,
-                    pausa_habitual, tarifas_ett
+                    pausa_habitual, tarifa_nocturna, tarifas_ett
                 )
-                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, crypt(%s, gen_salt('bf')), 'trabajador', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, nombre, login, rol, grupo, vacaciones, horas_contrato, numero_sap, seccion_id
                 """,
                 (
@@ -138,6 +148,7 @@ def crear_trabajador():
                     seccion_id,
                     pausa,
                     habitual,
+                    tarifa_nocturna,
                     coste,
                 ),
             )
@@ -177,6 +188,7 @@ def crear_trabajador():
         numero_sap=creado["numero_sap"],
         seccion_id=str(creado["seccion_id"]) if creado["seccion_id"] else None,
         coste=coste,
+        tarifa_nocturna=tarifa_nocturna,
     ), 201
 
 

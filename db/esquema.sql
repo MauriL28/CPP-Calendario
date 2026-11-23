@@ -58,6 +58,7 @@ CREATE TABLE usuario (
     pausa_minutos      SMALLINT     NOT NULL DEFAULT 0,
     pausa_habitual     TIME,
     tarifas_ett        NUMERIC(10, 4),
+    tarifa_nocturna    NUMERIC(10, 4),
     numero_sap         VARCHAR(40),
     activo             BOOLEAN      NOT NULL DEFAULT TRUE,
     CONSTRAINT usuario_depto_segun_rol CHECK (

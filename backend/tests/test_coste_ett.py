@@ -327,8 +327,10 @@ def test_el_admin_deja_el_coste_en_null_si_el_grupo_pasa_a_stef():
     assert respuesta.get_json()["grupo"] == "STEF"
     assert respuesta.get_json()["coste"] is None
     texto, params = cursor.updates[0]
-    assert texto == "UPDATE usuario SET grupo = %s, tarifas_ett = %s WHERE id = %s"
-    assert params == ("STEF", None, "trab-1")
+    assert texto == (
+        "UPDATE usuario SET grupo = %s, tarifas_ett = %s, tarifa_nocturna = %s WHERE id = %s"
+    )
+    assert params == ("STEF", None, None, "trab-1")
 
 
 def test_el_listado_de_admin_y_mando_incluye_el_coste():

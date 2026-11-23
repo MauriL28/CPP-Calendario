@@ -53,7 +53,7 @@ def listar_del_departamento(cur, filtro, params, solo_mandos_activos=False):
         SELECT g.codigo AS delegacion, d.codigo AS departamento,
                u.nombre, u.login, u.grupo, u.horas_contrato, u.horas_convenio,
                u.pausa_minutos, u.pausa_habitual, u.vacaciones, u.numero_sap,
-               u.seccion_id, u.tarifas_ett
+               u.seccion_id, u.tarifas_ett, u.tarifa_nocturna
         FROM usuario u
         JOIN departamento d ON d.id = u.departamento_id
         JOIN delegacion g ON g.id = d.delegacion_id
@@ -145,6 +145,7 @@ def adjuntar_personas(
         }
         if incluir_coste:
             persona["coste"] = _decimal(trabajador.get("tarifas_ett"))
+            persona["tarifa_nocturna"] = _decimal(trabajador.get("tarifa_nocturna"))
             persona["pausa_habitual"] = hora_texto(trabajador.get("pausa_habitual"))
         por_login[trabajador["login"]] = persona
         item["trabajadores"].append(persona)

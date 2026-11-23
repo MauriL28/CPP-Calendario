@@ -142,6 +142,15 @@ def _coste(trabajador):
     return float(valor)
 
 
+def _tarifa_nocturna(trabajador):
+    if trabajador.get("grupo") != "ETT":
+        return None
+    valor = trabajador.get("tarifa_nocturna")
+    if valor is None:
+        return None
+    return float(valor)
+
+
 def _trabajadores_resueltos(
     trabajadores,
     dias,
@@ -202,7 +211,7 @@ def listar_turnos():
             cur.execute(
                 """
                 SELECT u.id, u.nombre, u.login, u.grupo, u.activo, u.tarifas_ett,
-                       u.pausa_habitual, s.nombre AS seccion
+                       u.tarifa_nocturna, u.pausa_habitual, s.nombre AS seccion
                 FROM usuario u
                 LEFT JOIN seccion s ON s.id = u.seccion_id
                 WHERE u.rol = 'trabajador' AND u.departamento_id = %s
@@ -235,6 +244,7 @@ def listar_turnos():
             "grupo": trabajador["grupo"],
             "seccion": trabajador["seccion"],
             "coste": _coste(trabajador),
+            "tarifa_nocturna": _tarifa_nocturna(trabajador),
             "pausa_minutos": int(pausas.get(trabajador["id"], 0) if pausas else 0),
             "pausa_habitual": hora_texto(trabajador.get("pausa_habitual")),
             "dias": _dias_resueltos(
@@ -468,7 +478,7 @@ def listar_turnos_mes():
             cur.execute(
                 """
                 SELECT u.id, u.nombre, u.login, u.grupo, u.activo, u.tarifas_ett,
-                       u.pausa_habitual, s.nombre AS seccion
+                       u.tarifa_nocturna, u.pausa_habitual, s.nombre AS seccion
                 FROM usuario u
                 LEFT JOIN seccion s ON s.id = u.seccion_id
                 WHERE u.rol = 'trabajador' AND u.departamento_id = %s
@@ -500,6 +510,7 @@ def listar_turnos_mes():
     for persona, trabajador in zip(personas, trabajadores):
         persona["seccion"] = trabajador["seccion"]
         persona["coste"] = _coste(trabajador)
+        persona["tarifa_nocturna"] = _tarifa_nocturna(trabajador)
         persona["pausa_minutos"] = int(pausas.get(trabajador["id"], 0) if pausas else 0)
         persona["pausa_habitual"] = hora_texto(trabajador.get("pausa_habitual"))
     _anotar_ajustes(personas, trabajadores, ajustes)
