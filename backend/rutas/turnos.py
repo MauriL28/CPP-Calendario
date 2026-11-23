@@ -75,6 +75,7 @@ def _dias_resueltos(
             noche_fin,
             habitual,
             pausa,
+            festivo=dia in festivos,
         )
         entrada = {"fecha": dia.isoformat(), "turno": turno, "festivo": dia in festivos}
         if origen is not None:
@@ -361,10 +362,12 @@ def _dias_departamento(
     habituales=None,
     con_origen=False,
     pausas=None,
+    festivos=None,
 ):
     suyas = versiones.get(usuario_id, [])
     habitual = True if habituales is None else habituales.get(usuario_id, True)
     pausa = 0 if pausas is None else pausas.get(usuario_id, 0)
+    festivos = festivos or {}
     resultado = []
     for dia in dias:
         turno, origen = resolver_turno(
@@ -375,11 +378,15 @@ def _dias_departamento(
             noche_fin,
             habitual,
             pausa,
+            festivo=dia in festivos,
         )
         entrada = {
             "fecha": dia.isoformat(),
             "turno": _turno_visible(turno, propio),
+            "festivo": dia in festivos,
         }
+        if dia in festivos:
+            entrada["nombre"] = festivos[dia]
         if con_origen:
             entrada["origen"] = origen or "vacio"
         resultado.append(entrada)
@@ -430,6 +437,7 @@ def listar_turnos_departamento():
             turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_semana(
                 cur, [trabajador["id"] for trabajador in trabajadores], dias
             )
+            festivos = _festivos_semana(cur, dias)
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
@@ -454,6 +462,7 @@ def listar_turnos_departamento():
                     str(trabajador["id"]) == yo,
                     habituales,
                     pausas=pausas,
+                    festivos=festivos,
                 ),
             }
             for trabajador in trabajadores
@@ -622,6 +631,7 @@ def _cuadrante_mandos(cur, yo, dias):
     turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_rango(
         cur, [persona["id"] for persona in personas], dias[0], dias[-1]
     )
+    festivos = _festivos_rango(cur, dias[0], dias[-1])
     return [
         {
             "id": str(persona["id"]),
@@ -639,6 +649,7 @@ def _cuadrante_mandos(cur, yo, dias):
                 habituales,
                 con_origen=str(persona["id"]) == str(yo),
                 pausas=pausas,
+                festivos=festivos,
             ),
         }
         for persona in personas

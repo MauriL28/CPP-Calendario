@@ -58,6 +58,8 @@ class Cursor:
             }
         elif "usa_horario_habitual" in texto:
             self._filas = [{"id": MANDO, "usa_horario_habitual": True}]
+        elif "FROM festivo" in texto:
+            self._filas = []
         elif texto.startswith("DELETE FROM horario_dia"):
             self.dias = [
                 fila

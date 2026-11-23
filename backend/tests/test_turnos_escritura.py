@@ -468,6 +468,10 @@ class CursorCuadrante(Cursor):
             self._filas = [{"id": MANDO, "usa_horario_habitual": True}]
             self._fila = None
             return
+        if "FROM festivo" in texto:
+            self._filas = []
+            self._fila = None
+            return
         super().execute(sql, params)
 
     def fetchall(self):

@@ -18,6 +18,7 @@ from errores import error_bd
 from mandos import departamento_lectura
 from fichajes import _segundos, agrupar_dias, cargar, horas_netas, segundos_pausa_con_huecos
 from horas import hora_texto
+from rutas.turnos import _festivos_rango
 from turnos_base import _agrupar_versiones, _franja, _habituales, resolver_turno
 
 bp = Blueprint("fichajes", __name__)
@@ -382,6 +383,7 @@ def _planes_analisis(cur, filas):
     versiones = _agrupar_versiones(cur.fetchall())
     noche_inicio, noche_fin = _franja(cur)
     habituales, pausas = _habituales(cur, ids)
+    festivos = _festivos_rango(cur, min(fechas), max(fechas))
     planes = {}
     for fila in utiles:
         guardado = turnos.get((fila["usuario_id"], fila["fecha"]))
@@ -393,6 +395,7 @@ def _planes_analisis(cur, filas):
             noche_fin,
             habituales.get(fila["usuario_id"], True),
             pausas.get(fila["usuario_id"], 0),
+            festivo=fila["fecha"] in festivos,
         )
         planes[(fila["usuario_id"], fila["fecha"])] = (
             turno,

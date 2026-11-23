@@ -11,7 +11,10 @@ class Cursor:
         self.consultas = []
 
     def execute(self, sql, params=None):
-        self.consultas.append((" ".join(sql.split()), params))
+        texto = " ".join(sql.split())
+        self.consultas.append((texto, params))
+        if "FROM festivo" in texto:
+            return
 
     def fetchall(self):
         return []

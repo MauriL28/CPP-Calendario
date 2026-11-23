@@ -105,6 +105,48 @@ def test_el_domingo_sin_plan_es_descanso_automatico():
     }
 
 
+def test_un_festivo_sin_turno_guardado_es_f():
+    habitual = versiones(date(2026, 1, 1), {0: (time(8, 0), time(16, 0))})
+    turno, origen = resolver_turno(LUNES, None, habitual, NOCHE_INICIO, NOCHE_FIN, True, 0, True)
+    assert origen == "festivo"
+    assert turno == {
+        "ausencia": "F",
+        "hora_inicio": None,
+        "hora_fin": None,
+        "horas_planificadas": 0.0,
+        "horas_nocturnas": 0.0,
+        "pausa_inicio": None,
+    }
+
+
+def test_un_festivo_con_turno_guardado_devuelve_el_turno():
+    fila = {
+        "ausencia": None,
+        "hora_inicio": time(8, 0),
+        "hora_fin": time(16, 0),
+        "horas_planificadas": Decimal("8"),
+        "horas_nocturnas": Decimal("0"),
+    }
+    habitual = versiones(date(2026, 1, 1), {0: (time(6, 0), time(14, 0))})
+    turno, origen = resolver_turno(LUNES, fila, habitual, NOCHE_INICIO, NOCHE_FIN, True, 0, True)
+    assert origen == "guardado"
+    assert turno["hora_inicio"] == "08:00"
+    assert turno["hora_fin"] == "16:00"
+    assert turno["ausencia"] is None
+
+
+def test_un_festivo_en_domingo_es_f():
+    turno, origen = resolver_turno(DOMINGO, None, [], NOCHE_INICIO, NOCHE_FIN, True, 0, True)
+    assert origen == "festivo"
+    assert turno["ausencia"] == "F"
+
+
+def test_sin_horario_habitual_un_festivo_sigue_vacio():
+    habitual = versiones(date(2026, 1, 1), {0: (time(8, 0), time(16, 0))})
+    turno, origen = resolver_turno(LUNES, None, habitual, NOCHE_INICIO, NOCHE_FIN, False, 0, True)
+    assert (turno, origen) == (None, "vacio")
+
+
 def test_sin_horario_habitual_el_dia_queda_vacio_tambien_en_domingo():
     habitual = versiones(date(2026, 1, 1), {6: (time(8, 0), time(14, 0))})
     turno, origen = resolver_turno(DOMINGO, None, habitual, NOCHE_INICIO, NOCHE_FIN, False)

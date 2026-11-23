@@ -19,11 +19,21 @@ def test_convenio_informado_y_vacio():
 
 
 class Cursor:
-    def __init__(self, convenio=1600, contrato=37.5, departamento=DEPARTAMENTO, existe=True):
+    def __init__(
+        self,
+        convenio=1600,
+        contrato=37.5,
+        departamento=DEPARTAMENTO,
+        existe=True,
+        habitual=False,
+        festivos=None,
+    ):
         self.convenio = convenio
         self.contrato = contrato
         self.departamento = departamento
         self.existe = existe
+        self.habitual = habitual
+        self.festivos = festivos or []
         self.turnos = {}
         self.ajustes = []
         self._fila = None
@@ -59,11 +69,11 @@ class Cursor:
         elif texto.startswith("SELECT noche_inicio"):
             self._fila = {"noche_inicio": time(22, 0), "noche_fin": time(6, 0)}
         elif texto.startswith("SELECT u.id, d.usa_horario_habitual"):
-            self._filas = [{"id": TRABAJADOR, "usa_horario_habitual": False}]
+            self._filas = [{"id": TRABAJADOR, "usa_horario_habitual": self.habitual}]
         elif texto.startswith("SELECT fecha, horas"):
             self._filas = list(self.ajustes)
         elif texto.startswith("SELECT fecha FROM festivo"):
-            self._filas = []
+            self._filas = [{"fecha": fecha} for fecha in self.festivos]
         elif texto.startswith("SELECT COUNT"):
             self._fila = {
                 "usados": sum(1 for fila in self.turnos.values() if fila["ausencia"] == "V")
@@ -171,3 +181,13 @@ def test_el_trabajador_no_recibe_las_horas_realizadas():
     assert "horas_realizadas_por_mes" not in cuerpo
     assert "convenio_anual" not in cuerpo
     assert "saldo" not in cuerpo
+
+
+def test_un_festivo_sin_turno_guardado_no_cuenta_como_trabajado():
+    cursor = Cursor(habitual=True, festivos=[date(2026, 1, 6)])
+    respuesta = pedir(cursor, "mando", MANDO)
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.get_json()
+    assert cuerpo["festivos_trabajados"] == 0
+    dia = next(item for item in cuerpo["dias"] if item["fecha"] == "2026-01-06")
+    assert dia["texto"] == "F"

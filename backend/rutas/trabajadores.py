@@ -652,8 +652,15 @@ def ficha(login_nombre):
     dias = []
     dia = inicio
     while dia <= fin:
-        turno, _origen = resolver_turno(
-            dia, turnos.get(dia), versiones, noche_inicio, noche_fin, habitual, pausa
+        turno, origen = resolver_turno(
+            dia,
+            turnos.get(dia),
+            versiones,
+            noche_inicio,
+            noche_fin,
+            habitual,
+            pausa,
+            festivo=dia in festivos,
         )
         dias.append(
             {
@@ -667,7 +674,7 @@ def ficha(login_nombre):
                 ausencias[turno["ausencia"]] += 1
         elif turno is not None:
             horas_mes[dia.month - 1] += float(turno["horas_planificadas"])
-            if dia in festivos:
+            if dia in festivos and origen == "guardado":
                 festivos_trabajados += 1
             if dia.weekday() == 5:
                 sabados_trabajados += 1

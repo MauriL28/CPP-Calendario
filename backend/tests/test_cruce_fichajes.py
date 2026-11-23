@@ -48,8 +48,11 @@ def cruce(jornada, plan, pausa, ausencia=None, inicio="10:00", fin="19:00"):
 
 
 class Cursor:
-    def __init__(self, pausa):
+    def __init__(self, pausa, festivos=None, habitual=True, turnos=None):
         self.pausa = pausa
+        self.festivos = festivos or []
+        self.habitual = habitual
+        self.turnos = turnos or []
         self._fila = None
         self._filas = []
 
@@ -57,7 +60,11 @@ class Cursor:
         texto = " ".join(sql.split())
         self._fila = None
         self._filas = []
+        if "FROM festivo" in texto:
+            self._filas = [{"fecha": fecha, "nombre": "Festivo"} for fecha in self.festivos]
+            return
         if texto.startswith("SELECT usuario_id, fecha"):
+            self._filas = list(self.turnos)
             return
         if "FROM horario_version" in texto:
             self._filas = [
@@ -77,7 +84,7 @@ class Cursor:
             self._filas = [
                 {
                     "id": USUARIO,
-                    "usa_horario_habitual": True,
+                    "usa_horario_habitual": self.habitual,
                     "pausa_minutos": self.pausa,
                 }
             ]
@@ -152,6 +159,60 @@ def test_nueve_horas_con_pausa_cero_y_plan_ocho_es_descuadre():
         "9.00",
     )
     assert cruce(jornada, 8, 0)[0] == "descuadre"
+
+
+def test_festivo_sin_turno_guardado_y_con_fichaje_es_descuadre():
+    jornada = dia(
+        [evento("Llegada", time(10, 0), 1), evento("Salida", time(18, 0), 2)],
+        "8.00",
+    )
+    resueltos = _turnos_resueltos(Cursor(60, festivos=[LUNES]), [jornada])
+    estado, plan = _cruce(jornada, resueltos)
+    assert estado == "descuadre"
+    assert plan == Decimal("0.00")
+    from rutas.fichajes import _detalle_fila
+
+    turno = resueltos[(USUARIO, LUNES)][0]
+    assert _detalle_fila({"fecha": LUNES}, jornada, turno, 60)["previsto_min"] is None
+
+
+def test_festivo_con_turno_guardado_se_cruza_con_ese_turno():
+    jornada = dia(
+        [evento("Llegada", time(8, 0), 1), evento("Salida", time(17, 0), 2)],
+        "9.00",
+    )
+    guardado = {
+        "usuario_id": USUARIO,
+        "fecha": LUNES,
+        "ausencia": None,
+        "hora_inicio": time(8, 0),
+        "hora_fin": time(17, 0),
+        "horas_planificadas": Decimal("8.00"),
+        "horas_nocturnas": Decimal("0"),
+    }
+    estado, plan = _cruce(jornada, _turnos_resueltos(Cursor(60, festivos=[LUNES], turnos=[guardado]), [jornada]))
+    assert estado == "ok"
+    assert plan == Decimal("8.00")
+
+
+def test_sin_horario_habitual_un_festivo_no_cambia_el_cruce():
+    jornada = dia(
+        [evento("Llegada", time(10, 0), 1), evento("Salida", time(18, 0), 2)],
+        "8.00",
+    )
+    estado, plan = _cruce(jornada, _turnos_resueltos(Cursor(60, festivos=[LUNES], habitual=False), [jornada]))
+    assert estado == "sin_plan"
+    assert plan is None
+
+
+def test_un_dia_que_no_es_festivo_sigue_el_horario():
+    jornada = dia(
+        [evento("Llegada", time(10, 0), 1), evento("Salida", time(19, 0), 2)],
+        "9.00",
+    )
+    estado, plan = _cruce(jornada, _turnos_resueltos(Cursor(60), [jornada]))
+    assert estado == "ok"
+    assert plan == Decimal("8.00")
 
 
 def test_una_ausencia_sin_horas_no_descuenta_la_pausa():
@@ -256,6 +317,8 @@ class CursorAnalisis:
             self._filas = [
                 {"id": USUARIO_ANALISIS, "usa_horario_habitual": True, "pausa_minutos": 60}
             ]
+            return
+        if "FROM festivo" in texto:
             return
         raise AssertionError(texto)
 

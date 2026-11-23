@@ -56,28 +56,37 @@ def _horas_habituales(fecha, versiones):
     return version["dias"].get(fecha.weekday())
 
 
-def _domingo_libre():
+def _ausencia_libre(codigo, origen):
     return {
-        "ausencia": "D",
+        "ausencia": codigo,
         "hora_inicio": None,
         "hora_fin": None,
         "horas_planificadas": 0.0,
         "horas_nocturnas": 0.0,
         "pausa_inicio": None,
-    }, "habitual"
+    }, origen
 
 
 def resolver_turno(
-    fecha, fila, versiones, noche_inicio, noche_fin, usa_horario_habitual=True, pausa_minutos=0
+    fecha,
+    fila,
+    versiones,
+    noche_inicio,
+    noche_fin,
+    usa_horario_habitual=True,
+    pausa_minutos=0,
+    festivo=False,
 ):
     if fila is not None:
         return _turno(fila), "guardado"
     if not usa_horario_habitual:
         return None, "vacio"
+    if festivo:
+        return _ausencia_libre("F", "festivo")
     horas = _horas_habituales(fecha, versiones)
     if horas is None:
         if fecha.weekday() == 6:
-            return _domingo_libre()
+            return _ausencia_libre("D", "habitual")
         return None, None
     inicio, fin = horas
     planificadas, nocturnas = horas_de_turno(
