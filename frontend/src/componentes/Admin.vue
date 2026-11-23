@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from "vue";
 import { listar } from "../api/departamentos.js";
 import Analisis from "./Analisis.vue";
 import Cobertura from "./Cobertura.vue";
+import Costes from "./Costes.vue";
 import Cuadrante from "./Cuadrante.vue";
 import DuracionPausa from "./DuracionPausa.vue";
 import EditarUsuario from "./EditarUsuario.vue";
@@ -55,6 +56,7 @@ const loginTrabajador = ref("");
 const claveTrabajador = ref("");
 const grupoTrabajador = ref("STEF");
 const costeTrabajador = ref("");
+const tarifaNocturnaTrabajador = ref("");
 const vacacionesTrabajador = ref("");
 const horasContratoTrabajador = ref("");
 const pausaTrabajador = ref(0);
@@ -325,6 +327,7 @@ function vaciarAltaTrabajador() {
   claveTrabajador.value = "";
   grupoTrabajador.value = "STEF";
   costeTrabajador.value = "";
+  tarifaNocturnaTrabajador.value = "";
   vacacionesTrabajador.value = "";
   horasContratoTrabajador.value = "";
   pausaTrabajador.value = 0;
@@ -365,6 +368,13 @@ async function guardarTrabajador() {
     && costeTrabajador.value !== null
   ) {
     datos.coste = numeroTrabajador(costeTrabajador.value);
+  }
+  if (
+    grupoTrabajador.value === "ETT"
+    && tarifaNocturnaTrabajador.value !== ""
+    && tarifaNocturnaTrabajador.value !== null
+  ) {
+    datos.tarifa_nocturna = numeroTrabajador(tarifaNocturnaTrabajador.value);
   }
   if (sede.usa_horario_habitual !== false) {
     const horario = horarioSeleccionado();
@@ -552,6 +562,9 @@ onMounted(cargar);
             <button type="button" :class="{ activo: seccionSede === 'cobertura' }" @click="seccionSede = 'cobertura'">
               Cobertura
             </button>
+            <button type="button" :class="{ activo: seccionSede === 'costes' }" @click="seccionSede = 'costes'">
+              Costes
+            </button>
             <button type="button" :class="{ activo: seccionSede === 'equipo' }" @click="seccionSede = 'equipo'">
               Equipo
             </button>
@@ -572,6 +585,15 @@ onMounted(cargar);
             :departamento-id="sede.id"
           />
           <p v-else-if="seccionSede === 'cobertura'" class="panel-vacio">
+            Este departamento no está en esta sede.
+          </p>
+          <Costes
+            v-if="seccionSede === 'costes' && sede.id"
+            :key="sede.id"
+            :token="token"
+            :departamento-id="sede.id"
+          />
+          <p v-else-if="seccionSede === 'costes'" class="panel-vacio">
             Este departamento no está en esta sede.
           </p>
           <section v-if="seccionSede === 'equipo'" class="panel">
@@ -639,9 +661,14 @@ onMounted(cargar);
                 </select>
               </label>
               <label v-if="grupoTrabajador === 'ETT'">
-                Coste (€/hora)
+                Tarifa diurna (€/hora)
                 <input v-model="costeTrabajador" name="coste-trabajador" type="number" min="0" step="0.0001" />
               </label>
+              <label v-if="grupoTrabajador === 'ETT'">
+                Tarifa nocturna (€/hora)
+                <input v-model="tarifaNocturnaTrabajador" name="tarifa-nocturna-trabajador" type="number" min="0" step="0.0001" />
+              </label>
+              <p v-if="grupoTrabajador === 'ETT'" class="campo-pista">Si no la indicas, las horas nocturnas se calculan a tarifa diurna.</p>
               <label>
                 Vacaciones
                 <input v-model="vacacionesTrabajador" name="vacaciones-trabajador" type="number" min="0" step="0.5" />

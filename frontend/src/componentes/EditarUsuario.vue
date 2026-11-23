@@ -27,6 +27,7 @@ const numeroSap = ref("");
 const clave = ref("");
 const grupo = ref("STEF");
 const coste = ref("");
+const tarifaNocturna = ref("");
 const vacaciones = ref("");
 const horasContrato = ref("");
 const horasConvenio = ref("");
@@ -43,6 +44,7 @@ function rellenar() {
   clave.value = "";
   grupo.value = props.persona.grupo || "STEF";
   coste.value = props.persona.coste ?? "";
+  tarifaNocturna.value = props.persona.tarifa_nocturna ?? "";
   vacaciones.value = props.persona.vacaciones ?? "";
   horasContrato.value = props.persona.horas_contrato ?? "";
   horasConvenio.value = props.persona.horas_convenio ?? "";
@@ -88,6 +90,11 @@ function cambiosHechos() {
     const costeActual = numeroDe(props.persona.coste);
     if (costeNuevo !== costeActual) {
       cambios.coste = costeNuevo;
+    }
+    const tarifaNueva = numeroDe(tarifaNocturna.value);
+    const tarifaActual = numeroDe(props.persona.tarifa_nocturna);
+    if (tarifaNueva !== tarifaActual) {
+      cambios.tarifa_nocturna = tarifaNueva;
     }
   }
   const vacacionesNuevas = numeroDe(vacaciones.value);
@@ -250,9 +257,14 @@ onMounted(async () => {
             </label>
           </div>
           <label v-if="grupo === 'ETT'" class="ancho">
-            Coste (€/hora)
+            Tarifa diurna (€/hora)
             <input v-model="coste" name="coste-usuario" type="number" min="0" step="0.0001" />
           </label>
+          <label v-if="grupo === 'ETT'" class="ancho">
+            Tarifa nocturna (€/hora)
+            <input v-model="tarifaNocturna" name="tarifa-nocturna-usuario" type="number" min="0" step="0.0001" />
+          </label>
+          <p v-if="grupo === 'ETT'" class="ancho campo-pista">Si no la indicas, las horas nocturnas se calculan a tarifa diurna.</p>
           <label class="ancho">
             Horas de convenio al año
             <input v-model="horasConvenio" name="horas-convenio-usuario" type="number" min="0" step="0.5" />

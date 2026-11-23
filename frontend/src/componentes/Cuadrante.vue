@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import LeyendaTurnos from "./LeyendaTurnos.vue";
+import { horasPeriodo } from "../costes.js";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
 import { GRUPOS } from "../personas.js";
 import { borrarAusenciaMando, borrarTurno, copiarSemana, exportarCuadrante, guardarAusenciasMando, guardarTurno, guardarTurnos, mes, mesMandos, semana, semanaActual, semanaMandos } from "../api/turnos.js";
@@ -116,9 +117,6 @@ const errorTurno = ref("");
 const seccionElegida = ref("");
 const copiasMarcadas = ref([false, false, false, false, false, false, false]);
 const letrasCopia = ["L", "M", "X", "J", "V", "S", "D"];
-const ausenciasConCoste = new Set([null, "ST", "FT"]);
-const euros = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
-
 const tituloMes = computed(() => `${mesesLargos[numeroMes.value - 1] || ""} ${anioMes.value}`.trim());
 const gruposCuadrante = GRUPOS;
 function claveTrabajador(trabajador) {
@@ -140,7 +138,6 @@ const secciones = computed(() => {
 });
 
 const muestraSecciones = computed(() => !props.propia && !props.mandos && secciones.value.length > 0);
-const muestraCoste = computed(() => !props.propia && !props.mandos);
 
 const opcionesSeccion = computed(() => {
   const nombres = [...secciones.value];
@@ -331,29 +328,6 @@ function horasNocturnas(indice) {
   return Number(suma.toFixed(2)).toLocaleString("es-ES");
 }
 
-function horasPeriodo(trabajador, campo, ausencias) {
-  return (trabajador.dias || []).reduce((total, dia) => {
-    if (ausencias && !ausencias.has(dia.turno?.ausencia ?? null)) {
-      return total;
-    }
-    return total + (Number(dia.turno?.[campo]) || 0);
-  }, 0);
-}
-
-function tieneCoste(trabajador) {
-  if (trabajador.coste === null || trabajador.coste === undefined || trabajador.coste === "") {
-    return false;
-  }
-  return Number.isFinite(Number(trabajador.coste));
-}
-
-function importeEtt(trabajador) {
-  if (trabajador.grupo !== "ETT" || !tieneCoste(trabajador)) {
-    return null;
-  }
-  return horasPeriodo(trabajador, "horas_planificadas", ausenciasConCoste) * Number(trabajador.coste);
-}
-
 function muestraAjuste(dia) {
   return !props.propia && !props.mandos && Array.isArray(dia?.ajustes) && dia.ajustes.length > 0;
 }
@@ -480,25 +454,6 @@ function textoPartido(trabajador, dia) {
 
 function textoVisible(trabajador, dia) {
   return textoPartido(trabajador, dia) || textoCelda(dia.turno);
-}
-
-function textoCostePersona(trabajador) {
-  if (trabajador.grupo !== "ETT") {
-    return "";
-  }
-  const importe = importeEtt(trabajador);
-  return importe === null ? "—" : euros.format(importe);
-}
-
-function costeGrupo(id) {
-  if (id !== "ETT") {
-    return null;
-  }
-  const personas = trabajadoresCuadrante.value.filter((trabajador) => trabajador.grupo === "ETT");
-  return {
-    total: personas.reduce((suma, trabajador) => suma + (importeEtt(trabajador) || 0), 0),
-    sinCoste: personas.filter((trabajador) => !tieneCoste(trabajador)).length,
-  };
 }
 
 function horasVisibles(valor) {
@@ -956,28 +911,12 @@ cargar(lunesDe(new Date()));
               :aria-label="nombreFestivo(indice)"
             ></span>
           </th>
-          <th v-if="muestraCoste" class="coste-col">
-            <span class="dia-nombre">Coste</span>
-            <span class="dia-numero">{{ modo === "mes" ? "mes" : "semana" }}</span>
-          </th>
         </tr>
       </thead>
       <tbody>
         <template v-for="fila in filasCuadrante" :key="fila.tipo === 'grupo' ? fila.id : claveTrabajador(fila.trabajador)">
           <tr v-if="fila.tipo === 'grupo'" class="grupo-fila">
             <th :colspan="cuadrante.dias.length + 1">{{ fila.titulo }}</th>
-            <td v-if="muestraCoste" class="coste-col">
-              <template v-if="costeGrupo(fila.id)">
-                <span class="coste-total">{{ euros.format(costeGrupo(fila.id).total) }}</span>
-                <span
-                  v-if="costeGrupo(fila.id).sinCoste"
-                  class="coste-nota"
-                  title="Trabajadores ETT sin coste asignado: no suman en el total"
-                >
-                  ({{ costeGrupo(fila.id).sinCoste }} sin coste)
-                </span>
-              </template>
-            </td>
           </tr>
           <tr v-else>
             <th>{{ fila.trabajador.nombre }}</th>
@@ -1013,11 +952,6 @@ cargar(lunesDe(new Date()));
                 <span :class="{ 'celda-partida': textoPartido(fila.trabajador, dia) }">{{ textoVisible(fila.trabajador, dia) }}</span>
               </span>
             </td>
-            <td
-              v-if="muestraCoste"
-              class="coste-col"
-              :class="fila.trabajador.grupo === 'ETT' ? (tieneCoste(fila.trabajador) ? 'coste-importe' : 'coste-vacio') : ''"
-            >{{ textoCostePersona(fila.trabajador) }}</td>
           </tr>
         </template>
       </tbody>
@@ -1025,12 +959,10 @@ cargar(lunesDe(new Date()));
         <tr v-for="franja in franjas" :key="franja.id">
           <td>{{ franja.nombre }}</td>
           <td v-for="(dia, indice) in cuadrante.dias" :key="dia">{{ totalFranja(franja.id, indice) }}</td>
-          <td v-if="muestraCoste" class="coste-col"></td>
         </tr>
         <tr>
           <td>Horas nocturnas</td>
           <td v-for="(dia, indice) in cuadrante.dias" :key="`noche-${dia}`">{{ horasNocturnas(indice) }}</td>
-          <td v-if="muestraCoste" class="coste-col"></td>
         </tr>
       </tfoot>
     </table>
@@ -1169,48 +1101,6 @@ cargar(lunesDe(new Date()));
 button.copiar-dias-atajo {
   padding: 4px 8px;
   font-size: 12px;
-}
-
-table.cuadrante th.coste-col,
-table.cuadrante td.coste-col {
-  width: 7.5rem;
-  min-width: 7.5rem;
-  max-width: 8rem;
-  text-align: center;
-  white-space: nowrap;
-}
-
-table.cuadrante thead th.coste-col .dia-numero {
-  text-transform: none;
-}
-
-table.cuadrante tbody tr.grupo-fila td.coste-col {
-  background: var(--bg);
-}
-
-.coste-total,
-.coste-importe {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.coste-total {
-  display: block;
-  font-weight: 700;
-}
-
-.coste-nota {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  color: var(--text-3);
-}
-
-.coste-vacio {
-  font-weight: 400;
-  color: var(--text-3);
 }
 
 .delta {

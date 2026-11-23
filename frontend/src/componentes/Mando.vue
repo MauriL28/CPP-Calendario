@@ -13,6 +13,7 @@ import {
 } from "../api/usuarios.js";
 import Analisis from "./Analisis.vue";
 import Cobertura from "./Cobertura.vue";
+import Costes from "./Costes.vue";
 import HorarioHabitual from "./HorarioHabitual.vue";
 import Cuadrante from "./Cuadrante.vue";
 import DuracionPausa from "./DuracionPausa.vue";
@@ -41,6 +42,7 @@ const clave = ref("");
 const numeroSap = ref("");
 const grupo = ref("STEF");
 const coste = ref("");
+const tarifaNocturna = ref("");
 const letras = ["L", "M", "X", "J", "V", "S", "D"];
 const horarioAlta = ref(null);
 const vacaciones = ref("");
@@ -162,6 +164,7 @@ function vaciarAlta() {
   numeroSap.value = "";
   grupo.value = "STEF";
   coste.value = "";
+  tarifaNocturna.value = "";
   pausa.value = 0;
   horaPausa.value = "";
   reiniciarHorario();
@@ -376,6 +379,9 @@ async function guardar() {
     }
     if (grupo.value === "ETT" && coste.value !== "" && coste.value !== null) {
       alta.coste = numero(coste.value);
+    }
+    if (grupo.value === "ETT" && tarifaNocturna.value !== "" && tarifaNocturna.value !== null) {
+      alta.tarifa_nocturna = numero(tarifaNocturna.value);
     }
     if (muestraHorario.value) {
       const horario = horarioAlta.value?.horarioDias();
@@ -622,6 +628,9 @@ onUnmounted(() => {
     <button type="button" :class="{ activo: vista === 'cobertura' }" @click="vista = 'cobertura'">
       Cobertura
     </button>
+    <button type="button" :class="{ activo: vista === 'costes' }" @click="vista = 'costes'">
+      Costes
+    </button>
     <button type="button" :class="{ activo: vista === 'equipo' }" @click="vista = 'equipo'">
       Equipo
     </button>
@@ -670,6 +679,12 @@ onUnmounted(() => {
   </div>
   <Cobertura
     v-if="vista === 'cobertura' && departamentosCargados"
+    :key="departamentoId || 'propio'"
+    :token="token"
+    :departamento-id="departamentoId"
+  />
+  <Costes
+    v-if="vista === 'costes' && departamentosCargados"
     :key="departamentoId || 'propio'"
     :token="token"
     :departamento-id="departamentoId"
@@ -823,9 +838,14 @@ onUnmounted(() => {
             </label>
           </div>
           <label v-if="grupo === 'ETT'" class="ancho">
-            Coste (€/hora)
+            Tarifa diurna (€/hora)
             <input v-model="coste" name="coste" type="number" min="0" step="0.0001" />
           </label>
+          <label v-if="grupo === 'ETT'" class="ancho">
+            Tarifa nocturna (€/hora)
+            <input v-model="tarifaNocturna" name="tarifa-nocturna" type="number" min="0" step="0.0001" />
+          </label>
+          <p v-if="grupo === 'ETT'" class="ancho campo-pista">Si no la indicas, las horas nocturnas se calculan a tarifa diurna.</p>
           <label class="ancho">
             Pausa
             <DuracionPausa v-model="pausa" />
