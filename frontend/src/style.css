@@ -2324,15 +2324,6 @@ table.cuadrante tfoot td:first-child {
   flex-wrap: wrap;
 }
 
-.dia-festivo {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-top: 4px;
-  border-radius: 50%;
-  background: var(--festivo-tx);
-}
-
 table.cuadrante tbody td {
   height: 1px;
   padding: 3px;

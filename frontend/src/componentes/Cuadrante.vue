@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import LeyendaTurnos from "./LeyendaTurnos.vue";
 import { horasPeriodo } from "../costes.js";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
@@ -73,6 +73,7 @@ const franjas = [
   { id: "tarde", nombre: "Total tarde" },
 ];
 const modo = ref("semana");
+const ampliado = ref(false);
 const semanaDesde = ref("");
 const anioMes = ref(0);
 const numeroMes = ref(0);
@@ -797,12 +798,21 @@ defineExpose({ recargar: refrescar });
 const raiz = ref(null);
 
 function alAntesDeImprimir() {
+  document.body.style.overflow = "";
   const visible = raiz.value instanceof HTMLElement && raiz.value.offsetParent !== null;
   document.body.classList.toggle("imprimir-cuadrante", visible);
 }
 
 function alDespuesDeImprimir() {
   document.body.classList.remove("imprimir-cuadrante");
+  document.body.style.overflow = ampliado.value ? "hidden" : "";
+}
+
+function alTecla(evento) {
+  if (evento.key !== "Escape" || !ampliado.value || dialogo.value?.open) {
+    return;
+  }
+  ampliado.value = false;
 }
 
 function imprimir() {
@@ -825,14 +835,21 @@ async function exportar() {
   }
 }
 
+watch(ampliado, (activo) => {
+  document.body.style.overflow = activo ? "hidden" : "";
+});
+
 onMounted(() => {
   window.addEventListener("beforeprint", alAntesDeImprimir);
   window.addEventListener("afterprint", alDespuesDeImprimir);
+  window.addEventListener("keydown", alTecla);
 });
 
 onUnmounted(() => {
   window.removeEventListener("beforeprint", alAntesDeImprimir);
   window.removeEventListener("afterprint", alDespuesDeImprimir);
+  window.removeEventListener("keydown", alTecla);
+  ampliado.value = false;
   alDespuesDeImprimir();
 });
 
@@ -844,7 +861,12 @@ cargar(lunesDe(new Date()));
     v-if="cuadrante"
     ref="raiz"
     class="semana"
-    :class="{ lectura: !editable && !mandos, 'pagina-horizontal': modo === 'mes' }"
+    :class="{
+      lectura: !editable && !mandos,
+      'pagina-horizontal': modo === 'mes',
+      'cuadrante-ampliado': ampliado && !propia && !mandos,
+    }"
+    :style="ampliado && !propia && !mandos ? { '--dias': cuadrante.dias.length } : undefined"
   >
     <div class="semana-nav">
       <div class="vistas modo-vista">
@@ -866,6 +888,9 @@ cargar(lunesDe(new Date()));
         <span class="rango">{{ tituloMes }}</span>
         <button type="button" @click="moverMes(1)">Mes siguiente</button>
       </template>
+      <button v-if="!propia && !mandos" type="button" @click="ampliado = !ampliado">
+        {{ ampliado ? "Reducir" : "Ampliar" }}
+      </button>
       <button v-if="mandos" type="button" @click="emit('cambiar-horario')">Cambiar mi horario</button>
       <button type="button" class="cuadrante-imprimir" @click="imprimir">Imprimir</button>
       <button v-if="editable" type="button" class="cuadrante-exportar" @click="exportar">Exportar</button>
@@ -901,15 +926,14 @@ cargar(lunesDe(new Date()));
       <thead>
         <tr>
           <th>Trabajador</th>
-          <th v-for="(dia, indice) in cuadrante.dias" :key="dia" :class="{ fin: esFinDia(dia, indice) }">
+          <th
+            v-for="(dia, indice) in cuadrante.dias"
+            :key="dia"
+            :class="{ fin: esFinDia(dia, indice), 'col-festivo': nombreFestivo(indice) }"
+            :title="nombreFestivo(indice) || undefined"
+          >
             <span class="dia-nombre">{{ modo === "mes" ? diasCortos[diaSemana(dia)] : diasNombre[indice] }}</span>
             <span class="dia-numero">{{ modo === "mes" ? Number(dia.slice(8)) : fechaVisible(dia).slice(0, 5) }}</span>
-            <span
-              v-if="nombreFestivo(indice)"
-              class="dia-festivo"
-              :title="nombreFestivo(indice)"
-              :aria-label="nombreFestivo(indice)"
-            ></span>
           </th>
         </tr>
       </thead>
@@ -1168,5 +1192,82 @@ button.copiar-dias-atajo {
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+:deep(table.cuadrante thead th.col-festivo),
+:deep(table.cuadrante thead th.fin.col-festivo) {
+  background: color-mix(in srgb, var(--festivo-bg) 42%, var(--libranza-bg));
+}
+
+.cuadrante-ampliado {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg);
+}
+
+.cuadrante-ampliado .cuadrante-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+:deep(.cuadrante-ampliado table.cuadrante) {
+  width: 100%;
+  min-width: calc(7rem + var(--dias, 7) * 4.6rem);
+  table-layout: fixed;
+}
+
+:deep(.cuadrante-ampliado table.cuadrante th:not(:first-child)),
+:deep(.cuadrante-ampliado table.cuadrante td:not(:first-child)) {
+  min-width: 4.6rem;
+}
+
+:deep(.cuadrante-ampliado table.cuadrante thead th:first-child) {
+  width: 7rem;
+  z-index: 2;
+  background: var(--libranza-bg);
+}
+
+:deep(.cuadrante-ampliado table.cuadrante thead th:first-child),
+:deep(.cuadrante-ampliado table.cuadrante tbody th),
+:deep(.cuadrante-ampliado table.cuadrante tfoot td:first-child) {
+  position: sticky;
+  left: 0;
+}
+
+:deep(.cuadrante-ampliado table.cuadrante tbody th) {
+  z-index: 1;
+  background: var(--panel);
+}
+
+:deep(.cuadrante-ampliado table.cuadrante tbody tr.grupo-fila th) {
+  position: static;
+  z-index: auto;
+  width: auto;
+}
+
+:deep(.cuadrante-ampliado table.cuadrante tfoot td:first-child) {
+  z-index: 1;
+  background: #fafbfc;
+}
+
+@media print {
+  .cuadrante-ampliado {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    overflow: visible;
+    padding: 0;
+    background: transparent;
+  }
+
+  :deep(.cuadrante-ampliado table.cuadrante) {
+    width: auto;
+    min-width: 0;
+    table-layout: auto;
+  }
 }
 </style>
