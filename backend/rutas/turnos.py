@@ -103,6 +103,35 @@ def _mes(anio_texto, mes_texto):
     return [inicio + timedelta(days=i) for i in range(ultimo)], None
 
 
+def _anio(anio_texto):
+    if anio_texto in (None, ""):
+        return None, (jsonify(error="Faltan datos"), 400)
+    try:
+        anio = int(anio_texto)
+    except (TypeError, ValueError):
+        return None, (jsonify(error="La fecha no es válida"), 400)
+    if anio < 2000 or anio > 2100:
+        return None, (jsonify(error="La fecha no es válida"), 400)
+    inicio = datetime(anio, 1, 1).date()
+    fin = datetime(anio, 12, 31).date()
+    return [inicio + timedelta(days=i) for i in range((fin - inicio).days + 1)], None
+
+
+def _valor_anio(turno):
+    if not turno:
+        return ""
+    inicio = turno.get("hora_inicio")
+    fin = turno.get("hora_fin")
+    ausencia = turno.get("ausencia")
+    if ausencia in ("ST", "FT") and inicio and fin:
+        return f"{ausencia} {inicio}-{fin}"
+    if ausencia:
+        return ausencia
+    if inicio and fin:
+        return f"{inicio}-{fin}"
+    return ""
+
+
 def _ajustes_del_periodo(cur, ids, inicio, fin):
     if not ids:
         return {}
@@ -527,6 +556,67 @@ def listar_turnos_mes():
         desde=dias[0].isoformat(),
         dias=[dia.isoformat() for dia in dias],
         trabajadores=personas,
+    )
+
+
+@bp.get("/turnos/anio")
+@jwt_required()
+def listar_turnos_anio():
+    if get_jwt().get("rol") not in ("mando", "admin"):
+        return jsonify(error="No autorizado"), 403
+    dias, error = _anio(request.args.get("anio"))
+    if error:
+        return error
+
+    try:
+        with cursor() as cur:
+            departamento_id, error = _departamento_lectura(cur)
+            if error:
+                return error
+            cur.execute(
+                """
+                SELECT u.id, u.nombre, u.login, u.grupo, u.activo, s.nombre AS seccion
+                FROM usuario u
+                LEFT JOIN seccion s ON s.id = u.seccion_id
+                WHERE u.rol = 'trabajador' AND u.departamento_id = %s
+                ORDER BY u.nombre
+                """,
+                (departamento_id,),
+            )
+            trabajadores = cur.fetchall()
+            turnos, versiones, noche_inicio, noche_fin, habituales, pausas = _material_rango(
+                cur, [trabajador["id"] for trabajador in trabajadores], dias[0], dias[-1]
+            )
+            festivos = _festivos_rango(cur, dias[0], dias[-1])
+            trabajadores = [
+                trabajador
+                for trabajador in trabajadores
+                if _visible_en_semana(trabajador, dias, turnos)
+            ]
+    except SinBaseDeDatos:
+        return jsonify(error="Base de datos no configurada"), 503
+    except psycopg.Error as exc:
+        return error_bd(exc)
+
+    personas = _trabajadores_resueltos(
+        trabajadores, dias, turnos, versiones, noche_inicio, noche_fin, festivos, habituales, pausas
+    )
+    return jsonify(
+        anio=dias[0].year,
+        dias=[dia.isoformat() for dia in dias],
+        festivos={
+            fecha.isoformat(): nombre for fecha, nombre in festivos.items()
+        },
+        trabajadores=[
+            {
+                "nombre": persona["nombre"],
+                "login": persona["login"],
+                "grupo": persona["grupo"],
+                "seccion": trabajador["seccion"],
+                "dias": [_valor_anio(dia["turno"]) for dia in persona["dias"]],
+            }
+            for persona, trabajador in zip(personas, trabajadores)
+        ],
     )
 
 
