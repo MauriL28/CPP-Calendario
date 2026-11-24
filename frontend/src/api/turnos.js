@@ -28,6 +28,14 @@ export function semana(token, desde, propia, departamentoId) {
   return pedir(`${ruta}?${consulta}`, { token });
 }
 
+export function anio(token, anio, departamentoId) {
+  const consulta = new URLSearchParams({ anio: String(anio) });
+  if (departamentoId) {
+    consulta.set("departamento_id", departamentoId);
+  }
+  return pedir(`/turnos/anio?${consulta}`, { token });
+}
+
 export function mes(token, anio, mesNumero, propia, departamentoId) {
   const ruta = propia ? "/turnos/mios/mes" : "/turnos/mes";
   const consulta = new URLSearchParams({ anio: String(anio), mes: String(mesNumero) });

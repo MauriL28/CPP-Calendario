@@ -1,10 +1,11 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import CeldaCuadrante from "./CeldaCuadrante.vue";
 import LeyendaTurnos from "./LeyendaTurnos.vue";
 import { horasPeriodo } from "../costes.js";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
 import { GRUPOS } from "../personas.js";
-import { borrarAusenciaMando, borrarTurno, copiarSemana, exportarCuadrante, guardarAusenciasMando, guardarTurno, guardarTurnos, mes, mesMandos, semana, semanaActual, semanaMandos } from "../api/turnos.js";
+import { anio, borrarAusenciaMando, borrarTurno, copiarSemana, exportarCuadrante, guardarAusenciasMando, guardarTurno, guardarTurnos, mes, mesMandos, semana, semanaActual, semanaMandos } from "../api/turnos.js";
 
 const emit = defineEmits(["cambiar-horario"]);
 
@@ -77,7 +78,11 @@ const ampliado = ref(false);
 const semanaDesde = ref("");
 const anioMes = ref(0);
 const numeroMes = ref(0);
+const anioVista = ref(0);
 const cuadrante = ref(null);
+const vistaAnio = ref(null);
+const tablaAnio = ref(null);
+const marcoCuadrante = ref(null);
 const periodoAnterior = ref(null);
 let solicitudAnterior = 0;
 const errorSemana = ref("");
@@ -129,8 +134,9 @@ const muestraEquipo = computed(
 );
 
 const secciones = computed(() => {
+  const fuente = modo.value === "anio" ? vistaAnio.value : cuadrante.value;
   const nombres = new Set();
-  for (const trabajador of cuadrante.value?.trabajadores || []) {
+  for (const trabajador of fuente?.trabajadores || []) {
     if (trabajador.seccion) {
       nombres.add(trabajador.seccion);
     }
@@ -159,8 +165,7 @@ function trabajadoresDe(datos) {
 
 const trabajadoresCuadrante = computed(() => trabajadoresDe(cuadrante.value));
 
-const filasCuadrante = computed(() => {
-  const lista = trabajadoresCuadrante.value;
+function filasDe(lista) {
   if (props.propia && !props.mandos && modo.value !== "semana") {
     return lista.map((trabajador) => ({ tipo: "persona", trabajador }));
   }
@@ -192,6 +197,31 @@ const filasCuadrante = computed(() => {
     }
   }
   return filas;
+}
+
+const filasCuadrante = computed(() => filasDe(trabajadoresCuadrante.value));
+const filasAnio = computed(() => filasDe(trabajadoresDe(vistaAnio.value)));
+
+const mesesAnio = computed(() => {
+  const grupos = [];
+  let cursor = 0;
+  for (const iso of vistaAnio.value?.dias || []) {
+    const mes = Number(iso.slice(5, 7));
+    const ultimo = grupos[grupos.length - 1];
+    if (!ultimo || ultimo.mes !== mes) {
+      grupos.push({
+        mes,
+        dias: 1,
+        indice: cursor,
+        nombre: mesesLargos[mes - 1],
+        corto: mesesLargos[mes - 1].slice(0, 3).toUpperCase(),
+      });
+    } else {
+      ultimo.dias += 1;
+    }
+    cursor += 1;
+  }
+  return grupos;
 });
 
 async function cargar(desde) {
@@ -265,16 +295,131 @@ function partes(iso) {
   return iso.split("-").map(Number);
 }
 
+function hoyMadrid() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function diaSemana(iso) {
   const [anio, mesNumero, dia] = partes(iso);
   return new Date(anio, mesNumero - 1, dia).getDay();
+}
+
+function turnoDeValor(valor) {
+  if (!valor) {
+    return null;
+  }
+  const espacio = valor.indexOf(" ");
+  if (espacio > 0) {
+    const [inicio, fin] = valor.slice(espacio + 1).split("-");
+    return { ausencia: valor.slice(0, espacio), hora_inicio: inicio, hora_fin: fin };
+  }
+  if (valor.includes(":")) {
+    const [inicio, fin] = valor.split("-");
+    return { hora_inicio: inicio, hora_fin: fin };
+  }
+  return { ausencia: valor };
+}
+
+function prepararAnio(datos) {
+  const festivos = datos.festivos || {};
+  for (const trabajador of datos.trabajadores || []) {
+    trabajador.dias = (datos.dias || []).map((fecha, indice) => {
+      const dia = {
+        fecha,
+        turno: turnoDeValor(trabajador.dias?.[indice] || ""),
+        festivo: Boolean(festivos[fecha]),
+      };
+      if (festivos[fecha]) {
+        dia.nombre = festivos[fecha];
+      }
+      return dia;
+    });
+  }
+  return datos;
+}
+
+function indiceAnioVisible() {
+  const dias = vistaAnio.value?.dias || [];
+  const hoy = hoyMadrid();
+  if (vistaAnio.value?.anio === Number(hoy.slice(0, 4))) {
+    const indice = dias.indexOf(hoy);
+    return indice >= 0 ? indice : 0;
+  }
+  return 0;
+}
+
+function irADia(indice) {
+  const marco = marcoCuadrante.value;
+  const tabla = tablaAnio.value;
+  if (!marco || !tabla) {
+    return;
+  }
+  const celda = tabla.querySelector(`thead tr.anio-dias th[data-dia="${indice}"]`);
+  if (!celda) {
+    return;
+  }
+  const nombre = tabla.querySelector("thead th");
+  const ancho = nombre?.getBoundingClientRect().width || 0;
+  const destino = celda.getBoundingClientRect().left - marco.getBoundingClientRect().left + marco.scrollLeft - ancho;
+  marco.scrollLeft = Math.max(0, destino);
+}
+
+async function cargarAnio(anioNumero) {
+  errorSemana.value = "";
+  avisoCopia.value = "";
+  if (dialogo.value?.open) {
+    dialogo.value.close();
+  }
+  try {
+    const datos = prepararAnio(await anio(props.token, anioNumero, props.departamentoId));
+    vistaAnio.value = datos;
+    anioVista.value = datos.anio;
+    await nextTick();
+    requestAnimationFrame(() => irADia(indiceAnioVisible()));
+  } catch (causa) {
+    errorSemana.value = causa instanceof Error ? causa.message : "No se pudo cargar el año";
+  }
+}
+
+function moverAnio(delta) {
+  cargarAnio(anioVista.value + delta);
+}
+
+function irAHoy() {
+  irADia(indiceAnioVisible());
 }
 
 function cambiarModo(nuevo) {
   if (nuevo === modo.value) {
     return;
   }
+  const anterior = modo.value;
   modo.value = nuevo;
+  if (nuevo === "anio") {
+    const anioVisible = anterior === "mes"
+      ? anioMes.value
+      : partes(semanaDesde.value || lunesDe(new Date()))[0];
+    cargarAnio(anioVisible);
+    return;
+  }
+  if (anterior === "anio") {
+    if (nuevo === "mes") {
+      if (anioMes.value) {
+        cargarMes(anioMes.value, numeroMes.value);
+        return;
+      }
+      const [anioNumero, mesNumero] = partes(semanaDesde.value || lunesDe(new Date()));
+      cargarMes(anioNumero, mesNumero);
+      return;
+    }
+    cargar(semanaDesde.value || lunesDe(new Date()));
+    return;
+  }
   if (nuevo === "mes") {
     const [anio, mesNumero] = partes(semanaDesde.value || lunesDe(new Date()));
     cargarMes(anio, mesNumero);
@@ -298,7 +443,7 @@ function esFin(indice) {
 }
 
 function esFinDia(dia, indice) {
-  if (modo.value !== "mes") {
+  if (modo.value === "semana") {
     return esFin(indice);
   }
   const semanaDia = diaSemana(dia);
@@ -866,7 +1011,7 @@ cargar(lunesDe(new Date()));
       'pagina-horizontal': modo === 'mes',
       'cuadrante-ampliado': ampliado && !propia && !mandos,
     }"
-    :style="ampliado && !propia && !mandos ? { '--dias': cuadrante.dias.length } : undefined"
+    :style="ampliado && !propia && !mandos ? { '--dias': modo === 'anio' && vistaAnio ? vistaAnio.dias.length : cuadrante.dias.length } : undefined"
   >
     <div class="semana-nav">
       <div class="vistas modo-vista">
@@ -876,6 +1021,14 @@ cargar(lunesDe(new Date()));
         <button type="button" :class="{ activo: modo === 'mes' }" @click="cambiarModo('mes')">
           Mensual
         </button>
+        <button
+          v-if="!propia && !mandos"
+          type="button"
+          :class="{ activo: modo === 'anio' }"
+          @click="cambiarModo('anio')"
+        >
+          Año
+        </button>
       </div>
       <template v-if="modo === 'semana'">
         <button type="button" @click="cargar(sumarDias(semanaDesde, -7))">Semana anterior</button>
@@ -883,17 +1036,23 @@ cargar(lunesDe(new Date()));
         <button type="button" @click="cargar(sumarDias(semanaDesde, 7))">Semana siguiente</button>
         <button v-if="editable" type="button" @click="copiar">Copiar semana anterior</button>
       </template>
-      <template v-else>
+      <template v-else-if="modo === 'mes'">
         <button type="button" @click="moverMes(-1)">Mes anterior</button>
         <span class="rango">{{ tituloMes }}</span>
         <button type="button" @click="moverMes(1)">Mes siguiente</button>
+      </template>
+      <template v-else>
+        <button type="button" @click="moverAnio(-1)">Año anterior</button>
+        <span class="rango">{{ anioVista }}</span>
+        <button type="button" @click="moverAnio(1)">Año siguiente</button>
+        <button type="button" @click="irAHoy">Hoy</button>
       </template>
       <button v-if="!propia && !mandos" type="button" @click="ampliado = !ampliado">
         {{ ampliado ? "Reducir" : "Ampliar" }}
       </button>
       <button v-if="mandos" type="button" @click="emit('cambiar-horario')">Cambiar mi horario</button>
-      <button type="button" class="cuadrante-imprimir" @click="imprimir">Imprimir</button>
-      <button v-if="editable" type="button" class="cuadrante-exportar" @click="exportar">Exportar</button>
+      <button v-if="modo !== 'anio'" type="button" class="cuadrante-imprimir" @click="imprimir">Imprimir</button>
+      <button v-if="editable && modo !== 'anio'" type="button" class="cuadrante-exportar" @click="exportar">Exportar</button>
     </div>
     <p v-if="!editable && !mandos" class="aviso-lectura">Solo lectura</p>
     <p v-if="muestraEquipo" class="equipo-semana">Equipo de esta semana</p>
@@ -913,7 +1072,7 @@ cargar(lunesDe(new Date()));
         {{ nombre }}
       </button>
     </div>
-    <div v-if="!propia && !mandos" class="cuadrante-horas">
+    <div v-if="!propia && !mandos && modo !== 'anio'" class="cuadrante-horas">
       <article v-for="tarjeta in resumenHoras" :key="tarjeta.id" :class="tarjeta.id">
         <p class="lb">{{ tarjeta.nombre }}</p>
         <p class="vl">
@@ -921,8 +1080,77 @@ cargar(lunesDe(new Date()));
         </p>
       </article>
     </div>
-    <div class="cuadrante-scroll" :class="{ mensual: modo === 'mes' }">
-    <table class="cuadrante" :class="{ mensual: modo === 'mes' }">
+    <div v-if="modo === 'anio' && vistaAnio" class="anio-chips">
+      <button
+        v-for="mes in mesesAnio"
+        :key="mes.mes"
+        type="button"
+        class="anio-chip"
+        @click="irADia(mes.indice)"
+      >
+        {{ mes.corto }}
+      </button>
+    </div>
+    <div ref="marcoCuadrante" class="cuadrante-scroll" :class="{ mensual: modo === 'mes' || modo === 'anio', anual: modo === 'anio' }">
+    <table
+      v-if="modo === 'anio' && vistaAnio"
+      ref="tablaAnio"
+      class="cuadrante mensual anual"
+    >
+      <thead>
+        <tr class="anio-meses">
+          <th rowspan="2">Trabajador</th>
+          <th v-for="mes in mesesAnio" :key="mes.mes" :colspan="mes.dias" :class="{ 'mes-inicio': mes.indice > 0 }">
+            <button type="button" class="anio-mes" @click="irADia(mes.indice)">{{ mes.nombre }}</button>
+          </th>
+        </tr>
+        <tr class="anio-dias">
+          <th
+            v-for="(dia, indice) in vistaAnio.dias"
+            :key="dia"
+            :data-dia="indice"
+            :class="{
+              fin: esFinDia(dia, indice),
+              'col-festivo': vistaAnio.festivos[dia],
+              'mes-inicio': indice > 0 && dia.endsWith('-01'),
+            }"
+            :title="vistaAnio.festivos[dia] || undefined"
+          >
+            <span class="dia-nombre">{{ diasCortos[diaSemana(dia)] }}</span>
+            <span class="dia-numero">{{ Number(dia.slice(8)) }}</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <template v-for="fila in filasAnio" :key="fila.tipo === 'grupo' ? fila.id : claveTrabajador(fila.trabajador)">
+          <tr v-if="fila.tipo === 'grupo'" class="grupo-fila">
+            <th class="grupo-anio-nombre">{{ fila.titulo }}</th>
+            <td class="grupo-anio-resto" :colspan="vistaAnio.dias.length"></td>
+          </tr>
+          <tr v-else>
+            <th>{{ fila.trabajador.nombre }}</th>
+            <td
+              v-for="(dia, indice) in fila.trabajador.dias"
+              :key="dia.fecha"
+              :class="[
+                esFinDia(dia.fecha, indice) ? 'fin' : '',
+                familia(dia.turno) ? `turno-${familia(dia.turno)}` : '',
+                indice > 0 && dia.fecha.endsWith('-01') ? 'mes-inicio' : '',
+              ]"
+            >
+              <CeldaCuadrante
+                :lectura="!mandos"
+                :titulo="tituloCelda(fila.trabajador, dia)"
+                :ajuste="muestraAjuste(dia)"
+                :partido="Boolean(textoPartido(fila.trabajador, dia))"
+                :texto="textoVisible(fila.trabajador, dia)"
+              />
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <table v-else-if="modo !== 'anio'" class="cuadrante" :class="{ mensual: modo === 'mes' }">
       <thead>
         <tr>
           <th>Trabajador</th>
@@ -949,32 +1177,15 @@ cargar(lunesDe(new Date()));
               :key="dia.fecha"
               :class="[esFinDia(dia.fecha, indice) ? 'fin' : '', familia(dia.turno) ? `turno-${familia(dia.turno)}` : '']"
             >
-              <button
-                v-if="editable || (mandos && esMio(fila.trabajador))"
-                type="button"
-                class="celda"
-                :title="tituloCelda(fila.trabajador, dia)"
-                @click="abrirCelda(fila.trabajador, dia)"
-              >
-                <span v-if="muestraAjuste(dia)" class="ajuste-marca">
-                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                    <path d="M2.2 13.8 5 13.1 13.2 4.9 11.1 2.8 2.9 11Z" />
-                    <path d="M9.4 4.5 11.5 6.6" />
-                    <path d="M3.2 11.4 4.6 12.8" />
-                  </svg>
-                </span>
-                <span :class="{ 'celda-partida': textoPartido(fila.trabajador, dia) }">{{ textoVisible(fila.trabajador, dia) }}</span>
-              </button>
-              <span v-else class="celda" :class="{ lectura: !mandos }" :title="tituloCelda(fila.trabajador, dia)">
-                <span v-if="muestraAjuste(dia)" class="ajuste-marca">
-                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                    <path d="M2.2 13.8 5 13.1 13.2 4.9 11.1 2.8 2.9 11Z" />
-                    <path d="M9.4 4.5 11.5 6.6" />
-                    <path d="M3.2 11.4 4.6 12.8" />
-                  </svg>
-                </span>
-                <span :class="{ 'celda-partida': textoPartido(fila.trabajador, dia) }">{{ textoVisible(fila.trabajador, dia) }}</span>
-              </span>
+              <CeldaCuadrante
+                :pulsable="editable || (mandos && esMio(fila.trabajador))"
+                :lectura="!mandos"
+                :titulo="tituloCelda(fila.trabajador, dia)"
+                :ajuste="muestraAjuste(dia)"
+                :partido="Boolean(textoPartido(fila.trabajador, dia))"
+                :texto="textoVisible(fila.trabajador, dia)"
+                @abrir="abrirCelda(fila.trabajador, dia)"
+              />
             </td>
           </tr>
         </template>
@@ -1153,47 +1364,6 @@ button.copiar-dias-atajo {
   color: var(--text-3);
 }
 
-.celda-partida {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 11.5px;
-  white-space: nowrap;
-}
-
-.celda {
-  position: relative;
-}
-
-.ajuste-marca {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid #fff;
-  border-radius: 50%;
-  background: var(--accent-darker);
-  color: #fff;
-  pointer-events: none;
-  cursor: default;
-}
-
-.ajuste-marca svg {
-  display: block;
-  width: 10px;
-  height: 10px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 :deep(table.cuadrante thead th.col-festivo),
 :deep(table.cuadrante thead th.fin.col-festivo) {
   background: color-mix(in srgb, var(--festivo-bg) 42%, var(--libranza-bg));
@@ -1270,4 +1440,67 @@ button.copiar-dias-atajo {
     table-layout: auto;
   }
 }
+
+.anio-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.anio-chips button.anio-chip {
+  padding: 3px 8px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+:deep(table.cuadrante.anual thead tr.anio-dias th:first-child),
+:deep(.cuadrante-ampliado table.cuadrante.anual thead tr.anio-dias th:first-child) {
+  position: static;
+  left: auto;
+  z-index: auto;
+  width: auto;
+  min-width: 4.6rem;
+  padding-left: 0.25rem;
+  text-align: center;
+}
+
+:deep(.cuadrante-ampliado table.cuadrante.anual thead tr.anio-dias th:first-child:not(.col-festivo)) {
+  background: var(--libranza-bg);
+}
+
+:deep(table.cuadrante.anual th.mes-inicio),
+:deep(table.cuadrante.anual td.mes-inicio) {
+  border-left: 2px solid var(--border-strong);
+}
+
+:deep(table.cuadrante.anual tbody tr.grupo-fila th.grupo-anio-nombre),
+:deep(.cuadrante-ampliado table.cuadrante.anual tbody tr.grupo-fila th.grupo-anio-nombre) {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 7rem;
+  min-width: 7rem;
+  max-width: 7rem;
+  background: var(--bg);
+}
+
+:deep(table.cuadrante.anual tbody tr.grupo-fila td.grupo-anio-resto) {
+  background: var(--bg);
+}
+
+:deep(table.cuadrante.anual .anio-meses button.anio-mes) {
+  width: 100%;
+  margin: 0;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
 </style>
