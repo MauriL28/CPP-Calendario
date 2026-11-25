@@ -19,7 +19,8 @@ CROSS JOIN (VALUES
 ON CONFLICT (delegacion_id, codigo) DO NOTHING;
 
 UPDATE departamento
-SET usa_horario_habitual = FALSE
+SET usa_horario_habitual = FALSE,
+    usa_seguimiento = TRUE
 WHERE codigo = 'muelle';
 
 INSERT INTO seccion (departamento_id, nombre)

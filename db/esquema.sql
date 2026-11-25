@@ -33,6 +33,7 @@ CREATE TABLE departamento (
     nombre          VARCHAR(120) NOT NULL,
     orden           INTEGER      NOT NULL DEFAULT 0,
     usa_horario_habitual BOOLEAN NOT NULL DEFAULT TRUE,
+    usa_seguimiento      BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE (delegacion_id, codigo)
 );
 
@@ -82,6 +83,22 @@ CREATE TABLE mando_departamento (
     departamento_id  UUID NOT NULL REFERENCES departamento (id),
     PRIMARY KEY (usuario_id, departamento_id)
 );
+
+-- Toneladas previstas de la semana. semana_inicio es siempre lunes.
+CREATE TABLE seguimiento_semana (
+    departamento_id  UUID NOT NULL REFERENCES departamento (id),
+    semana_inicio    DATE NOT NULL,
+    toneladas        NUMERIC(10, 2) NOT NULL CHECK (toneladas >= 0),
+    detalle          JSONB,
+    fila_base        TEXT,
+    actualizado_por  UUID REFERENCES usuario (id),
+    actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (departamento_id, semana_inicio)
+);
+
+UPDATE departamento
+SET usa_seguimiento = TRUE
+WHERE codigo = 'muelle';
 
 -- Un número de personal SAP identifica a una sola persona en toda la empresa.
 CREATE UNIQUE INDEX usuario_numero_sap

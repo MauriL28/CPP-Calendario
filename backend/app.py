@@ -8,6 +8,7 @@ from rutas.festivos import bp as festivos_bp
 from rutas.fichajes import LIMITE_BYTES, MARGEN_MULTIPARTE
 from rutas.fichajes import bp as fichajes_bp
 from rutas.salud import registrar as registrar_salud
+from rutas.seguimiento import bp as seguimiento_bp
 from rutas.trabajadores import bp as trabajadores_bp
 from rutas.turnos import bp as turnos_bp
 from rutas.usuarios import bp as usuarios_bp
@@ -26,6 +27,7 @@ def create_app():
     app.register_blueprint(turnos_bp)
     app.register_blueprint(fichajes_bp)
     app.register_blueprint(festivos_bp)
+    app.register_blueprint(seguimiento_bp)
     registrar_salud(app)
 
     @app.errorhandler(RequestEntityTooLarge)

@@ -50,7 +50,7 @@ def departamentos():
             cur.execute(
                 f"""
                 SELECT g.codigo AS delegacion, d.id, d.codigo, d.nombre, d.orden,
-                       d.usa_horario_habitual,
+                       d.usa_horario_habitual, d.usa_seguimiento,
                        s.id AS seccion_id, s.nombre AS seccion
                 FROM departamento d
                 JOIN delegacion g ON g.id = d.delegacion_id
@@ -86,6 +86,7 @@ def departamentos():
                 "nombre": fila["nombre"],
                 "orden": fila["orden"],
                 "usa_horario_habitual": fila["usa_horario_habitual"],
+                "usa_seguimiento": bool(fila.get("usa_seguimiento", False)),
                 "secciones": [],
                 "mandos": [],
                 "trabajadores": [],

@@ -1,0 +1,338 @@
+from datetime import date
+from unittest.mock import patch
+
+from app import create_app
+from seguridad import emitir_token
+
+ADMIN = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+MANDO = "93c2848c-a3e7-406f-b4aa-63a70c353b31"
+TRABAJADOR = "11111111-1111-1111-1111-111111111111"
+DEPARTAMENTO = "bdc0a198-ac3a-47ef-84f3-d834f2adf608"
+OTRO = "00000000-0000-0000-0000-000000000099"
+LUNES = date(2026, 11, 23)
+MIERCOLES = "2026-11-25"
+
+
+class Conexion:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def __enter__(self):
+        return self.cursor
+
+    def __exit__(self, *_args):
+        return False
+
+
+class Cursor:
+    def __init__(self, seguimiento=True, propio=DEPARTAMENTO):
+        self.seguimiento = seguimiento
+        self.propio = propio
+        self.filas = {}
+        self.autor = None
+        self._fila = None
+
+    def execute(self, sql, params=None):
+        texto = " ".join(sql.split())
+        params = params or ()
+        self._fila = None
+        if texto.startswith("SELECT id FROM departamento"):
+            self._fila = {"id": params[0]} if str(params[0]) == DEPARTAMENTO else None
+        elif texto.startswith("SELECT rol, departamento_id"):
+            self._fila = {"rol": "mando", "departamento_id": self.propio}
+        elif texto.startswith("SELECT departamento_id FROM mando_departamento"):
+            self._fila = None
+        elif texto.startswith("SELECT departamento_id"):
+            self._fila = {"departamento_id": self.propio}
+        elif texto.startswith("SELECT usa_seguimiento"):
+            self._fila = {"usa_seguimiento": self.seguimiento}
+        elif texto.startswith("SELECT toneladas") or texto.startswith("SELECT detalle, fila_base"):
+            self._fila = self.filas.get((str(params[0]), params[1]))
+        elif texto.startswith("DELETE FROM seguimiento_semana"):
+            self.filas.pop((str(params[0]), params[1]), None)
+        elif texto.startswith("INSERT INTO seguimiento_semana"):
+            detalle = params[3]
+            if detalle is not None and hasattr(detalle, "obj"):
+                detalle = detalle.obj
+            self.filas[(str(params[0]), params[1])] = {
+                "toneladas": params[2],
+                "detalle": detalle,
+                "fila_base": params[4],
+            }
+            self.autor = params[5]
+        else:
+            raise AssertionError(texto)
+
+    def fetchone(self):
+        return self._fila
+
+    def fetchall(self):
+        return []
+
+
+def token(app, rol, usuario):
+    with app.app_context():
+        return emitir_token(usuario, rol, ["60I"], "Ana", "Tráfico")
+
+
+def pedir(metodo, ruta, rol, usuario, cursor, json=None):
+    app = create_app()
+    with patch("rutas.seguimiento.cursor", return_value=Conexion(cursor)):
+        return getattr(app.test_client(), metodo)(
+            ruta,
+            json=json,
+            headers={"Authorization": f"Bearer {token(app, rol, usuario)}"},
+        )
+
+
+def test_la_lectura_vacia_devuelve_toneladas_null():
+    respuesta = pedir(
+        "get",
+        f"/seguimiento?semana={LUNES.isoformat()}&departamento_id={DEPARTAMENTO}",
+        "admin",
+        ADMIN,
+        Cursor(),
+    )
+    assert respuesta.status_code == 200
+    assert respuesta.get_json() == {
+        "semana_inicio": "2026-11-23",
+        "toneladas": None,
+        "detalle": None,
+        "fila_base": None,
+    }
+
+
+def test_guardar_y_releer():
+    cursor = Cursor()
+    guardado = pedir(
+        "put",
+        "/seguimiento",
+        "mando",
+        MANDO,
+        cursor,
+        {"semana": LUNES.isoformat(), "toneladas": 12.5},
+    )
+    leido = pedir(
+        "get",
+        f"/seguimiento?semana={LUNES.isoformat()}",
+        "mando",
+        MANDO,
+        cursor,
+    )
+    assert guardado.status_code == 200
+    assert guardado.get_json() == {"semana_inicio": "2026-11-23", "toneladas": 12.5}
+    assert leido.get_json()["toneladas"] == 12.5
+    assert cursor.autor == MANDO
+
+
+def test_una_fecha_a_mitad_de_semana_cae_en_el_lunes():
+    cursor = Cursor()
+    pedir(
+        "put",
+        "/seguimiento",
+        "admin",
+        ADMIN,
+        cursor,
+        {"semana": MIERCOLES, "toneladas": 3, "departamento_id": DEPARTAMENTO},
+    )
+    respuesta = pedir(
+        "get",
+        f"/seguimiento?semana={MIERCOLES}&departamento_id={DEPARTAMENTO}",
+        "admin",
+        ADMIN,
+        cursor,
+    )
+    assert respuesta.status_code == 200
+    assert respuesta.get_json()["semana_inicio"] == "2026-11-23"
+    assert respuesta.get_json()["toneladas"] == 3
+
+
+def test_toneladas_no_validas_dan_400():
+    cursor = Cursor()
+    for toneladas in (-1, 1.234, "abc", True):
+        respuesta = pedir(
+            "put",
+            "/seguimiento",
+            "admin",
+            ADMIN,
+            cursor,
+            {"semana": LUNES.isoformat(), "toneladas": toneladas, "departamento_id": DEPARTAMENTO},
+        )
+        assert respuesta.status_code == 400
+
+
+def test_el_mando_no_escribe_en_otro_departamento():
+    respuesta = pedir(
+        "put",
+        "/seguimiento",
+        "mando",
+        MANDO,
+        Cursor(),
+        {"semana": LUNES.isoformat(), "toneladas": 1, "departamento_id": OTRO},
+    )
+    assert respuesta.status_code == 404
+
+
+def test_el_admin_necesita_departamento_y_con_el_lee():
+    cursor = Cursor()
+    sin_dato = pedir("get", f"/seguimiento?semana={LUNES.isoformat()}", "admin", ADMIN, cursor)
+    con_dato = pedir(
+        "get",
+        f"/seguimiento?semana={LUNES.isoformat()}&departamento_id={DEPARTAMENTO}",
+        "admin",
+        ADMIN,
+        cursor,
+    )
+    assert sin_dato.status_code == 400
+    assert con_dato.status_code == 200
+
+
+def test_sin_la_marca_responde_404():
+    cursor = Cursor(seguimiento=False)
+    lectura = pedir(
+        "get",
+        f"/seguimiento?semana={LUNES.isoformat()}&departamento_id={DEPARTAMENTO}",
+        "admin",
+        ADMIN,
+        cursor,
+    )
+    escritura = pedir(
+        "put",
+        "/seguimiento",
+        "admin",
+        ADMIN,
+        cursor,
+        {"semana": LUNES.isoformat(), "toneladas": 1, "departamento_id": DEPARTAMENTO},
+    )
+    assert lectura.status_code == 404
+    assert escritura.status_code == 404
+
+
+DETALLE = {
+    "filas": [
+        {
+            "nombre": "Prévision 2026",
+            "total": 1126870,
+            "dias": [13777, 143718, 213675, 166712, 168205, 420783],
+        }
+    ]
+}
+
+
+def _guardar(cursor, cuerpo):
+    return pedir(
+        "put",
+        "/seguimiento",
+        "mando",
+        MANDO,
+        cursor,
+        {"semana": LUNES.isoformat(), **cuerpo},
+    )
+
+
+def test_guardar_y_releer_el_detalle():
+    cursor = Cursor()
+    guardado = _guardar(
+        cursor,
+        {"toneladas": 1126.87, "detalle": DETALLE, "fila_base": "Prévision 2026"},
+    )
+    leido = pedir("get", f"/seguimiento?semana={LUNES.isoformat()}", "mando", MANDO, cursor)
+    assert guardado.status_code == 200
+    assert leido.status_code == 200
+    assert leido.get_json()["toneladas"] == 1126.87
+    assert leido.get_json()["detalle"] == DETALLE
+    assert leido.get_json()["fila_base"] == "Prévision 2026"
+
+
+def test_el_detalle_invalido_da_400():
+    cursor = Cursor()
+    corta = {"filas": [{"nombre": "Prévision 2026", "total": 10, "dias": [1, 2, 3, 4, 5]}]}
+    negativa = {"filas": [{"nombre": "Prévision 2026", "total": -1, "dias": [0, 0, 0, 0, 0, 0]}]}
+    dia_negativo = {"filas": [{"nombre": "Prévision 2026", "total": 0, "dias": [0, 0, -1, 0, 0, 0]}]}
+    muchas = {
+        "filas": [
+            {"nombre": f"Fila {indice}", "total": 0, "dias": [0, 0, 0, 0, 0, 0]}
+            for indice in range(11)
+        ]
+    }
+    for cuerpo in (
+        {"toneladas": 1, "detalle": corta, "fila_base": "Prévision 2026"},
+        {"toneladas": 1, "detalle": negativa},
+        {"toneladas": 1, "detalle": dia_negativo},
+        {"toneladas": 1, "detalle": muchas},
+        {"toneladas": 1, "detalle": DETALLE, "fila_base": "No existe"},
+    ):
+        assert _guardar(cursor, cuerpo).status_code == 400
+
+
+def test_un_put_sin_detalle_no_borra_el_que_hay():
+    cursor = Cursor()
+    primero = _guardar(
+        cursor,
+        {"toneladas": 1126.87, "detalle": DETALLE, "fila_base": "Prévision 2026"},
+    )
+    segundo = _guardar(cursor, {"toneladas": 10})
+    leido = pedir("get", f"/seguimiento?semana={LUNES.isoformat()}", "mando", MANDO, cursor)
+    assert primero.status_code == 200
+    assert segundo.status_code == 200
+    assert leido.get_json()["toneladas"] == 10
+    assert leido.get_json()["detalle"] == DETALLE
+    assert leido.get_json()["fila_base"] == "Prévision 2026"
+
+
+def test_borrar_y_releer():
+    cursor = Cursor()
+    _guardar(
+        cursor,
+        {"toneladas": 1126.87, "detalle": DETALLE, "fila_base": "Prévision 2026"},
+    )
+    borrado = pedir("delete", f"/seguimiento?semana={MIERCOLES}", "mando", MANDO, cursor)
+    leido = pedir("get", f"/seguimiento?semana={LUNES.isoformat()}", "mando", MANDO, cursor)
+    assert borrado.status_code == 204
+    assert leido.get_json()["toneladas"] is None
+    assert leido.get_json()["detalle"] is None
+    assert leido.get_json()["fila_base"] is None
+
+
+def test_borrar_lo_que_no_existe_responde_igual():
+    respuesta = pedir(
+        "delete",
+        f"/seguimiento?semana={LUNES.isoformat()}",
+        "mando",
+        MANDO,
+        Cursor(),
+    )
+    assert respuesta.status_code == 204
+
+
+def test_el_mando_no_borra_en_otro_departamento():
+    respuesta = pedir(
+        "delete",
+        f"/seguimiento?semana={LUNES.isoformat()}&departamento_id={OTRO}",
+        "mando",
+        MANDO,
+        Cursor(),
+    )
+    assert respuesta.status_code == 404
+
+
+def test_borrar_sin_la_marca_responde_404():
+    respuesta = pedir(
+        "delete",
+        f"/seguimiento?semana={LUNES.isoformat()}&departamento_id={DEPARTAMENTO}",
+        "admin",
+        ADMIN,
+        Cursor(seguimiento=False),
+    )
+    assert respuesta.status_code == 404
+
+
+def test_el_trabajador_recibe_403():
+    respuesta = pedir(
+        "get",
+        f"/seguimiento?semana={LUNES.isoformat()}&departamento_id={DEPARTAMENTO}",
+        "trabajador",
+        TRABAJADOR,
+        Cursor(),
+    )
+    assert respuesta.status_code == 403
