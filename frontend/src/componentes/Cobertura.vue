@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias } from "../fechas.js";
 import { GRUPOS } from "../personas.js";
 import { semana, semanaActual } from "../api/turnos.js";
+import NavegacionPeriodo from "./NavegacionPeriodo.vue";
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -354,12 +355,22 @@ cargar(semanaActual());
 <template>
   <section v-if="cuadrante" class="cobertura">
     <div class="semana-nav">
-      <button type="button" @click="moverSemana(-1)">Semana anterior</button>
-      <span class="rango">{{ tituloSemana }}</span>
-      <button type="button" @click="moverSemana(1)">Semana siguiente</button>
-      <button type="button" @click="moverDia(-1)">Día anterior</button>
-      <span class="rango">{{ tituloDia }}</span>
-      <button type="button" @click="moverDia(1)">Día siguiente</button>
+      <NavegacionPeriodo
+        anterior="Semana anterior"
+        siguiente="Semana siguiente"
+        @anterior="moverSemana(-1)"
+        @siguiente="moverSemana(1)"
+      >
+        {{ tituloSemana }}
+      </NavegacionPeriodo>
+      <NavegacionPeriodo
+        anterior="Día anterior"
+        siguiente="Día siguiente"
+        @anterior="moverDia(-1)"
+        @siguiente="moverDia(1)"
+      >
+        {{ tituloDia }}
+      </NavegacionPeriodo>
     </div>
     <div class="cuadrante-seccion">
       <button

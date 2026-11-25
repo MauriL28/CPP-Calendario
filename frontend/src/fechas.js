@@ -42,7 +42,7 @@ const DELEGACIONES = {
 
 const ROLES = {
   admin: "Administrador",
-  mando: "Mando",
+  mando: "Responsable",
   trabajador: "Trabajador",
 };
 

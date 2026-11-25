@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import CeldaCuadrante from "./CeldaCuadrante.vue";
 import LeyendaTurnos from "./LeyendaTurnos.vue";
+import NavegacionPeriodo from "./NavegacionPeriodo.vue";
 import { horasPeriodo } from "../costes.js";
 import { fechaVisible, lunesDe, rangoSemana, sumarDias, textoCelda } from "../fechas.js";
 import { GRUPOS } from "../personas.js";
@@ -941,8 +942,23 @@ async function refrescar() {
 defineExpose({ recargar: refrescar });
 
 const raiz = ref(null);
+const cuadro = ref(null);
+const lupa = ref(null);
+const cuadroAbierto = computed(() => ampliado.value && !props.propia && !props.mandos);
+
+function scrollDetras(oculto) {
+  const valor = oculto ? "hidden" : "";
+  document.documentElement.style.overflow = valor;
+  document.body.style.overflow = valor;
+}
+
+function enlazarCuadro(elemento) {
+  cuadro.value = elemento;
+  raiz.value = elemento;
+}
 
 function alAntesDeImprimir() {
+  document.documentElement.style.overflow = "";
   document.body.style.overflow = "";
   const visible = raiz.value instanceof HTMLElement && raiz.value.offsetParent !== null;
   document.body.classList.toggle("imprimir-cuadrante", visible);
@@ -950,14 +966,45 @@ function alAntesDeImprimir() {
 
 function alDespuesDeImprimir() {
   document.body.classList.remove("imprimir-cuadrante");
-  document.body.style.overflow = ampliado.value ? "hidden" : "";
+  scrollDetras(cuadroAbierto.value);
 }
 
-function alTecla(evento) {
-  if (evento.key !== "Escape" || !ampliado.value || dialogo.value?.open) {
+function cerrarAmpliar() {
+  if (!cuadroAbierto.value) {
     return;
   }
   ampliado.value = false;
+  nextTick(() => lupa.value?.focus());
+}
+
+function alTecla(evento) {
+  if (!cuadroAbierto.value || dialogo.value?.open) {
+    return;
+  }
+  if (evento.key === "Escape") {
+    evento.preventDefault();
+    cerrarAmpliar();
+    return;
+  }
+  if (evento.key !== "Tab" || !cuadro.value) {
+    return;
+  }
+  const lista = [...cuadro.value.querySelectorAll("button, a[href], input, select, textarea")].filter(
+    (elemento) => !elemento.disabled && elemento.tabIndex !== -1,
+  );
+  if (!lista.length) {
+    return;
+  }
+  const primero = lista[0];
+  const ultimo = lista[lista.length - 1];
+  const activo = document.activeElement;
+  if (!cuadro.value.contains(activo) || (evento.shiftKey && activo === primero) || activo === cuadro.value) {
+    evento.preventDefault();
+    (evento.shiftKey ? ultimo : primero).focus();
+  } else if (!evento.shiftKey && activo === ultimo) {
+    evento.preventDefault();
+    primero.focus();
+  }
 }
 
 function imprimir() {
@@ -980,8 +1027,11 @@ async function exportar() {
   }
 }
 
-watch(ampliado, (activo) => {
-  document.body.style.overflow = activo ? "hidden" : "";
+watch(cuadroAbierto, (activo) => {
+  scrollDetras(activo);
+  if (activo) {
+    nextTick(() => cuadro.value?.focus());
+  }
 });
 
 onMounted(() => {
@@ -995,6 +1045,7 @@ onUnmounted(() => {
   window.removeEventListener("afterprint", alDespuesDeImprimir);
   window.removeEventListener("keydown", alTecla);
   ampliado.value = false;
+  scrollDetras(false);
   alDespuesDeImprimir();
 });
 
@@ -1002,17 +1053,31 @@ cargar(lunesDe(new Date()));
 </script>
 
 <template>
+  <Teleport to="body" :disabled="!ampliado">
   <section
     v-if="cuadrante"
-    ref="raiz"
+    :ref="enlazarCuadro"
     class="semana"
     :class="{
       lectura: !editable && !mandos,
       'pagina-horizontal': modo === 'mes',
-      'cuadrante-ampliado': ampliado && !propia && !mandos,
+      'cuadrante-modal': cuadroAbierto,
     }"
-    :style="ampliado && !propia && !mandos ? { '--dias': modo === 'anio' && vistaAnio ? vistaAnio.dias.length : cuadrante.dias.length } : undefined"
+    :role="cuadroAbierto ? 'dialog' : undefined"
+    :aria-modal="cuadroAbierto ? 'true' : undefined"
+    aria-label="Cuadrante"
+    :tabindex="cuadroAbierto ? -1 : undefined"
   >
+    <div class="cuadrante-panel">
+    <button
+      v-if="cuadroAbierto"
+      type="button"
+      class="cuadrante-cerrar"
+      aria-label="Cerrar"
+      @click="cerrarAmpliar"
+    >
+      ×
+    </button>
     <div class="semana-nav">
       <div class="vistas modo-vista">
         <button type="button" :class="{ activo: modo === 'semana' }" @click="cambiarModo('semana')">
@@ -1027,49 +1092,90 @@ cargar(lunesDe(new Date()));
           :class="{ activo: modo === 'anio' }"
           @click="cambiarModo('anio')"
         >
-          Año
+          Anual
         </button>
       </div>
       <template v-if="modo === 'semana'">
-        <button type="button" @click="cargar(sumarDias(semanaDesde, -7))">Semana anterior</button>
-        <span class="rango">{{ rangoSemana(cuadrante.desde, cuadrante.dias[6]) }}</span>
-        <button type="button" @click="cargar(sumarDias(semanaDesde, 7))">Semana siguiente</button>
+        <NavegacionPeriodo
+          anterior="Semana anterior"
+          siguiente="Semana siguiente"
+          @anterior="cargar(sumarDias(semanaDesde, -7))"
+          @siguiente="cargar(sumarDias(semanaDesde, 7))"
+        >
+          {{ rangoSemana(cuadrante.desde, cuadrante.dias[6]) }}
+        </NavegacionPeriodo>
         <button v-if="editable" type="button" @click="copiar">Copiar semana anterior</button>
       </template>
       <template v-else-if="modo === 'mes'">
-        <button type="button" @click="moverMes(-1)">Mes anterior</button>
-        <span class="rango">{{ tituloMes }}</span>
-        <button type="button" @click="moverMes(1)">Mes siguiente</button>
+        <NavegacionPeriodo
+          anterior="Mes anterior"
+          siguiente="Mes siguiente"
+          @anterior="moverMes(-1)"
+          @siguiente="moverMes(1)"
+        >
+          {{ tituloMes }}
+        </NavegacionPeriodo>
       </template>
       <template v-else>
-        <button type="button" @click="moverAnio(-1)">Año anterior</button>
-        <span class="rango">{{ anioVista }}</span>
-        <button type="button" @click="moverAnio(1)">Año siguiente</button>
+        <NavegacionPeriodo
+          anterior="Año anterior"
+          siguiente="Año siguiente"
+          @anterior="moverAnio(-1)"
+          @siguiente="moverAnio(1)"
+        >
+          {{ anioVista }}
+        </NavegacionPeriodo>
         <button type="button" @click="irAHoy">Hoy</button>
       </template>
-      <button v-if="!propia && !mandos" type="button" @click="ampliado = !ampliado">
-        {{ ampliado ? "Reducir" : "Ampliar" }}
-      </button>
       <button v-if="mandos" type="button" @click="emit('cambiar-horario')">Cambiar mi horario</button>
       <button v-if="modo !== 'anio'" type="button" class="cuadrante-imprimir" @click="imprimir">Imprimir</button>
-      <button v-if="editable && modo !== 'anio'" type="button" class="cuadrante-exportar" @click="exportar">Exportar</button>
+      <button v-if="editable && modo !== 'anio'" type="button" class="cuadrante-exportar" @click="exportar">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="3" width="16" height="18" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <path d="M4 8.5 H20 M9.5 8.5 V21 M14.5 8.5 V21 M4 13.5 H20 M4 17.5 H20" fill="none" stroke="currentColor" stroke-width="1.4" />
+        </svg>
+        Exportar a Excel
+      </button>
     </div>
     <p v-if="!editable && !mandos" class="aviso-lectura">Solo lectura</p>
     <p v-if="muestraEquipo" class="equipo-semana">Equipo de esta semana</p>
     <p v-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
     <p v-if="avisoCopia" class="aviso-ok" role="status">{{ avisoCopia }}</p>
-    <div v-if="muestraSecciones" class="cuadrante-seccion">
-      <button type="button" :class="{ activo: seccionElegida === '' }" @click="seccionElegida = ''">
-        Todas
-      </button>
+    <div v-if="!propia && !mandos" class="cuadrante-seccion">
+      <template v-if="muestraSecciones">
+        <button type="button" :class="{ activo: seccionElegida === '' }" @click="seccionElegida = ''">
+          Todas
+        </button>
+        <button
+          v-for="nombre in opcionesSeccion"
+          :key="nombre"
+          type="button"
+          :class="{ activo: seccionElegida === nombre }"
+          @click="seccionElegida = nombre"
+        >
+          {{ nombre }}
+        </button>
+      </template>
       <button
-        v-for="nombre in opcionesSeccion"
-        :key="nombre"
+        v-if="!propia && !mandos"
+        ref="lupa"
         type="button"
-        :class="{ activo: seccionElegida === nombre }"
-        @click="seccionElegida = nombre"
+        class="boton-icono"
+        :title="cuadroAbierto ? 'Reducir' : 'Ampliar'"
+        :aria-label="cuadroAbierto ? 'Reducir' : 'Ampliar'"
+        @click="cuadroAbierto ? cerrarAmpliar() : (ampliado = true)"
       >
-        {{ nombre }}
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10" cy="10" r="6.25" fill="none" stroke="currentColor" stroke-width="2" />
+          <path d="M14.8 14.8 L20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          <path
+            :d="cuadroAbierto ? 'M7.5 10 H12.5' : 'M10 7.5 V12.5 M7.5 10 H12.5'"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+        </svg>
       </button>
     </div>
     <div v-if="!propia && !mandos && modo !== 'anio'" class="cuadrante-horas">
@@ -1203,8 +1309,10 @@ cargar(lunesDe(new Date()));
     </table>
     </div>
     <LeyendaTurnos />
+    </div>
   </section>
-  <p v-else-if="errorSemana" class="error" role="alert">{{ errorSemana }}</p>
+  </Teleport>
+  <p v-if="!cuadrante && errorSemana" class="error" role="alert">{{ errorSemana }}</p>
   <dialog ref="dialogo" class="editor-dia" @close="alCerrarCelda" @click="alFondo">
     <form v-if="celda" @submit.prevent="guardar">
       <header class="editor-dia-cabecera">
@@ -1369,75 +1477,132 @@ button.copiar-dias-atajo {
   background: color-mix(in srgb, var(--festivo-bg) 42%, var(--libranza-bg));
 }
 
-.cuadrante-ampliado {
+.cuadrante-panel {
+  display: contents;
+}
+
+.semana.lectura .cuadrante-panel > :not(.semana-nav):not(.aviso-lectura) {
+  grid-column: 1 / -1;
+}
+
+.semana.cuadrante-modal {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
-  overflow: auto;
-  padding: 16px;
+  margin: 0;
+  padding: 0;
+  background: rgba(32, 36, 44, 0.45);
+  outline: none;
+}
+
+.cuadrante-modal .cuadrante-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 96vw;
+  height: 94vh;
+  box-sizing: border-box;
+  padding: 16px 48px 12px 16px;
+  border-radius: 12px;
   background: var(--bg);
+  overflow: hidden;
 }
 
-.cuadrante-ampliado .cuadrante-scroll {
-  overflow-x: auto;
-  max-width: 100%;
+.cuadrante-modal .cuadrante-panel > :not(.cuadrante-scroll) {
+  flex-shrink: 0;
 }
 
-:deep(.cuadrante-ampliado table.cuadrante) {
-  width: 100%;
-  min-width: calc(7rem + var(--dias, 7) * 4.6rem);
-  table-layout: fixed;
+.cuadrante-modal .cuadrante-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  overflow: auto;
 }
 
-:deep(.cuadrante-ampliado table.cuadrante th:not(:first-child)),
-:deep(.cuadrante-ampliado table.cuadrante td:not(:first-child)) {
-  min-width: 4.6rem;
-}
-
-:deep(.cuadrante-ampliado table.cuadrante thead th:first-child) {
-  width: 7rem;
-  z-index: 2;
+.cuadrante-modal .cuadrante-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   background: var(--libranza-bg);
 }
 
-:deep(.cuadrante-ampliado table.cuadrante thead th:first-child),
-:deep(.cuadrante-ampliado table.cuadrante tbody th),
-:deep(.cuadrante-ampliado table.cuadrante tfoot td:first-child) {
+.cuadrante-modal .cuadrante-scroll table.anual thead tr.anio-dias th {
+  top: 37px;
+}
+
+.cuadrante-modal .cuadrante-scroll tbody th,
+.cuadrante-modal .cuadrante-scroll tfoot td:first-child,
+.cuadrante-modal .cuadrante-scroll thead th:first-child {
   position: sticky;
   left: 0;
 }
 
-:deep(.cuadrante-ampliado table.cuadrante tbody th) {
+.cuadrante-modal .cuadrante-scroll thead th:first-child {
+  z-index: 4;
+  background: var(--libranza-bg);
+}
+
+.cuadrante-modal .cuadrante-scroll tbody th {
   z-index: 1;
   background: var(--panel);
 }
 
-:deep(.cuadrante-ampliado table.cuadrante tbody tr.grupo-fila th) {
-  position: static;
-  z-index: auto;
-  width: auto;
-}
-
-:deep(.cuadrante-ampliado table.cuadrante tfoot td:first-child) {
+.cuadrante-modal .cuadrante-scroll tfoot td:first-child {
   z-index: 1;
   background: #fafbfc;
 }
 
+.cuadrante-modal .cuadrante-scroll tbody tr.grupo-fila > th {
+  position: static;
+  left: auto;
+  z-index: auto;
+}
+
+.cuadrante-modal .cuadrante-scroll table.anual thead tr.anio-dias th:first-child {
+  left: auto;
+  z-index: 3;
+}
+
+.cuadrante-modal .cuadrante-scroll table.anual tbody tr.grupo-fila th.grupo-anio-nombre {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
+button.cuadrante-cerrar:not(.tarjeta):not(.celda) {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+button.cuadrante-cerrar:not(.tarjeta):not(.celda):hover {
+  border-color: transparent;
+  color: var(--text);
+}
+
 @media print {
-  .cuadrante-ampliado {
+  .cuadrante-modal {
     position: static;
-    inset: auto;
-    z-index: auto;
-    overflow: visible;
-    padding: 0;
-    background: transparent;
+    display: block;
+    background: none;
   }
 
-  :deep(.cuadrante-ampliado table.cuadrante) {
-    width: auto;
-    min-width: 0;
-    table-layout: auto;
+  .cuadrante-modal .cuadrante-panel {
+    display: contents;
   }
 }
 
@@ -1454,8 +1619,7 @@ button.copiar-dias-atajo {
   letter-spacing: 0.04em;
 }
 
-:deep(table.cuadrante.anual thead tr.anio-dias th:first-child),
-:deep(.cuadrante-ampliado table.cuadrante.anual thead tr.anio-dias th:first-child) {
+:deep(table.cuadrante.anual thead tr.anio-dias th:first-child) {
   position: static;
   left: auto;
   z-index: auto;
@@ -1465,8 +1629,22 @@ button.copiar-dias-atajo {
   text-align: center;
 }
 
-:deep(.cuadrante-ampliado table.cuadrante.anual thead tr.anio-dias th:first-child:not(.col-festivo)) {
-  background: var(--libranza-bg);
+.cuadrante-modal .cuadrante-scroll table.anual thead tr.anio-meses th {
+  z-index: 4;
+}
+
+.cuadrante-modal .cuadrante-scroll table.anual thead tr.anio-meses th:first-child {
+  z-index: 5;
+}
+
+.cuadrante-modal .cuadrante-scroll table.anual thead tr.anio-dias th:first-child {
+  position: sticky;
+  top: 37px;
+  left: auto;
+  z-index: 3;
+  width: auto;
+  min-width: 4.6rem;
+  text-align: center;
 }
 
 :deep(table.cuadrante.anual th.mes-inicio),
@@ -1474,8 +1652,7 @@ button.copiar-dias-atajo {
   border-left: 2px solid var(--border-strong);
 }
 
-:deep(table.cuadrante.anual tbody tr.grupo-fila th.grupo-anio-nombre),
-:deep(.cuadrante-ampliado table.cuadrante.anual tbody tr.grupo-fila th.grupo-anio-nombre) {
+:deep(table.cuadrante.anual tbody tr.grupo-fila th.grupo-anio-nombre) {
   position: sticky;
   left: 0;
   z-index: 1;

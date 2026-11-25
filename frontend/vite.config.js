@@ -17,6 +17,7 @@ export default defineConfig({
       "/fichajes": "http://127.0.0.1:5001",
       "/ajustes": "http://127.0.0.1:5001",
       "/festivos": "http://127.0.0.1:5001",
+      "/seguimiento": "http://127.0.0.1:5001",
       "/health": "http://127.0.0.1:5001",
     },
   },

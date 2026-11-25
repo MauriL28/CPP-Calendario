@@ -69,7 +69,7 @@ main {
   width: 100%;
   max-width: 1240px;
   margin: 0 auto;
-  padding: 2rem 24px 3rem;
+  padding: 12px 24px 2.5rem;
 }
 
 h1 {
@@ -90,6 +90,19 @@ button:not(.tarjeta):not(.celda) {
 
 button:not(.tarjeta):not(.celda):hover {
   border-color: var(--accent);
+}
+
+button.boton-icono:not(.tarjeta):not(.celda) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+button.boton-icono svg {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 
 button.primario:not(.tarjeta):not(.celda) {
@@ -548,9 +561,39 @@ button.migas-enlace:not(.tarjeta):not(.celda):hover {
 
 .detalle-cabecera {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 24px;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.cabecera-volver {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.cabecera-volver svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.vistas.sedes-cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  margin: 0 0 0 auto;
+  overflow: visible;
+}
+
+@media (max-width: 720px) {
+  .vistas.sedes-cabecera {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
 }
 
 .detalle-iniciales {
@@ -774,7 +817,7 @@ section.equipo .persona-datos span {
 
 .vistas {
   display: inline-flex;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
   border: 1px solid var(--border-strong);
   border-radius: 7px;
   overflow: hidden;
@@ -1324,8 +1367,8 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem 1rem;
-  margin: 0.5rem 0 0.75rem;
+  gap: 8px 12px;
+  margin: 0 0 8px;
 }
 
 .semana-nav .modo-vista {
@@ -1336,12 +1379,25 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
   margin-left: auto;
 }
 
+.cuadrante-exportar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cuadrante-exportar svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
 .cuadrante-seccion {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin: 0 0 0.75rem;
+  margin: 0 0 8px;
 }
 
 .cuadrante-seccion button:not(.tarjeta):not(.celda) {
@@ -1358,11 +1414,19 @@ button.dialogo-cerrar:not(.tarjeta):not(.celda):hover {
   color: #fff;
 }
 
+.cuadrante-seccion button.boton-icono:not(.tarjeta):not(.celda) {
+  margin-left: auto;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
 .cuadrante-horas {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0 0 0.75rem;
+  gap: 8px;
+  margin: 0 0 8px;
 }
 
 .cuadrante-horas article {
@@ -1456,11 +1520,32 @@ table.cuadrante.mensual tfoot td:first-child {
 }
 
 .bienvenida {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   max-width: 1100px;
-  margin-bottom: 20px;
-  padding: 22px 24px;
+  margin-bottom: 8px;
+  padding: 12px 16px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+button.bienvenida-cerrar:not(.tarjeta):not(.celda) {
+  flex: none;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+button.bienvenida-cerrar:not(.tarjeta):not(.celda):hover {
+  border-color: transparent;
+  color: var(--text);
 }
 
 .bienvenida-titulo {
@@ -2210,7 +2295,7 @@ button.enlace:not(.tarjeta):not(.celda) {
 }
 
 .cuadrante-ambito {
-  margin: 0 0 0.75rem;
+  margin: 0 0 8px;
 }
 
 .departamento-mando {

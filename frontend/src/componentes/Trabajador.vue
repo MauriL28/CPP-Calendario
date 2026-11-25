@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from "vue";
+import Bienvenida from "./Bienvenida.vue";
 import Cuadrante from "./Cuadrante.vue";
 import FichaEmpleado from "./FichaEmpleado.vue";
 
@@ -14,12 +15,12 @@ const ficha = ref(false);
 </script>
 
 <template>
-  <section v-if="!ficha" class="bienvenida">
-    <p class="bienvenida-titulo">Bienvenido, {{ nombreSesion }}</p>
-    <p class="bienvenida-detalle">
-      Consulta tu horario y tu ficha<span v-if="departamento"> en {{ departamento }}</span>.
-    </p>
-  </section>
+  <Bienvenida
+    v-if="!ficha"
+    :token="token"
+    :titulo="`Bienvenido, ${nombreSesion}`"
+    :detalle="departamento ? `Consulta tu horario y tu ficha en ${departamento}.` : 'Consulta tu horario y tu ficha.'"
+  />
   <header v-if="!ficha" class="mi-horario">
     <div class="mi-horario-fila">
       <h1>Mi horario</h1>

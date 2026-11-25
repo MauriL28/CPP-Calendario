@@ -12,8 +12,10 @@ import {
   listarAjustes,
 } from "../api/usuarios.js";
 import Analisis from "./Analisis.vue";
+import Bienvenida from "./Bienvenida.vue";
 import Cobertura from "./Cobertura.vue";
 import Costes from "./Costes.vue";
+import Seguimiento from "./Seguimiento.vue";
 import HorarioHabitual from "./HorarioHabitual.vue";
 import Cuadrante from "./Cuadrante.vue";
 import DuracionPausa from "./DuracionPausa.vue";
@@ -83,6 +85,7 @@ const equipo = computed(
 );
 const variosDepartamentos = computed(() => departamentos.value.length > 1);
 const muestraHorario = computed(() => equipo.value?.usa_horario_habitual !== false);
+const muestraSeguimiento = computed(() => equipo.value?.usa_seguimiento === true);
 const seccionesEquipo = computed(() => equipo.value?.secciones ?? []);
 const trabajadores = computed(() => equipo.value?.trabajadores ?? []);
 const chipsSeccion = computed(() => {
@@ -631,6 +634,14 @@ onUnmounted(() => {
     <button type="button" :class="{ activo: vista === 'costes' }" @click="vista = 'costes'">
       Costes
     </button>
+    <button
+      v-if="muestraSeguimiento"
+      type="button"
+      :class="{ activo: vista === 'seguimiento' }"
+      @click="vista = 'seguimiento'"
+    >
+      Seguimiento
+    </button>
     <button type="button" :class="{ activo: vista === 'equipo' }" @click="vista = 'equipo'">
       Equipo
     </button>
@@ -638,12 +649,12 @@ onUnmounted(() => {
       Análisis
     </button>
   </nav>
-  <section v-if="vista === 'cuadrante'" class="bienvenida">
-    <p class="bienvenida-titulo">Bienvenido, {{ nombreSesion }}</p>
-    <p class="bienvenida-detalle">
-      Gestiona el cuadrante y el equipo de {{ departamento || "tu departamento" }}.
-    </p>
-  </section>
+  <Bienvenida
+    v-if="vista === 'cuadrante'"
+    :token="token"
+    :titulo="`Bienvenido, ${nombreSesion}`"
+    :detalle="`Gestiona el cuadrante y el equipo de ${departamento || 'tu departamento'}.`"
+  />
   <label v-if="variosDepartamentos" class="analisis-filtro departamento-mando">
     Departamento
     <select v-model="departamentoId" class="equipo-grupo">
@@ -658,7 +669,7 @@ onUnmounted(() => {
         Mi departamento
       </button>
       <button type="button" :class="{ activo: ambito === 'mandos' }" @click="ambito = 'mandos'">
-        Mandos + Funcionales
+        Responsables + Funcionales
       </button>
     </div>
     <Cuadrante
@@ -685,6 +696,12 @@ onUnmounted(() => {
   />
   <Costes
     v-if="vista === 'costes' && departamentosCargados"
+    :key="departamentoId || 'propio'"
+    :token="token"
+    :departamento-id="departamentoId"
+  />
+  <Seguimiento
+    v-if="vista === 'seguimiento' && muestraSeguimiento && departamentosCargados"
     :key="departamentoId || 'propio'"
     :token="token"
     :departamento-id="departamentoId"

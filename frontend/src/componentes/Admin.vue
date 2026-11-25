@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from "vue";
 import { listar } from "../api/departamentos.js";
 import Analisis from "./Analisis.vue";
+import Bienvenida from "./Bienvenida.vue";
 import Cobertura from "./Cobertura.vue";
 import Costes from "./Costes.vue";
 import Cuadrante from "./Cuadrante.vue";
@@ -452,7 +453,7 @@ async function guardar() {
     altaAbierta.value = false;
     await cargar();
   } catch (causa) {
-    errorMando.value = causa instanceof Error ? causa.message : "No se pudo crear el mando";
+    errorMando.value = causa instanceof Error ? causa.message : "No se pudo crear el responsable";
   }
 }
 
@@ -472,7 +473,7 @@ async function asignar() {
     altaAbierta.value = false;
     await cargar();
   } catch (causa) {
-    errorMando.value = causa instanceof Error ? causa.message : "No se pudo asignar el mando";
+    errorMando.value = causa instanceof Error ? causa.message : "No se pudo asignar el responsable";
   }
 }
 
@@ -496,10 +497,11 @@ onMounted(cargar);
   </nav>
   <p v-if="vista === 'departamentos' && error" class="error" role="alert">{{ error }}</p>
   <div v-if="vista === 'departamentos' && !grupo" class="bloques">
-    <section class="bienvenida">
-      <p class="bienvenida-titulo">Bienvenido, {{ nombreSesion }}</p>
-      <p class="bienvenida-detalle">Gestiona los equipos de 60I San Sebastián y 05I Irún.</p>
-    </section>
+    <Bienvenida
+      :token="token"
+      :titulo="`Bienvenido, ${nombreSesion}`"
+      detalle="Gestiona los equipos de 60I San Sebastián y 05I Irún."
+    />
     <header class="lista-intro">
       <h1>Departamentos</h1>
       <p>Selecciona un departamento para gestionar su equipo.</p>
@@ -531,28 +533,41 @@ onMounted(cargar);
     </div>
   </div>
   <section v-else-if="vista === 'departamentos'" class="detalle">
-    <nav class="migas">
-      <button type="button" class="migas-enlace" @click="volver">Departamentos</button>
-      <span>›</span>
-      <span class="migas-actual">{{ grupo.nombre }}</span>
-    </nav>
     <header class="detalle-cabecera">
+      <button
+        type="button"
+        class="migas-enlace cabecera-volver"
+        title="Volver a departamentos"
+        aria-label="Volver a departamentos"
+        @click="volver"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M10 3 L5 8 L10 13"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
       <span class="detalle-iniciales">{{ iniciales(grupo.nombre) }}</span>
       <h1>{{ grupo.nombre }}</h1>
+      <nav v-if="grupo.sedes.length > 1" class="vistas sedes-cabecera">
+        <button
+          v-for="sede in grupo.sedes"
+          :key="sede.delegacion"
+          type="button"
+          :class="{ activo: sedeVisible === sede.delegacion }"
+          @click="verSede(sede.delegacion)"
+        >
+          {{ delegacionVisible(sede.delegacion) }} · {{ personasSede(sede) }}
+        </button>
+      </nav>
     </header>
     <div class="detalle-rejilla">
       <div>
-        <nav v-if="grupo.sedes.length > 1" class="vistas">
-          <button
-            v-for="sede in grupo.sedes"
-            :key="sede.delegacion"
-            type="button"
-            :class="{ activo: sedeVisible === sede.delegacion }"
-            @click="verSede(sede.delegacion)"
-          >
-            {{ delegacionVisible(sede.delegacion) }} · {{ personasSede(sede) }}
-          </button>
-        </nav>
         <template v-for="sede in grupo.sedes" :key="sede.delegacion">
         <div v-if="sede.delegacion === sedeVisible" class="detalle-listas">
           <nav class="vistas">
@@ -598,17 +613,17 @@ onMounted(cargar);
           </p>
           <section v-if="seccionSede === 'equipo'" class="panel">
             <header class="panel-cabecera">
-              <h2>Mandos</h2>
+              <h2>Responsables</h2>
               <span class="panel-cuenta">{{ sede.mandos.length }}</span>
               <button
                 v-if="!mandosActivos(sede).length"
                 type="button"
                 class="anadir-mando"
                 @click="abrirAlta"
-              >+ Añadir mando</button>
+              >+ Añadir responsable</button>
             </header>
             <p v-if="errorAccion" class="error mando-error" role="alert">{{ errorAccion }}</p>
-            <p v-if="!sede.mandos.length" class="panel-vacio">Este departamento aún no tiene mandos.</p>
+            <p v-if="!sede.mandos.length" class="panel-vacio">Este departamento aún no tiene responsables.</p>
             <ul v-else class="panel-filas">
               <li v-for="mando in sede.mandos" :key="mando.login">
                 <span class="avatar">{{ iniciales(mando.nombre) }}</span>
@@ -706,7 +721,7 @@ onMounted(cargar);
               <button class="primario" type="submit">Guardar trabajador</button>
             </form>
             <p v-if="!sede.trabajadores.length" class="panel-vacio">
-              Aún no hay trabajadores. Los crea el mando del departamento.
+              Aún no hay trabajadores. Los crea el responsable del departamento.
             </p>
             <div v-else class="equipo-grupos">
               <section v-for="grupoEquipo in agruparPersonas(sede?.trabajadores)" :key="grupoEquipo.id" class="panel">
@@ -742,7 +757,7 @@ onMounted(cargar);
       </div>
       <form v-if="altaAbierta" class="panel alta-mando" @submit.prevent="modoAlta === 'crear' ? guardar() : asignar()">
         <header class="panel-cabecera">
-          <h2>Alta de mando</h2>
+          <h2>Alta de responsable</h2>
         </header>
         <div class="alta-cuerpo">
           <nav class="vistas alta-modos">
@@ -773,19 +788,19 @@ onMounted(cargar);
             </label>
             <p class="campo-pista">Lo pasa RRHH. Déjalo en blanco si aún no lo tienes.</p>
             <p v-if="errorMando" class="error" role="alert">{{ errorMando }}</p>
-            <button class="primario" type="submit">Guardar mando</button>
+            <button class="primario" type="submit">Guardar responsable</button>
           </template>
           <template v-else>
             <label>
-              Mando
+              Responsable
               <select v-model="loginAsignar" name="mando-existente">
-                <option value="" disabled>Elige un mando</option>
+                <option value="" disabled>Elige un responsable</option>
                 <option v-for="mando in candidatos" :key="mando.login" :value="mando.login">
                   {{ mando.nombre }} ({{ mando.login }})
                 </option>
               </select>
             </label>
-            <p v-if="!candidatos.length" class="campo-pista">No hay mandos activos en otras sedes.</p>
+            <p v-if="!candidatos.length" class="campo-pista">No hay responsables activos en otras sedes.</p>
             <p v-if="errorMando" class="error" role="alert">{{ errorMando }}</p>
             <button class="primario" type="submit" :disabled="!loginAsignar">Asignar</button>
           </template>

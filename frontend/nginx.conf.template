@@ -49,6 +49,10 @@ server {
         proxy_pass $backend_upstream;
     }
 
+    location /seguimiento {
+        proxy_pass $backend_upstream;
+    }
+
     location /mandos {
         proxy_pass $backend_upstream;
     }
