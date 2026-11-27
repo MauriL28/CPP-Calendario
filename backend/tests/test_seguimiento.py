@@ -46,22 +46,57 @@ class Cursor:
             self._fila = {"departamento_id": self.propio}
         elif texto.startswith("SELECT usa_seguimiento"):
             self._fila = {"usa_seguimiento": self.seguimiento}
-        elif texto.startswith("SELECT toneladas") or texto.startswith("SELECT detalle, fila_base"):
-            self._fila = self.filas.get((str(params[0]), params[1]))
+        elif texto.startswith("SELECT toneladas"):
+            self._fila = self._completa(self.filas.get((str(params[0]), params[1])))
+        elif texto.startswith("UPDATE seguimiento_semana"):
+            clave = (str(params[1]), params[2])
+            fila = self.filas.get(clave)
+            if fila is not None and "detalle_pales = NULL" in texto:
+                fila["pales"] = None
+                fila["detalle_pales"] = None
+                fila["fila_base_pales"] = None
+            elif fila is not None:
+                fila["toneladas"] = None
+                fila["detalle"] = None
+                fila["fila_base"] = None
         elif texto.startswith("DELETE FROM seguimiento_semana"):
-            self.filas.pop((str(params[0]), params[1]), None)
+            clave = (str(params[0]), params[1])
+            fila = self.filas.get(clave)
+            if "toneladas IS NULL" not in texto or (
+                fila is not None and fila.get("toneladas") is None and fila.get("pales") is None
+            ):
+                self.filas.pop(clave, None)
         elif texto.startswith("INSERT INTO seguimiento_semana"):
-            detalle = params[3]
-            if detalle is not None and hasattr(detalle, "obj"):
-                detalle = detalle.obj
-            self.filas[(str(params[0]), params[1])] = {
-                "toneladas": params[2],
-                "detalle": detalle,
-                "fila_base": params[4],
-            }
+            clave = (str(params[0]), params[1])
+            previo = self._completa(self.filas.get(clave)) or self._vacia()
+            detalle = params[3].obj if params[3] is not None and hasattr(params[3], "obj") else params[3]
+            if "detalle_pales" in texto:
+                previo["pales"] = params[2]
+                previo["detalle_pales"] = detalle
+                previo["fila_base_pales"] = params[4]
+            else:
+                previo["toneladas"] = params[2]
+                previo["detalle"] = detalle
+                previo["fila_base"] = params[4]
+            self.filas[clave] = previo
             self.autor = params[5]
         else:
             raise AssertionError(texto)
+
+    def _vacia(self):
+        return {
+            "toneladas": None,
+            "detalle": None,
+            "fila_base": None,
+            "pales": None,
+            "detalle_pales": None,
+            "fila_base_pales": None,
+        }
+
+    def _completa(self, fila):
+        if fila is None:
+            return None
+        return {**self._vacia(), **fila}
 
     def fetchone(self):
         return self._fila
@@ -99,6 +134,9 @@ def test_la_lectura_vacia_devuelve_toneladas_null():
         "toneladas": None,
         "detalle": None,
         "fila_base": None,
+        "pales": None,
+        "detalle_pales": None,
+        "fila_base_pales": None,
     }
 
 
@@ -325,6 +363,96 @@ def test_borrar_sin_la_marca_responde_404():
         Cursor(seguimiento=False),
     )
     assert respuesta.status_code == 404
+
+
+DETALLE_PALES = {
+    "filas": [
+        {
+            "nombre": "Pales",
+            "total": 40,
+            "dias": [5, 5, 10, 5, 5, 10],
+        }
+    ]
+}
+
+
+def test_guardar_pales_y_releer():
+    cursor = Cursor()
+    guardado = _guardar(
+        cursor,
+        {"magnitud": "pales", "pales": 4.5, "detalle": DETALLE_PALES, "fila_base": "Pales"},
+    )
+    leido = pedir("get", f"/seguimiento?semana={LUNES.isoformat()}", "mando", MANDO, cursor)
+    assert guardado.status_code == 200
+    assert guardado.get_json() == {"semana_inicio": "2026-11-23", "pales": 4.5}
+    cuerpo = leido.get_json()
+    assert cuerpo["pales"] == 4.5
+    assert cuerpo["detalle_pales"] == DETALLE_PALES
+    assert cuerpo["fila_base_pales"] == "Pales"
+    assert cuerpo["toneladas"] is None
+    assert cuerpo["detalle"] is None
+    assert cuerpo["fila_base"] is None
+
+
+def test_toneladas_y_pales_de_la_misma_semana_no_se_pisan():
+    cursor = Cursor()
+    _guardar(
+        cursor,
+        {"toneladas": 10, "detalle": DETALLE, "fila_base": "Prévision 2026"},
+    )
+    _guardar(
+        cursor,
+        {"magnitud": "pales", "pales": 3.5, "detalle": DETALLE_PALES, "fila_base": "Pales"},
+    )
+    _guardar(cursor, {"toneladas": 11})
+    leido = pedir("get", f"/seguimiento?semana={LUNES.isoformat()}", "mando", MANDO, cursor).get_json()
+    assert leido["toneladas"] == 11
+    assert leido["detalle"] == DETALLE
+    assert leido["fila_base"] == "Prévision 2026"
+    assert leido["pales"] == 3.5
+    assert leido["detalle_pales"] == DETALLE_PALES
+    assert leido["fila_base_pales"] == "Pales"
+    _guardar(cursor, {"magnitud": "pales", "pales": 4})
+    despues = pedir("get", f"/seguimiento?semana={LUNES.isoformat()}", "mando", MANDO, cursor).get_json()
+    assert despues["toneladas"] == 11
+    assert despues["detalle"] == DETALLE
+    assert despues["pales"] == 4
+    assert despues["detalle_pales"] == DETALLE_PALES
+
+
+def test_pales_no_validos_dan_400():
+    cursor = Cursor()
+    corta = {"filas": [{"nombre": "Pales", "total": 10, "dias": [1, 2, 3, 4, 5]}]}
+    for cuerpo in (
+        {"magnitud": "pales", "pales": -1},
+        {"magnitud": "pales", "pales": 1, "detalle": corta, "fila_base": "Pales"},
+        {"magnitud": "pales", "pales": 1, "detalle": DETALLE_PALES, "fila_base": "No existe"},
+        {"magnitud": "cajas", "pales": 1},
+    ):
+        assert _guardar(cursor, cuerpo).status_code == 400
+
+
+def test_borrar_una_magnitud_deja_la_otra():
+    cursor = Cursor()
+    _guardar(cursor, {"toneladas": 10, "detalle": DETALLE, "fila_base": "Prévision 2026"})
+    _guardar(
+        cursor,
+        {"magnitud": "pales", "pales": 3.5, "detalle": DETALLE_PALES, "fila_base": "Pales"},
+    )
+    borrado = pedir(
+        "delete",
+        f"/seguimiento?semana={LUNES.isoformat()}&magnitud=pales",
+        "mando",
+        MANDO,
+        cursor,
+    )
+    leido = pedir("get", f"/seguimiento?semana={LUNES.isoformat()}", "mando", MANDO, cursor).get_json()
+    assert borrado.status_code == 204
+    assert leido["toneladas"] == 10
+    assert leido["detalle"] == DETALLE
+    assert leido["pales"] is None
+    assert leido["detalle_pales"] is None
+    assert leido["fila_base_pales"] is None
 
 
 def test_el_trabajador_recibe_403():

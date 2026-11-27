@@ -8,18 +8,21 @@ export function obtener(token, semana, departamentoId) {
   return pedir(`/seguimiento?${consulta}`, { token });
 }
 
-export function borrar(token, semana, departamentoId) {
+export function borrar(token, semana, departamentoId, magnitud) {
   const consulta = new URLSearchParams({ semana });
   if (departamentoId) {
     consulta.set("departamento_id", departamentoId);
   }
+  if (magnitud) {
+    consulta.set("magnitud", magnitud);
+  }
   return pedir(`/seguimiento?${consulta}`, { method: "DELETE", token });
 }
 
-export function guardar(token, semana, toneladas, departamentoId, extra = {}) {
-  const cuerpo = { semana, toneladas, ...extra };
+export function guardar(token, semana, departamentoId, cuerpo) {
+  const datos = { semana, ...cuerpo };
   if (departamentoId) {
-    cuerpo.departamento_id = departamentoId;
+    datos.departamento_id = departamentoId;
   }
-  return pedir("/seguimiento", { method: "PUT", token, cuerpo });
+  return pedir("/seguimiento", { method: "PUT", token, cuerpo: datos });
 }

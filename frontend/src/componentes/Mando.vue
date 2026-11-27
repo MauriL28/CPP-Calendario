@@ -30,6 +30,7 @@ const props = defineProps({
 });
 
 const vista = ref("cuadrante");
+const seguimientoSucio = ref(false);
 const ambito = ref("departamento");
 const fichaLogin = ref("");
 const cuadrante = ref(null);
@@ -574,6 +575,7 @@ async function eliminarAjuste(ajuste) {
 }
 
 watch(departamentoId, () => {
+  seguimientoSucio.value = false;
   busqueda.value = "";
   filtroSeccion.value = "";
   menuAbierto.value = "";
@@ -638,9 +640,11 @@ onUnmounted(() => {
       v-if="muestraSeguimiento"
       type="button"
       :class="{ activo: vista === 'seguimiento' }"
+      :aria-label="seguimientoSucio ? 'Seguimiento, cambios sin guardar' : 'Seguimiento'"
       @click="vista = 'seguimiento'"
     >
       Seguimiento
+      <span v-if="seguimientoSucio" class="seguimiento-puntito" aria-hidden="true"></span>
     </button>
     <button type="button" :class="{ activo: vista === 'equipo' }" @click="vista = 'equipo'">
       Equipo
@@ -700,12 +704,15 @@ onUnmounted(() => {
     :token="token"
     :departamento-id="departamentoId"
   />
-  <Seguimiento
-    v-if="vista === 'seguimiento' && muestraSeguimiento && departamentosCargados"
-    :key="departamentoId || 'propio'"
-    :token="token"
-    :departamento-id="departamentoId"
-  />
+  <KeepAlive>
+    <Seguimiento
+      v-if="vista === 'seguimiento' && muestraSeguimiento && departamentosCargados"
+      :key="departamentoId || 'propio'"
+      :token="token"
+      :departamento-id="departamentoId"
+      @cambios="seguimientoSucio = $event"
+    />
+  </KeepAlive>
   <Analisis
     v-if="vista === 'analisis'"
     :key="departamentoId || 'propio'"
@@ -1013,6 +1020,16 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.seguimiento-puntito {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+}
+
 .ajustes-dialogo {
   max-width: 680px;
 }

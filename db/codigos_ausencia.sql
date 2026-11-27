@@ -1,8 +1,6 @@
 -- Nuevos códigos de ausencia. ST y FT llevan horario; el resto no.
--- initdb no vuelve a ejecutar esquema.sql. Este script es idempotente y no borra filas.
 -- Cada ADD VALUE va en su propia sentencia, fuera de transacción: el valor nuevo
 -- no se puede usar en el CHECK hasta que esa sentencia haya confirmado.
--- No ejecutar con psql --single-transaction.
 
 ALTER TYPE codigo_ausencia ADD VALUE IF NOT EXISTS 'SR';
 ALTER TYPE codigo_ausencia ADD VALUE IF NOT EXISTS 'FR';

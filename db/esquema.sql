@@ -88,9 +88,12 @@ CREATE TABLE mando_departamento (
 CREATE TABLE seguimiento_semana (
     departamento_id  UUID NOT NULL REFERENCES departamento (id),
     semana_inicio    DATE NOT NULL,
-    toneladas        NUMERIC(10, 2) NOT NULL CHECK (toneladas >= 0),
+    toneladas        NUMERIC(10, 2) CHECK (toneladas >= 0),
+    pales            NUMERIC(12, 2) CHECK (pales >= 0),
     detalle          JSONB,
     fila_base        TEXT,
+    detalle_pales    JSONB,
+    fila_base_pales  TEXT,
     actualizado_por  UUID REFERENCES usuario (id),
     actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (departamento_id, semana_inicio)

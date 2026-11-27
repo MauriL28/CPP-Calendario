@@ -92,6 +92,47 @@ def _fila_base(valor, detalle):
     return nombre, None
 
 
+def _magnitud(valor, por_defecto):
+    if valor in (None, ""):
+        return por_defecto, None
+    if valor not in ("toneladas", "pales"):
+        return None, (jsonify(error="La magnitud no es válida"), 400)
+    return valor, None
+
+
+def _combinar_detalle(cuerpo, anterior, columna_detalle, columna_fila):
+    if "detalle" in cuerpo:
+        detalle, error = _detalle(cuerpo.get("detalle"))
+        if error:
+            return None, None, error
+    else:
+        detalle = None if anterior is None else anterior[columna_detalle]
+    if "fila_base" not in cuerpo:
+        fila_base = None if anterior is None else anterior[columna_fila]
+        if fila_base is not None:
+            nombres = [fila["nombre"] for fila in (detalle or {}).get("filas", [])]
+            if fila_base not in nombres:
+                return None, None, (jsonify(error="La fila base no está en el detalle"), 400)
+        return detalle, fila_base, None
+    fila_base, error = _fila_base(cuerpo.get("fila_base"), detalle)
+    if error:
+        return None, None, error
+    return detalle, fila_base, None
+
+
+def _numero(fila, campo):
+    if fila is None or fila[campo] is None:
+        return None
+    return float(fila[campo])
+
+
+_LECTURA = """
+    SELECT toneladas, detalle, fila_base, pales, detalle_pales, fila_base_pales
+    FROM seguimiento_semana
+    WHERE departamento_id = %s AND semana_inicio = %s
+"""
+
+
 def _departamento(cur):
     opcional = request.args.get("departamento_id")
     if request.method == "PUT":
@@ -128,14 +169,7 @@ def leer_seguimiento():
             error = _exigir_marca(cur, departamento_id)
             if error:
                 return error
-            cur.execute(
-                """
-                SELECT toneladas, detalle, fila_base
-                FROM seguimiento_semana
-                WHERE departamento_id = %s AND semana_inicio = %s
-                """,
-                (departamento_id, lunes),
-            )
+            cur.execute(_LECTURA, (departamento_id, lunes))
             fila = cur.fetchone()
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
@@ -143,9 +177,12 @@ def leer_seguimiento():
         return error_bd(exc)
     return jsonify(
         semana_inicio=lunes.isoformat(),
-        toneladas=None if fila is None else float(fila["toneladas"]),
+        toneladas=_numero(fila, "toneladas"),
         detalle=None if fila is None else fila["detalle"],
         fila_base=None if fila is None else fila["fila_base"],
+        pales=_numero(fila, "pales"),
+        detalle_pales=None if fila is None else fila["detalle_pales"],
+        fila_base_pales=None if fila is None else fila["fila_base_pales"],
     )
 
 
@@ -158,21 +195,21 @@ def guardar_seguimiento():
     lunes, error = _lunes(cuerpo.get("semana"))
     if error:
         return error
-    toneladas = _toneladas(cuerpo.get("toneladas"))
-    if toneladas is None:
-        return jsonify(
-            error="Las toneladas tienen que ser un número mayor o igual que cero, con hasta 2 decimales"
-        ), 400
-    if "detalle" in cuerpo:
-        detalle, error = _detalle(cuerpo.get("detalle"))
-        if error:
-            return error
+    magnitud, error = _magnitud(cuerpo.get("magnitud"), "toneladas")
+    if error:
+        return error
+    if magnitud == "pales":
+        cantidad = _toneladas(cuerpo.get("pales"))
+        if cantidad is None:
+            return jsonify(
+                error="Los pales tienen que ser un número mayor o igual que cero, con hasta 2 decimales"
+            ), 400
     else:
-        detalle = None
-    if "fila_base" in cuerpo:
-        fila_base_nueva = cuerpo.get("fila_base")
-    else:
-        fila_base_nueva = None
+        cantidad = _toneladas(cuerpo.get("toneladas"))
+        if cantidad is None:
+            return jsonify(
+                error="Las toneladas tienen que ser un número mayor o igual que cero, con hasta 2 decimales"
+            ), 400
     try:
         with cursor() as cur:
             departamento_id, error = _departamento(cur)
@@ -181,54 +218,72 @@ def guardar_seguimiento():
             error = _exigir_marca(cur, departamento_id)
             if error:
                 return error
-            cur.execute(
-                """
-                SELECT detalle, fila_base
-                FROM seguimiento_semana
-                WHERE departamento_id = %s AND semana_inicio = %s
-                """,
-                (departamento_id, lunes),
-            )
+            cur.execute(_LECTURA, (departamento_id, lunes))
             anterior = cur.fetchone()
-            if "detalle" not in cuerpo:
-                detalle = None if anterior is None else anterior["detalle"]
-            if "fila_base" not in cuerpo:
-                fila_base = None if anterior is None else anterior["fila_base"]
-            else:
-                fila_base, error = _fila_base(fila_base_nueva, detalle)
-                if error:
-                    return error
-            if fila_base is not None and "fila_base" not in cuerpo:
-                nombres = [fila["nombre"] for fila in (detalle or {}).get("filas", [])]
-                if fila_base not in nombres:
-                    return jsonify(error="La fila base no está en el detalle"), 400
-            cur.execute(
-                """
-                INSERT INTO seguimiento_semana (
-                    departamento_id, semana_inicio, toneladas, detalle, fila_base, actualizado_por
+            if magnitud == "pales":
+                detalle, fila_base, error = _combinar_detalle(
+                    cuerpo, anterior, "detalle_pales", "fila_base_pales"
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (departamento_id, semana_inicio)
-                DO UPDATE SET toneladas = EXCLUDED.toneladas,
-                              detalle = EXCLUDED.detalle,
-                              fila_base = EXCLUDED.fila_base,
-                              actualizado_por = EXCLUDED.actualizado_por,
-                              actualizado_en = now()
-                """,
-                (
-                    departamento_id,
-                    lunes,
-                    toneladas,
-                    None if detalle is None else Json(detalle),
-                    fila_base,
-                    get_jwt_identity(),
-                ),
-            )
+            else:
+                detalle, fila_base, error = _combinar_detalle(
+                    cuerpo, anterior, "detalle", "fila_base"
+                )
+            if error:
+                return error
+            if magnitud == "pales":
+                cur.execute(
+                    """
+                    INSERT INTO seguimiento_semana (
+                        departamento_id, semana_inicio, pales, detalle_pales,
+                        fila_base_pales, actualizado_por
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (departamento_id, semana_inicio)
+                    DO UPDATE SET pales = EXCLUDED.pales,
+                                  detalle_pales = EXCLUDED.detalle_pales,
+                                  fila_base_pales = EXCLUDED.fila_base_pales,
+                                  actualizado_por = EXCLUDED.actualizado_por,
+                                  actualizado_en = now()
+                    """,
+                    (
+                        departamento_id,
+                        lunes,
+                        cantidad,
+                        None if detalle is None else Json(detalle),
+                        fila_base,
+                        get_jwt_identity(),
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO seguimiento_semana (
+                        departamento_id, semana_inicio, toneladas, detalle, fila_base, actualizado_por
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (departamento_id, semana_inicio)
+                    DO UPDATE SET toneladas = EXCLUDED.toneladas,
+                                  detalle = EXCLUDED.detalle,
+                                  fila_base = EXCLUDED.fila_base,
+                                  actualizado_por = EXCLUDED.actualizado_por,
+                                  actualizado_en = now()
+                    """,
+                    (
+                        departamento_id,
+                        lunes,
+                        cantidad,
+                        None if detalle is None else Json(detalle),
+                        fila_base,
+                        get_jwt_identity(),
+                    ),
+                )
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
         return error_bd(exc)
-    return jsonify(semana_inicio=lunes.isoformat(), toneladas=toneladas)
+    if magnitud == "pales":
+        return jsonify(semana_inicio=lunes.isoformat(), pales=cantidad)
+    return jsonify(semana_inicio=lunes.isoformat(), toneladas=cantidad)
 
 
 @bp.delete("/seguimiento")
@@ -239,6 +294,9 @@ def borrar_seguimiento():
     lunes, error = _lunes(request.args.get("semana"))
     if error:
         return error
+    magnitud, error = _magnitud(request.args.get("magnitud"), "ambas")
+    if error:
+        return error
     try:
         with cursor() as cur:
             departamento_id, error = _departamento(cur)
@@ -247,13 +305,39 @@ def borrar_seguimiento():
             error = _exigir_marca(cur, departamento_id)
             if error:
                 return error
-            cur.execute(
-                """
-                DELETE FROM seguimiento_semana
-                WHERE departamento_id = %s AND semana_inicio = %s
-                """,
-                (departamento_id, lunes),
-            )
+            if magnitud == "ambas":
+                cur.execute(
+                    """
+                    DELETE FROM seguimiento_semana
+                    WHERE departamento_id = %s AND semana_inicio = %s
+                    """,
+                    (departamento_id, lunes),
+                )
+            else:
+                columnas = (
+                    "toneladas = NULL, detalle = NULL, fila_base = NULL"
+                    if magnitud == "toneladas"
+                    else "pales = NULL, detalle_pales = NULL, fila_base_pales = NULL"
+                )
+                cur.execute(
+                    f"""
+                    UPDATE seguimiento_semana
+                    SET {columnas},
+                        actualizado_por = %s,
+                        actualizado_en = now()
+                    WHERE departamento_id = %s AND semana_inicio = %s
+                    """,
+                    (get_jwt_identity(), departamento_id, lunes),
+                )
+                cur.execute(
+                    """
+                    DELETE FROM seguimiento_semana
+                    WHERE departamento_id = %s AND semana_inicio = %s
+                      AND toneladas IS NULL
+                      AND pales IS NULL
+                    """,
+                    (departamento_id, lunes),
+                )
     except SinBaseDeDatos:
         return jsonify(error="Base de datos no configurada"), 503
     except psycopg.Error as exc:
